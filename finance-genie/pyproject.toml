@@ -1,0 +1,11 @@
+[project]
+name = "finance-genie"
+version = "0.1.0"
+description = "Synthetic fraud dataset generator and verification for the finance-genie graph-enriched lakehouse demo."
+requires-python = ">=3.9"
+dependencies = [
+    "pandas",
+]
+
+[tool.uv]
+package = false
