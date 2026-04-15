@@ -136,7 +136,13 @@ Genie returns the top bilateral account pairs by transfer count, each with 3–4
 
 Genie counts shared merchants between account pairs. Nearly every pair shares at most one merchant. There is no column-level signal that separates fraud ring pairs — who share five specific anchor merchants — from the many random pairs that also share one merchant by coincidence.
 
-These three answers are the pivot point of the demo. Try any other fraud-investigation questions that come to mind before moving on.
+**"Which accounts have the highest average transaction amount?"**
+
+The tabular trap. In real fraud operations, compromised and money-mule accounts often carry elevated average transaction amounts — the operator pushes larger transactions through each account to maximize payout before detection. The synthetic data reflects that pattern deliberately: fraud accounts average $123.90 per transaction versus $111.77 for normal accounts, roughly 10.8% higher. Genie will sort on the mean and surface *some* fraud accounts in the tail.
+
+The trap is that the distributions overlap almost entirely. Genie's top-N by average amount is dominated by high-spending normal accounts, not ring members. It is a real signal, but too diffuse to rank on — exactly what a production fraud team hits when amount-based rules catch a handful of brazen cases and miss the entire ring structure. GDS does not replace this signal; it complements it by ranking accounts on their position in the transfer network instead of the magnitude of their individual transactions.
+
+Together, these answers are the pivot point of the demo. Try any other fraud-investigation questions that come to mind before moving on.
 
 ### 4. Push to Neo4j
 
