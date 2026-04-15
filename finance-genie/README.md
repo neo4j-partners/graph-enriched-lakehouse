@@ -43,9 +43,9 @@ The demo gap: Genie finds account pairs with one shared merchant. Node Similarit
 | # | File | Runs In | Purpose |
 |---|------|---------|---------|
 | 00 | `00_required_setup.ipynb` | Databricks | Widget-based setup: creates a per-user Unity Catalog, generates the synthetic dataset as Delta tables, stores Neo4j credentials as Databricks secrets, and verifies the Aura connection. |
-| 01 | `01_neo4j_ingest.py` | Databricks | Pushes the operational Delta tables (`accounts`, `merchants`, `transactions`, `account_links`) into Neo4j Aura as a typed property graph via the Neo4j Spark Connector. |
-| 02 | `02_aura_gds_guide.py` | Neo4j Aura Workspace | Cypher and GDS commands to project the graph, run PageRank / Louvain / Node Similarity, and write `risk_score`, `community_id`, and `similarity_score` back as Account node properties. Also available as [`aura_gds_guide.md`](./aura_gds_guide.md). |
-| 03 | `03_pull_and_model.py` | Databricks | Reads enriched Account nodes back via the Spark Connector, registers graph features in Unity Catalog Feature Store, trains a baseline vs graph-augmented `GradientBoostingClassifier`, and compares AUC / F1 / ROC curves with an estimated dollar impact from additional fraud caught. |
+| 01 | `01_neo4j_ingest.ipynb` | Databricks | Pushes the operational Delta tables (`accounts`, `merchants`, `transactions`, `account_links`) into Neo4j Aura as a typed property graph via the Neo4j Spark Connector. |
+| 02 | `02_aura_gds_guide.ipynb` | Neo4j Aura Workspace | Cypher and GDS commands to project the graph, run PageRank / Louvain / Node Similarity, and write `risk_score`, `community_id`, and `similarity_score` back as Account node properties. Also available as [`aura_gds_guide.md`](./aura_gds_guide.md). |
+| 03 | `03_pull_and_model.ipynb` | Databricks | Reads enriched Account nodes back via the Spark Connector, registers graph features in Unity Catalog Feature Store, trains a baseline vs graph-augmented `GradientBoostingClassifier`, and compares AUC / F1 / ROC curves with an estimated dollar impact from additional fraud caught. |
 
 ---
 

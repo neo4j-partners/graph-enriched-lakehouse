@@ -17,11 +17,15 @@ Usage:
 """
 
 import argparse
+import datetime
+import json
 import random
 import sys
 from pathlib import Path
 
 import pandas as pd
+
+SNAPSHOT_SCHEMA_VERSION = 1
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -381,6 +385,327 @@ def render_report(checks):
     return "\n".join(lines)
 
 
+# ── Snapshot IO ──────────────────────────────────────────────────────
+
+def build_snapshot(checks: list, kind: str = "structural_checks") -> dict:
+    return {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "seed": SEED,
+        "kind": kind,
+        "checks": checks,
+    }
+
+
+def write_snapshot(snapshot: dict, path: Path) -> None:
+    with open(path, "w") as fh:
+        json.dump(snapshot, fh, indent=2, default=str)
+    print(f"Snapshot written to {path.resolve()}", file=sys.stderr)
+
+
+# ── Snapshot comparison ───────────────────────────────────────────────
+
+def _compare_field(key, baseline_val, current_val, tolerance_pct):
+    """Compare a single measured field. Returns a result dict."""
+    if isinstance(baseline_val, list):
+        if not isinstance(current_val, list) or len(current_val) != len(baseline_val):
+            return {"key": key, "baseline": baseline_val, "current": current_val,
+                    "diff_pct": None, "passed": False}
+        sub = [_compare_field(f"{key}[{i}]", b, c, tolerance_pct)
+               for i, (b, c) in enumerate(zip(baseline_val, current_val))]
+        passed = all(s["passed"] for s in sub)
+        return {"key": key, "baseline": baseline_val, "current": current_val,
+                "diff_pct": None, "passed": passed, "elements": sub}
+    if isinstance(baseline_val, float) and isinstance(current_val, (int, float)):
+        if baseline_val == 0:
+            passed = current_val == 0
+            diff_pct = None if passed else float("inf")
+        else:
+            diff_pct = abs(current_val - baseline_val) / abs(baseline_val) * 100
+            passed = diff_pct <= tolerance_pct
+        return {"key": key, "baseline": baseline_val, "current": current_val,
+                "diff_pct": round(diff_pct, 2) if diff_pct is not None and diff_pct != float("inf") else diff_pct,
+                "passed": passed}
+    # int or str: exact match
+    passed = baseline_val == current_val
+    return {"key": key, "baseline": baseline_val, "current": current_val,
+            "diff_pct": None, "passed": passed}
+
+
+def compare_snapshots(baseline: dict, current: dict, tolerance_pct: float = 5.0) -> dict:
+    if baseline.get("schema_version") != current.get("schema_version"):
+        raise SystemExit(
+            f"Schema version mismatch: baseline={baseline.get('schema_version')}, "
+            f"current={current.get('schema_version')}. Re-generate the baseline snapshot."
+        )
+    if baseline.get("kind") != current.get("kind"):
+        raise SystemExit(
+            f"Snapshot kind mismatch: baseline={baseline.get('kind')}, "
+            f"current={current.get('kind')}."
+        )
+
+    current_by_name = {c["name"]: c for c in current.get("checks", [])}
+    check_results = []
+
+    for b_check in baseline.get("checks", []):
+        name = b_check["name"]
+        c_check = current_by_name.get(name)
+        if c_check is None:
+            check_results.append({
+                "name": name, "passed": False,
+                "error": "check not found in current run",
+                "fields": [],
+            })
+            continue
+
+        field_results = []
+        for key, b_val in b_check.get("measured", {}).items():
+            c_val = c_check.get("measured", {}).get(key)
+            if c_val is None:
+                field_results.append({"key": key, "baseline": b_val, "current": None,
+                                      "diff_pct": None, "passed": False})
+            else:
+                field_results.append(_compare_field(key, b_val, c_val, tolerance_pct))
+
+        current_passed = c_check.get("passed", False)
+        fields_passed = all(f["passed"] for f in field_results)
+        check_results.append({
+            "name": name,
+            "current_passed": current_passed,
+            "fields_passed": fields_passed,
+            "passed": current_passed and fields_passed,
+            "fields": field_results,
+        })
+
+    overall = all(c["passed"] for c in check_results)
+    return {"passed": overall, "tolerance_pct": tolerance_pct, "checks": check_results}
+
+
+def render_comparison_report(comparison: dict) -> str:
+    lines = ["# Snapshot Comparison Report", ""]
+    overall = "PASS" if comparison["passed"] else "FAIL"
+    lines.append(f"**Overall:** {overall}  |  tolerance: {comparison['tolerance_pct']}%")
+    lines.append("")
+
+    for c in comparison["checks"]:
+        verdict = "PASS" if c["passed"] else "FAIL"
+        lines.append(f"## {c['name']} — {verdict}")
+        lines.append("")
+        if c.get("error"):
+            lines.append(f"**Error:** {c['error']}")
+            lines.append("")
+            continue
+        if not c["current_passed"]:
+            lines.append("**Note:** current check result is FAIL (independent of baseline drift)")
+            lines.append("")
+        lines.append("| Field | Baseline | Current | Diff% | Status |")
+        lines.append("|-------|----------|---------|-------|--------|")
+        for f in c["fields"]:
+            if f.get("elements"):
+                status = "PASS" if f["passed"] else "FAIL"
+                lines.append(f"| {f['key']} | (list) | (list) | — | {status} |")
+            else:
+                diff = f["diff_pct"]
+                diff_str = f"{diff:.2f}%" if isinstance(diff, float) else "—"
+                status = "PASS" if f["passed"] else "FAIL"
+                lines.append(f"| {f['key']} | {f['baseline']} | {f['current']} | {diff_str} | {status} |")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+# ── Genie output checks ───────────────────────────────────────────────
+
+def build_genie_expected() -> dict:
+    """Hard-coded expected Genie results from GDS_FTW.md Test 1.
+
+    The top_10_accounts list is the exact order Genie returned. Users can
+    redirect this output to a file, edit the list to match a live Genie run,
+    and then use it as --genie-json input.
+    """
+    return {
+        "schema_version": SNAPSHOT_SCHEMA_VERSION,
+        "kind": "genie_output",
+        "checks": [
+            {
+                "name": "Genie-Test1-Centrality",
+                "description": "Which accounts are most central to the money flow?",
+                "measured": {
+                    "top_10_accounts": [18762, 11147, 3801, 15940, 7698, 22333, 708, 9088, 3563, 6041],
+                    "whale_count": 10,
+                    "fraud_count": 0,
+                },
+                "passed": True,
+            }
+        ],
+    }
+
+
+def check_genie_output(genie_snapshot: dict, whale_ids: set, fraud_ids: set) -> list:
+    """Validate a recorded Genie output JSON against ground truth.
+
+    Checks that the accounts Genie named are correctly labelled as whales
+    (not fraud ring members), confirming the demo's before-GDS failure mode.
+    """
+    checks_out = []
+    for entry in genie_snapshot.get("checks", []):
+        top_accounts = entry.get("measured", {}).get("top_10_accounts", [])
+        whale_count = int(sum(1 for a in top_accounts if a in whale_ids))
+        fraud_count = int(sum(1 for a in top_accounts if a in fraud_ids))
+        expected_whale = entry["measured"].get("whale_count")
+        expected_fraud = entry["measured"].get("fraud_count")
+
+        passed = (
+            whale_count == expected_whale
+            and fraud_count == expected_fraud
+        )
+        diagnostic = None
+        if not passed:
+            msgs = []
+            if whale_count != expected_whale:
+                msgs.append(f"whale_count {whale_count} != expected {expected_whale}")
+            if fraud_count != expected_fraud:
+                msgs.append(f"fraud_count {fraud_count} != expected {expected_fraud}")
+            diagnostic = "; ".join(msgs)
+
+        checks_out.append({
+            "name": entry["name"],
+            "target": (
+                f"All top-10 accounts are whales (whale_count={expected_whale}), "
+                f"no fraud ring members (fraud_count={expected_fraud})."
+            ),
+            "measured": {
+                "top_10_accounts": top_accounts,
+                "whale_count": whale_count,
+                "fraud_count": fraud_count,
+            },
+            "diagnostic": diagnostic,
+            "passed": passed,
+        })
+    return checks_out
+
+
+# ── GDS output checks ─────────────────────────────────────────────────
+
+def check_gds_output(gds_csv_path: Path, fraud_ids: set) -> list:
+    """Validate enriched Account node properties exported from Databricks.
+
+    Expects a CSV with columns:
+        account_id, is_fraud, risk_score, community_id, similarity_score
+
+    Returns three check dicts covering PageRank, Louvain, and Node Similarity
+    distributions.
+    """
+    df = pd.read_csv(gds_csv_path)
+    required = {"account_id", "is_fraud", "risk_score", "community_id", "similarity_score"}
+    missing = required - set(df.columns)
+    if missing:
+        raise SystemExit(
+            f"GDS CSV is missing columns: {', '.join(sorted(missing))}. "
+            "Export account_id, is_fraud, risk_score, community_id, similarity_score "
+            "from Databricks notebook 03."
+        )
+
+    df["_is_fraud"] = df["account_id"].isin(fraud_ids)
+
+    # ── PageRank ──────────────────────────────────────────────────────
+    fraud_rs   = df[df["_is_fraud"]]["risk_score"]
+    normal_rs  = df[~df["_is_fraud"]]["risk_score"]
+    fraud_avg  = float(fraud_rs.mean()) if len(fraud_rs) else 0.0
+    normal_avg = float(normal_rs.mean()) if len(normal_rs) else 0.0
+    ratio_pr   = fraud_avg / normal_avg if normal_avg > 0 else float("inf")
+
+    top20 = df.nlargest(20, "risk_score")
+    top20_fraud_frac = float(top20["_is_fraud"].mean())
+
+    pr_passed = ratio_pr >= 2.0 and top20_fraud_frac >= 0.5
+    pr_diagnostic = None
+    if not pr_passed:
+        msgs = []
+        if ratio_pr < 2.0:
+            msgs.append(f"fraud_to_normal_ratio {ratio_pr:.2f} < 2.0")
+        if top20_fraud_frac < 0.5:
+            msgs.append(f"top_20_fraud_fraction {top20_fraud_frac:.2f} < 0.5")
+        pr_diagnostic = "; ".join(msgs)
+
+    pagerank_check = {
+        "name": "GDS-PageRank-Distribution",
+        "target": "fraud_to_normal_ratio >= 2.0, top_20_fraud_fraction >= 0.5",
+        "measured": {
+            "fraud_avg_risk_score":   round(fraud_avg, 6),
+            "normal_avg_risk_score":  round(normal_avg, 6),
+            "fraud_to_normal_ratio":  round(ratio_pr, 2) if ratio_pr != float("inf") else "inf",
+            "top_20_fraud_fraction":  round(top20_fraud_frac, 3),
+        },
+        "diagnostic": pr_diagnostic,
+        "passed": pr_passed,
+    }
+
+    # ── Louvain ───────────────────────────────────────────────────────
+    community_sizes = df.groupby("community_id").size().rename("size")
+    tight = community_sizes[community_sizes >= 80]
+    tight_count = int(len(tight))
+
+    top10_communities = community_sizes.nlargest(10).index.tolist()
+    purities = []
+    for cid in top10_communities:
+        members = df[df["community_id"] == cid]
+        purity = float(members["_is_fraud"].mean()) if len(members) else 0.0
+        purities.append(purity)
+    avg_purity = sum(purities) / len(purities) if purities else 0.0
+
+    lv_passed = tight_count >= 8 and avg_purity >= 0.8
+    lv_diagnostic = None
+    if not lv_passed:
+        msgs = []
+        if tight_count < 8:
+            msgs.append(f"tight_communities_count {tight_count} < 8 (expected ~10)")
+        if avg_purity < 0.8:
+            msgs.append(f"avg_fraud_purity_top10 {avg_purity:.2f} < 0.8")
+        lv_diagnostic = "; ".join(msgs)
+
+    louvain_check = {
+        "name": "GDS-Louvain-Community-Purity",
+        "target": "tight_communities_count >= 8, avg_fraud_purity_top10 >= 0.8",
+        "measured": {
+            "tight_communities_count": tight_count,
+            "avg_fraud_purity_top10":  round(avg_purity, 3),
+            "top10_community_purities": [round(p, 3) for p in purities],
+        },
+        "diagnostic": lv_diagnostic,
+        "passed": lv_passed,
+    }
+
+    # ── Node Similarity ───────────────────────────────────────────────
+    fraud_sim  = df[df["_is_fraud"]]["similarity_score"]
+    normal_sim = df[~df["_is_fraud"]]["similarity_score"]
+    fraud_sim_avg  = float(fraud_sim.mean()) if len(fraud_sim) else 0.0
+    normal_sim_avg = float(normal_sim.mean()) if len(normal_sim) else 0.0
+    ratio_sim = fraud_sim_avg / normal_sim_avg if normal_sim_avg > 0 else float("inf")
+
+    ns_passed = ratio_sim >= 2.0
+    ns_diagnostic = None
+    if not ns_passed:
+        ns_diagnostic = (
+            f"within_ring_ratio {ratio_sim:.2f} < 2.0. "
+            "Fraud accounts should have markedly higher max similarity_score than normal accounts."
+        )
+
+    nodesim_check = {
+        "name": "GDS-NodeSimilarity-Distribution",
+        "target": "within_ring_ratio (fraud_avg / normal_avg similarity_score) >= 2.0",
+        "measured": {
+            "fraud_avg_similarity":  round(fraud_sim_avg, 5),
+            "normal_avg_similarity": round(normal_sim_avg, 5),
+            "within_ring_ratio":     round(ratio_sim, 2) if ratio_sim != float("inf") else "inf",
+        },
+        "diagnostic": ns_diagnostic,
+        "passed": ns_passed,
+    }
+
+    return [pagerank_check, louvain_check, nodesim_check]
+
+
 # ── Entry point ───────────────────────────────────────────────────────
 
 def main():
@@ -393,7 +718,38 @@ def main():
         help="Directory containing accounts.csv, account_labels.csv, merchants.csv, "
              "transactions.csv, account_links.csv (default: ./data)",
     )
+    parser.add_argument(
+        "--output-json", metavar="PATH",
+        help="Write structural check results as a JSON snapshot to PATH.",
+    )
+    parser.add_argument(
+        "--compare-json", metavar="PATH",
+        help="Compare current structural results against a prior JSON snapshot at PATH.",
+    )
+    parser.add_argument(
+        "--tolerance-pct", type=float, default=5.0,
+        help="Relative tolerance in percent for float comparisons (default: 5.0).",
+    )
+    parser.add_argument(
+        "--gds-csv", metavar="PATH",
+        help="Path to enriched accounts CSV (account_id, is_fraud, risk_score, "
+             "community_id, similarity_score). Runs GDS distribution checks.",
+    )
+    parser.add_argument(
+        "--genie-json", metavar="PATH",
+        help="Path to a recorded Genie output JSON snapshot. "
+             "Validates whale/fraud account split.",
+    )
+    parser.add_argument(
+        "--emit-genie-expected", action="store_true",
+        help="Print the expected Genie output template as JSON and exit. "
+             "Redirect to a file to use as a --genie-json baseline.",
+    )
     args = parser.parse_args()
+
+    if args.emit_genie_expected:
+        print(json.dumps(build_genie_expected(), indent=2))
+        sys.exit(0)
 
     input_dir = Path(args.input)
     if not input_dir.exists():
@@ -423,7 +779,38 @@ def main():
 
     print(render_report(checks))
 
-    if not all(c["passed"] for c in checks):
+    structural_failed = not all(c["passed"] for c in checks)
+
+    snapshot = build_snapshot(checks)
+
+    if args.output_json:
+        write_snapshot(snapshot, Path(args.output_json))
+
+    if args.compare_json:
+        baseline = json.loads(Path(args.compare_json).read_text())
+        comparison = compare_snapshots(baseline, snapshot, args.tolerance_pct)
+        print(render_comparison_report(comparison))
+        if not comparison["passed"]:
+            sys.exit(1)
+
+    if args.gds_csv:
+        gds_checks = check_gds_output(Path(args.gds_csv), fraud_ids)
+        print(render_report(gds_checks))
+        if args.output_json:
+            gds_path = Path(args.output_json)
+            gds_out = gds_path.with_stem(gds_path.stem + "_gds")
+            write_snapshot(build_snapshot(gds_checks, kind="gds_output"), gds_out)
+        if not all(c["passed"] for c in gds_checks):
+            sys.exit(1)
+
+    if args.genie_json:
+        genie_data = json.loads(Path(args.genie_json).read_text())
+        genie_checks = check_genie_output(genie_data, whale_ids, fraud_ids)
+        print(render_report(genie_checks))
+        if not all(c["passed"] for c in genie_checks):
+            sys.exit(1)
+
+    if structural_failed:
         sys.exit(1)
 
 
