@@ -14,7 +14,7 @@ transactions tables carry no is_fraud / is_fraud_txn columns. Labels
 live exclusively in account_labels, which is used in notebook 03 for
 model training and evaluation.
 
-Called by "0 - Required Setup" via %run.
+Called by "00_required_setup" via %run.
 """
 
 

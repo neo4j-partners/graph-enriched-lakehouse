@@ -1,6 +1,6 @@
 # Graph-Enriched Lakehouse
 
-Demos that show what happens when Databricks and Neo4j GDS work together — loading Delta tables into a property graph, running graph algorithms, writing the results back as new columns, and letting downstream tools (Genie, ML models) use structural features that no column-based query can produce on its own.
+Demos that show what happens when Databricks and Neo4j GDS work together: loading Delta tables into a property graph, running graph algorithms, writing the results back as new columns, and letting downstream tools use structural features that no column-based query can produce on its own.
 
 ---
 

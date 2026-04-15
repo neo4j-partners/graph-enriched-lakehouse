@@ -299,31 +299,48 @@ def check_column_signals(accounts_df, transactions_df, merchants_df, fraud_ids):
         for name, f, n in columns
     ]
 
+    # txn_amount is a deliberately preserved real-world weak signal (see README
+    # step 3). The other columns stay at the strict <10% bar.
+    column_thresholds = {
+        "balance":    10,
+        "holder_age": 10,
+        "txn_amount": 15,
+        "txn_hour":   10,
+    }
+
     high_risk_gap_pp = abs(hr_f - hr_n) * 100
-    columns_pass     = all(c["diff_pct"] < 10 for c in column_results)
+    columns_pass     = all(
+        c["diff_pct"] < column_thresholds[c["column"]] for c in column_results
+    )
     high_risk_pass   = high_risk_gap_pp < 5
     passed           = columns_pass and high_risk_pass
 
     diagnostic = None
     if not passed:
-        leaked = [c["column"] for c in column_results if c["diff_pct"] >= 10]
+        leaked = [
+            c["column"]
+            for c in column_results
+            if c["diff_pct"] >= column_thresholds[c["column"]]
+        ]
         msgs   = []
         if leaked:
             msgs.append(f"leaked columns: {', '.join(leaked)}")
         if not high_risk_pass:
             msgs.append(f"high_risk_gap_pp {high_risk_gap_pp:.2f} >= 5")
         diagnostic = (
-            f"{'; '.join(msgs)}. A column-level gap means the generator is leaking "
-            "structural signal into a flat feature. Rebalance the column's "
-            "fraud-vs-normal distributions in generate_transactions() or "
-            "generate_accounts()."
+            f"{'; '.join(msgs)}. A column-level gap beyond its threshold means the "
+            "generator is leaking more signal than the design budget allows. "
+            "Rebalance the column's fraud-vs-normal distributions in "
+            "generate_transactions() or generate_accounts()."
         )
 
     return {
         "name": "Column-Signal Sanity",
         "target": (
-            "Every flat column shows <10% relative difference between fraud and normal. "
-            "High-risk merchant fraction gap <= 5 pp (README claim: 23.4% vs 21.0%, gap 2.4)."
+            "balance, holder_age, txn_hour: <10% relative difference between fraud "
+            "and normal. txn_amount: <15% (deliberately preserved weak signal, see "
+            "README step 3). High-risk merchant fraction gap <= 5 pp (README claim: "
+            "23.4% vs 21.0%, gap 2.4)."
         ),
         "measured": {
             "columns": column_results,

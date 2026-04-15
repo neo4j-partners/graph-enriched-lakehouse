@@ -1,7 +1,7 @@
 # GDS Algorithms in Neo4j Aura
 
 **This is a reference guide.** Run these commands in the **Neo4j Aura Workspace**
-(Query tab) — not in Databricks. It is a plain-markdown alternative to
+(Query tab), not in Databricks. It is a plain-markdown alternative to
 [`02_aura_gds_guide.py`](./02_aura_gds_guide.py) for readers who prefer to follow
 along outside a Databricks notebook.
 
@@ -48,7 +48,7 @@ ORDER BY is_fraud DESC
 ```
 
 **What to look for:** ~200 fraud accounts (4%) vs ~4,800 legitimate accounts.
-Balances and holder-age ranges should overlap heavily — that's the whole point
+Balances and holder-age ranges should overlap heavily; that is the whole point
 of the dataset. The graph is where the separation lives.
 
 ### 1c. Merchant risk-tier distribution
@@ -62,7 +62,7 @@ ORDER BY risk_tier, merchant_count DESC
 ```
 
 **What to look for:** `crypto` and `gaming` categories skew heavily toward
-`risk_tier = high` — these are the merchants fraud accounts preferentially
+`risk_tier = high`: these are the merchants fraud accounts preferentially
 transact with.
 
 ### 1d. Sample the subgraph around a fraud account
@@ -84,7 +84,7 @@ account. Good visual primer before running the algorithms.
 ## Step 2: Project the Account Transfer Graph
 
 GDS algorithms run on an **in-memory graph projection**, not directly on the database.
-This projects only Account nodes and `TRANSFERRED_TO` relationships — the peer-to-peer
+This projects only Account nodes and `TRANSFERRED_TO` relationships: the peer-to-peer
 money-flow graph where fraud rings live.
 
 ```cypher
@@ -104,8 +104,8 @@ RETURN graphName, nodeCount, relationshipCount
 ## Step 3: Run PageRank (Risk Centrality)
 
 PageRank measures how "central" an account is in the transfer network.
-Accounts that receive money from many well-connected accounts score higher —
-exactly how money-mule networks operate.
+Accounts that receive money from many well-connected accounts score higher.
+That is exactly how money-mule networks operate.
 
 ```cypher
 CALL gds.pageRank.write(
@@ -120,7 +120,7 @@ YIELD nodePropertiesWritten, ranIterations, didConverge
 RETURN nodePropertiesWritten, ranIterations, didConverge
 ```
 
-**Verify — top 10 by PageRank:**
+**Verify: top 10 by PageRank:**
 
 ```cypher
 MATCH (a:Account)
@@ -132,7 +132,7 @@ ORDER BY a.risk_score DESC
 LIMIT 10
 ```
 
-Look for fraud accounts appearing in the top results — that's the signal.
+Look for fraud accounts appearing in the top results. That is the signal.
 
 ---
 
@@ -153,7 +153,7 @@ YIELD communityCount, modularity, nodePropertiesWritten
 RETURN communityCount, modularity, nodePropertiesWritten
 ```
 
-**Verify — community size distribution:**
+**Verify: community size distribution:**
 
 ```cypher
 MATCH (a:Account)
@@ -226,7 +226,7 @@ YIELD nodesCompared, relationshipsWritten
 RETURN nodesCompared, relationshipsWritten
 ```
 
-**Verify — most similar account pairs:**
+**Verify: most similar account pairs:**
 
 ```cypher
 MATCH (a:Account)-[s:SIMILAR_TO]-(b:Account)
@@ -267,7 +267,7 @@ RETURN graphName
 
 ---
 
-## Step 10: Final Verification — All Features Written
+## Step 10: Final Verification, All Features Written
 
 Confirm all three properties exist on Account nodes:
 
@@ -308,7 +308,7 @@ A fraud ring is a Louvain community where multiple accounts both send *and*
 receive money within the same community. Accounts that only send or only
 receive are peripheral; accounts on both sides of a transfer are core ring
 participants. The query collects senders and receivers per community, then
-intersects them — any account in both lists is a confirmed bidirectional
+intersects them. Any account in both lists is a confirmed bidirectional
 participant. Communities with three or more such accounts are coordinated
 rings, not coincidence.
 
@@ -330,7 +330,7 @@ ORDER BY ring_size DESC
 
 **What to look for:** small communities (tight clusters) with `ring_size >= 3`.
 Cross-reference the `ring_members` account IDs against the `is_fraud` ground
-truth and you should see a high precision — the Louvain + bidirectional
+truth and you should see high precision. The Louvain + bidirectional
 intersection combo finds rings without needing labels.
 
 ### 11b. Off-Hours Transaction Detection
@@ -364,7 +364,7 @@ LIMIT 25
 
 **What to look for:** accounts with high `off_hours_count` that *also* have
 a high `risk_score` and share a `community_id` with other flagged accounts.
-Those are the strongest fraud candidates — three independent signals pointing
+Those are the strongest fraud candidates: three independent signals pointing
 at the same account.
 
 ---
@@ -373,9 +373,9 @@ at the same account.
 
 The graph now has three GDS-computed properties on every Account node:
 
-- `risk_score` — centrality in the transfer network
-- `community_id` — Louvain cluster assignment
-- `similarity_score` — highest Jaccard similarity to any other account
+- `risk_score`: centrality in the transfer network
+- `community_id`: Louvain cluster assignment
+- `similarity_score`: highest Jaccard similarity to any other account
 
 **Next →** Return to Databricks and run `03_pull_and_model` to read these
 features back and measure the ML lift.
