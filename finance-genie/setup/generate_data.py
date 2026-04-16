@@ -66,6 +66,8 @@ from config import (
     WHALE_RECIPIENT_POOL_SIZE,
     RING_ANCHOR_CNT,
     RING_ANCHOR_PREF,
+    CAPTAIN_COUNT,
+    CAPTAIN_TRANSFER_PROB,
     FRAUD_LOGNORM_MU,
     FRAUD_LOGNORM_SIGMA,
     NORMAL_LOGNORM_MU,
@@ -294,6 +296,15 @@ def generate_account_links(
     whale_list = list(whale_ids)
     base_date  = datetime(2024, 1, 1)
 
+    # Pre-assign captains for each ring. Captains are the primary inbound
+    # targets for CAPTAIN_TRANSFER_PROB of within-ring transfers, concentrating
+    # PageRank on a small set of high-degree nodes so ring members surface in
+    # the top-20 by risk_score.
+    ring_captain_lists = [
+        random.sample(list(ring), min(CAPTAIN_COUNT, len(ring)))
+        for ring in rings
+    ]
+
     rows = []
     for link_id in range(1, NUM_P2P + 1):
         r = random.random()
@@ -304,9 +315,17 @@ def generate_account_links(
             # bilateral counts stay low (1-3) — Genie's pair-grouping
             # can surface a few suspicious pairs but cannot reveal the
             # full ring of ~100 accounts.
-            ring      = random.choice(rings)
-            ring_list = list(ring)
-            src, dst  = random.sample(ring_list, 2)
+            ring_idx  = random.randrange(len(rings))
+            ring_list = list(rings[ring_idx])
+            captains  = ring_captain_lists[ring_idx]
+
+            if captains and random.random() < CAPTAIN_TRANSFER_PROB:
+                # Route to a captain as receiver: concentrates inbound
+                # PageRank on captains, which then propagates to the ring.
+                dst = random.choice(captains)
+                src = random.choice([a for a in ring_list if a != dst])
+            else:
+                src, dst = random.sample(ring_list, 2)
 
         elif r < WITHIN_RING_PROB + WHALE_INBOUND:
             # Transfer TO a whale: inflates whale raw inbound counts so

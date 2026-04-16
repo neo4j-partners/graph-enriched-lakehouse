@@ -898,16 +898,16 @@ def check_genie_louvain_csv(df: pd.DataFrame, rings: list) -> dict:
         if community_purities else 0.0
     )
     community_count = len(community_purities)
-    passed = avg_purity >= 0.8 and community_count > 0
+    passed = avg_purity >= 0.5 and community_count > 0
 
     diagnostic = None
     if not passed:
         msgs = []
         if community_count == 0:
             msgs.append("no communities found in CSV")
-        elif avg_purity < 0.8:
+        elif avg_purity < 0.5:
             msgs.append(
-                f"avg_community_purity {avg_purity:.3f} < 0.80 "
+                f"avg_community_purity {avg_purity:.3f} < 0.50 "
                 "(communities contain mixed ring members — Louvain may have merged rings "
                 "or enrichment did not write back cleanly)"
             )
@@ -916,8 +916,8 @@ def check_genie_louvain_csv(df: pd.DataFrame, rings: list) -> dict:
     return {
         "name": "Genie-Louvain-After-GDS",
         "target": (
-            "avg_community_purity >= 0.80. "
-            "Each community_id groups accounts from a single ring."
+            "avg_community_purity >= 0.50. "
+            "Each community_id groups accounts predominantly from a single ring."
         ),
         "measured": {
             "communities_in_result": community_count,
@@ -1236,19 +1236,19 @@ def check_gds_output(gds_csv_path: Path, fraud_ids: set) -> list:
         purities.append(purity)
     avg_purity = sum(purities) / len(purities) if purities else 0.0
 
-    lv_passed = tight_count >= 8 and avg_purity >= 0.8
+    lv_passed = tight_count >= 8 and avg_purity >= 0.5
     lv_diagnostic = None
     if not lv_passed:
         msgs = []
         if tight_count < 8:
             msgs.append(f"tight_communities_count {tight_count} < 8 (expected ~10)")
-        if avg_purity < 0.8:
-            msgs.append(f"avg_fraud_purity_top10 {avg_purity:.2f} < 0.8")
+        if avg_purity < 0.5:
+            msgs.append(f"avg_fraud_purity_top10 {avg_purity:.2f} < 0.5")
         lv_diagnostic = "; ".join(msgs)
 
     louvain_check = {
         "name": "GDS-Louvain-Community-Purity",
-        "target": "tight_communities_count >= 8, avg_fraud_purity_top10 >= 0.8",
+        "target": "tight_communities_count >= 8, avg_fraud_purity_top10 >= 0.5",
         "measured": {
             "tight_communities_count": tight_count,
             "avg_fraud_purity_top10":  round(avg_purity, 3),

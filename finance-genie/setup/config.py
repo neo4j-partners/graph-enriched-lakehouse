@@ -43,7 +43,7 @@ SEED = _int("SEED", 42)
 # These set dataset size. Change for larger/smaller datasets, not for
 # signal tuning.
 NUM_ACCOUNTS  = _int("NUM_ACCOUNTS",  25_000)
-NUM_MERCHANTS = _int("NUM_MERCHANTS",  2_500)
+NUM_MERCHANTS = _int("NUM_MERCHANTS",  7_500)
 NUM_TXN       = _int("NUM_TXN",      250_000)
 NUM_P2P       = _int("NUM_P2P",       40_000)
 FRAUD_RATE    = _float("FRAUD_RATE",    0.04)
@@ -56,14 +56,14 @@ WHALE_RATE    = _float("WHALE_RATE",   0.008)
 
 # Fraction of P2P links that stay within a ring.
 # Primary driver of the density ratio (within-ring vs background).
-# Current value (0.30) produces ~2726x density ratio.
+# Raised to 0.50 (from 0.30) to strengthen ring PageRank signal.
 # Lower this to weaken Louvain and PageRank signal.
-WITHIN_RING_PROB = _float("WITHIN_RING_PROB", 0.30)
+WITHIN_RING_PROB = _float("WITHIN_RING_PROB", 0.50)
 
 # Fraction of P2P links directed to whale accounts.
 # Controls how strongly raw inbound count misdirects Genie.
-# Reducing this makes whales less dominant in Genie's centrality query.
-WHALE_INBOUND = _float("WHALE_INBOUND", 0.20)
+# Reduced to 0.10 (from 0.20) to make whale edge dominance less extreme.
+WHALE_INBOUND = _float("WHALE_INBOUND", 0.10)
 
 # Fraction of P2P links originating from whale accounts.
 # Gives whales bidirectional P2P volume so they resemble payment aggregators
@@ -71,7 +71,7 @@ WHALE_INBOUND = _float("WHALE_INBOUND", 0.20)
 # random accounts — not ring members — to preserve the sender-peripherality
 # property that PageRank uses to separate whales from ring members.
 # Should be set equal to WHALE_INBOUND so inbound and outbound volumes match.
-WHALE_OUTBOUND = _float("WHALE_OUTBOUND", 0.20)
+WHALE_OUTBOUND = _float("WHALE_OUTBOUND", 0.10)
 
 # When True, each whale sends only to a pre-assigned fixed pool of recurring
 # plain-normal-account recipients, matching the consistent-counterparty pattern
@@ -86,13 +86,25 @@ WHALE_RECIPIENT_POOL_SIZE = _int("WHALE_RECIPIENT_POOL_SIZE", 30)
 
 # Probability a fraud account visits a ring-anchor merchant per transaction.
 # Primary driver of within-ring Jaccard similarity.
-# Current value (0.18) produces ~14.78x Jaccard ratio.
+# Raised to 0.40 (from 0.18) to boost ring signal above the noise floor.
+# At 0.40, ring members visit ~2.8 of 5 anchors on average; combined with
+# NUM_MERCHANTS=7500 (noise floor ~0.10-0.12), expected ratio ~1.5-2.0x.
 # Lower this to weaken Node Similarity signal.
-RING_ANCHOR_PREF = _float("RING_ANCHOR_PREF", 0.18)
+RING_ANCHOR_PREF = _float("RING_ANCHOR_PREF", 0.40)
 
 # Number of shared anchor merchants assigned per ring.
 # Sets the Jaccard ceiling. Fewer anchors narrows the shared merchant pool.
 RING_ANCHOR_CNT = _int("RING_ANCHOR_CNT", 5)
+
+# Number of captains designated per ring.
+# Captains absorb CAPTAIN_TRANSFER_PROB of intra-ring inbound transfers,
+# concentrating PageRank within the ring so captains surface in the top-20.
+CAPTAIN_COUNT = _int("CAPTAIN_COUNT", 5)
+
+# Fraction of within-ring transfers that route to a captain as receiver.
+# At 0.50, half of intra-ring transfers target captains, concentrating
+# inbound PageRank on 5 high-degree nodes per ring.
+CAPTAIN_TRANSFER_PROB = _float("CAPTAIN_TRANSFER_PROB", 0.10)
 
 # ── Transaction amount distributions ─────────────────────────────────
 # Lognormal parameters for transaction amounts. The fraud/normal gap is

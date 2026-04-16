@@ -108,3 +108,4 @@ $RECYCLE.BIN/
 *.lnk
 
 worklog/
+.claude/

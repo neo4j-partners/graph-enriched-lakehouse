@@ -77,6 +77,61 @@ uv run python -m cli clean --yes
 7. Writes `TRANSFERRED_TO` relationships — `account_links` (Account → Account)
 8. Prints node and relationship counts as verification
 
+## Automated Genie testing
+
+`agent_modules/genie_test.py` automates the three validation questions from `genie_demos/gds_enrichment_closes_gaps.ipynb` so you can iterate on a Genie Space's **Instructions** field and get pass/fail feedback in one command instead of re-running a notebook.
+
+### What it checks
+
+| Case | Question | Pass criterion |
+|------|----------|----------------|
+| `hub_detection` | "Which accounts have the highest fraud risk based on their transfer network position?" | top-20 precision > 0.70 |
+| `community_structure` | "Find groups of accounts that form suspicious transaction communities based on their transfer patterns." | max Louvain ring coverage > 0.80 |
+| `similarity_pairs` | "Which pairs of accounts share the most similar merchant visit patterns?" | top same-ring fraction > 0.60 |
+
+Each question runs up to `GENIE_TEST_RETRIES` times (default 2). The check functions live in `agent_modules/demo_utils.py`, a project-local trim of `genie_demos/demo_utils.py` scoped to the three after-GDS checks this runner uses.
+
+### Additional `.env` keys
+
+```bash
+GENIE_SPACE_ID=<after-gds-genie-space-id>
+GROUND_TRUTH_PATH=/Volumes/<catalog>/<schema>/<volume>/ground_truth.json
+RESULTS_VOLUME_DIR=/Volumes/<catalog>/<schema>/<volume>/genie_test_results
+GENIE_TEST_RETRIES=2
+GENIE_TEST_TIMEOUT_SECONDS=120
+```
+
+The `RESULTS_VOLUME_DIR` must exist before the first run. Create it with:
+
+```bash
+uv run python -m cli volume create <catalog>.<schema>.<volume>
+```
+
+### Usage
+
+```bash
+uv run python -m cli upload --all
+uv run python -m cli submit genie_test.py
+uv run python -m cli logs
+```
+
+Sample output:
+
+```
+============================================================
+Genie test run — 2026-04-16T14:32:10Z
+Space: 01abc...
+============================================================
+  hub_detection          PASS   precision=0.85             attempt=1/2
+  community_structure    FAIL   max_ring_coverage=0.52     attempt=2/2
+  similarity_pairs       PASS   same_ring_fraction=0.70    attempt=1/2
+------------------------------------------------------------
+PASSED: 2   FAILED: 1
+Artifact: /Volumes/.../genie_test_results/genie_test_2026-04-16T14-32-10Z.json
+```
+
+The job exits non-zero if any check fails, and writes a full JSON artifact (including Genie SQL, row counts, and a preview of returned rows) to `RESULTS_VOLUME_DIR` for later inspection.
+
 ## Project structure
 
 ```
@@ -87,5 +142,7 @@ accelerator/
 │   ├── __init__.py         # Runner instantiation
 │   └── __main__.py         # python -m cli entry point
 └── agent_modules/
-    └── neo4j_ingest.py     # translated notebook logic, runs on Databricks
+    ├── neo4j_ingest.py     # translated notebook logic, runs on Databricks
+    ├── genie_test.py       # automated Genie Space test runner
+    └── demo_utils.py       # Genie API + check helpers used by genie_test.py
 ```
