@@ -45,7 +45,7 @@ Open a Genie space against the Delta tables created in step 2 and work through t
 
 **"Which accounts are most central to the money flow?"**
 
-Genie has no formal definition of centrality to work with. It interprets the question as a ranking problem and falls back on raw inbound transfer count, returning the whale accounts: normal accounts that happen to collect many transfers from peripheral senders. The ten fraud rings do not appear. Recursive centrality depends on *who* is sending, not how many transfers arrived, and no flat sort can capture that definition.
+Genie has no formal definition of centrality to work with. It interprets the question as a ranking problem and falls back on raw inbound transfer count, returning the whale accounts: normal accounts modeled as payment aggregators that collect many transfers from peripheral senders and send to many recipients. The ten fraud rings do not appear. Recursive centrality depends on *who* is sending, not how many transfers arrived, and no flat sort can capture that definition.
 
 **"Which accounts receive the most transfers from other high-volume accounts?"**
 

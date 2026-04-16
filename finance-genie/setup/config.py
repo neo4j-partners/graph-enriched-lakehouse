@@ -58,6 +58,14 @@ WITHIN_RING_PROB = _float("WITHIN_RING_PROB", 0.30)
 # Reducing this makes whales less dominant in Genie's centrality query.
 WHALE_INBOUND = _float("WHALE_INBOUND", 0.20)
 
+# Fraction of P2P links originating from whale accounts.
+# Gives whales bidirectional P2P volume so they resemble payment aggregators
+# (high in, high out) rather than pure collection accounts. Outbound goes to
+# random accounts — not ring members — to preserve the sender-peripherality
+# property that PageRank uses to separate whales from ring members.
+# Should be set equal to WHALE_INBOUND so inbound and outbound volumes match.
+WHALE_OUTBOUND = _float("WHALE_OUTBOUND", 0.20)
+
 # Probability a fraud account visits a ring-anchor merchant per transaction.
 # Primary driver of within-ring Jaccard similarity.
 # Current value (0.18) produces ~14.78x Jaccard ratio.

@@ -60,6 +60,7 @@ from config import (
     WITHIN_RING_PROB,
     WHALE_RATE,
     WHALE_INBOUND,
+    WHALE_OUTBOUND,
     RING_ANCHOR_CNT,
     RING_ANCHOR_PREF,
     FRAUD_LOGNORM_MU,
@@ -283,6 +284,17 @@ def generate_account_links(
             src = random.randint(1, NUM_ACCOUNTS)
             while src == dst:
                 src = random.randint(1, NUM_ACCOUNTS)
+
+        elif r < WITHIN_RING_PROB + WHALE_INBOUND + WHALE_OUTBOUND:
+            # Transfer FROM a whale: gives whales bidirectional P2P volume
+            # so they resemble payment aggregators (high in, high out) rather
+            # than pure collection accounts.  Outbound goes to random accounts,
+            # not ring members, preserving the sender-peripherality property
+            # that PageRank uses to separate whales from ring members.
+            src = random.choice(whale_list)
+            dst = random.randint(1, NUM_ACCOUNTS)
+            while dst == src:
+                dst = random.randint(1, NUM_ACCOUNTS)
 
         else:
             # Fully random transfer — background noise.
