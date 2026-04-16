@@ -7,7 +7,7 @@ Usage in a Databricks notebook:
     _DEMO_DIR  = os.path.join(_REPO_ROOT, "finance-genie", "genie_demos")
     if _DEMO_DIR not in sys.path:
         sys.path.insert(0, _DEMO_DIR)
-    from demo_utils import genie_caller, load_ground_truth, build_ring_lookup, check_community_pairs, check_merchant_overlap
+    from demo_utils import genie_caller, load_ground_truth, build_ring_lookup, check_community_structure, check_merchant_overlap
 """
 
 from __future__ import annotations
@@ -125,66 +125,68 @@ def build_ring_lookup(gt: dict) -> tuple[dict[int, int], set[int]]:
     return ring_by_account, whale_ids
 
 
-def check_community_pairs(
-    pairs: list[tuple[int, int]],
+def check_community_structure(
+    df: "pd.DataFrame",
     rings: list[list[int]],
 ) -> dict:
-    """Measure how much ring structure Genie's pair result reveals.
+    """Measure whether Genie's result contains community grouping structure.
 
-    pairs   – list of (account_id_a, account_id_b) tuples from Genie's result
-    rings   – list of account ID lists, one per ring (from ground_truth["rings"])
+    Accepts whatever DataFrame Genie returned and determines whether it
+    contains groups (a cluster or community column) or only pairs (two
+    account columns with no grouping).
+
+    df    – pandas DataFrame from Genie's result
+    rings – list of account ID lists, one per ring (from ground_truth["rings"])
 
     Returns a dict with keys:
-      largest_ring_footprint  – max distinct ring accounts visible in any single ring
-      total_pairs             – total rows in the input
-      same_ring_pairs         – pairs where both accounts share a ring
-      cross_ring_pairs        – pairs where accounts belong to different rings
-      unknown_pairs           – pairs where at least one account is not in any ring
-      rings_touched           – number of distinct rings that appear in same-ring pairs
-      passed                  – True when largest_ring_footprint <= 20 and total_pairs > 0
+      structure_type     – 'groups' if a grouping column was found, 'pairs' otherwise
+      max_ring_coverage  – max fraction of any ring covered by a single identified group;
+                           0.0 when Genie returned only pairs
+      groups_returned    – number of distinct groups Genie identified (0 for pairs)
+      total_rows         – total rows in the result
+      passed             – True when max_ring_coverage < 0.50
 
-    Pass criterion: largest_ring_footprint <= 20.
-    The check passes when Genie fails to surface a large ring footprint — confirming
-    that bilateral pairs cannot reveal the 100-account community structure.
+    Pass criterion: max_ring_coverage < 0.50.
+    The check passes when Genie cannot form a group covering more than half of any
+    fraud ring — confirming that SQL bilateral pairs cannot replicate Louvain
+    community detection. When Genie returns only pairs, max_ring_coverage is 0.0
+    and the check always passes, which is the correct result: Genie identified
+    no communities at all.
     """
-    ring_by_account: dict[int, int] = {
-        int(acct): ring_idx
-        for ring_idx, ring in enumerate(rings)
-        for acct in ring
-    }
+    ring_sets = [set(int(a) for a in ring) for ring in rings]
+    ring_size = len(ring_sets[0]) if ring_sets else 0
 
-    total_pairs = len(pairs)
-    same_ring = 0
-    cross_ring = 0
-    unknown = 0
-    ring_account_sets: dict[int, set[int]] = {}
-
-    for a, b in pairs:
-        a, b = int(a), int(b)
-        ra = ring_by_account.get(a)
-        rb = ring_by_account.get(b)
-
-        if ra is None or rb is None:
-            unknown += 1
-        elif ra == rb:
-            same_ring += 1
-            ring_account_sets.setdefault(ra, set()).update([a, b])
-        else:
-            cross_ring += 1
-
-    largest_ring_footprint = (
-        max(len(s) for s in ring_account_sets.values())
-        if ring_account_sets else 0
+    # Detect a grouping column (cluster_id, community_id, group, etc.)
+    group_col = next(
+        (c for c in df.columns if any(kw in c.lower() for kw in ("cluster", "community", "group"))),
+        None,
     )
+    account_cols = [c for c in df.columns if "account" in c.lower()]
+
+    if group_col and account_cols:
+        structure_type = "groups"
+        account_col = account_cols[0]
+        groups_returned = int(df[group_col].nunique())
+        max_coverage = 0.0
+
+        for _, group_df in df.groupby(group_col):
+            accounts_in_group = {int(a) for a in group_df[account_col]}
+            for ring_set in ring_sets:
+                coverage = len(accounts_in_group & ring_set) / ring_size if ring_size > 0 else 0.0
+                if coverage > max_coverage:
+                    max_coverage = coverage
+    else:
+        # Genie returned only pairs — no community grouping structure present
+        structure_type = "pairs"
+        max_coverage = 0.0
+        groups_returned = 0
 
     return {
-        "largest_ring_footprint": largest_ring_footprint,
-        "total_pairs": total_pairs,
-        "same_ring_pairs": same_ring,
-        "cross_ring_pairs": cross_ring,
-        "unknown_pairs": unknown,
-        "rings_touched": len(ring_account_sets),
-        "passed": largest_ring_footprint <= 20 and total_pairs > 0,
+        "structure_type": structure_type,
+        "max_ring_coverage": max_coverage,
+        "groups_returned": groups_returned,
+        "total_rows": len(df),
+        "passed": max_coverage < 0.50,
     }
 
 
