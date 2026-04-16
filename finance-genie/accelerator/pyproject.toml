@@ -1,0 +1,14 @@
+[project]
+name = "neo4j-ingest"
+version = "0.1.0"
+description = "Submit Delta → Neo4j ingest as a Databricks background job"
+requires-python = ">=3.12"
+dependencies = [
+    "databricks-job-runner",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+databricks-job-runner = { path = "../../../databricks-job-runner" }
