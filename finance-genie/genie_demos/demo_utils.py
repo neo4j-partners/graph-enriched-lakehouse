@@ -83,6 +83,27 @@ def ask_genie(
     return result
 
 
+def genie_caller(w: WorkspaceClient, space_id: str):
+    """Return a bound ask_genie function for a specific workspace and space.
+
+    Usage::
+
+        ask_genie = genie_caller(w, SPACE_ID)
+        response  = ask_genie("Which accounts have the highest risk score?")
+
+    The returned callable has the same signature as ask_genie minus the first
+    two positional arguments (w and space_id).
+    """
+    def ask(
+        question: str,
+        conversation_id: str | None = None,
+        timeout_seconds: int = 120,
+    ) -> dict:
+        return ask_genie(w, space_id, question, conversation_id, timeout_seconds)
+
+    return ask
+
+
 def load_ground_truth(path: str) -> dict:
     """Load ground_truth.json from a local path or a /Volumes/... path."""
     with open(path) as f:
