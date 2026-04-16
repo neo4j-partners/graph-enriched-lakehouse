@@ -119,6 +119,20 @@ for csv_file in "${DATA_DIR}"/*.csv; do
   ok "${filename} → ${VOLUME_PATH}/${filename}"
 done
 
+# ── Step 3b: Upload ground_truth.json to Volume ──────────────────────────────
+log ""
+log "=== Step 3b: Uploading ground_truth.json → ${VOLUME_PATH} ==="
+
+GT_FILE="${DATA_DIR}/ground_truth.json"
+if [[ ! -f "$GT_FILE" ]]; then
+  err "ground_truth.json not found: ${GT_FILE}"
+  err "Run 'uv run setup/generate_data.py' to generate it first."
+  exit 1
+fi
+
+$CLI fs cp "$GT_FILE" "dbfs:${VOLUME_PATH}/ground_truth.json" --overwrite
+ok "ground_truth.json → ${VOLUME_PATH}/ground_truth.json"
+
 # ── Step 4: Create Delta tables from Volume CSVs ──────────────────────────────
 log ""
 log "=== Step 4: Creating Delta tables in \`${CATALOG}\`.\`${SCHEMA}\` ==="
@@ -236,3 +250,5 @@ log "  \`${CATALOG}\`.\`${SCHEMA}\`.merchants"
 log "  \`${CATALOG}\`.\`${SCHEMA}\`.transactions"
 log "  \`${CATALOG}\`.\`${SCHEMA}\`.account_links"
 log "  \`${CATALOG}\`.\`${SCHEMA}\`.account_labels"
+log "Files:"
+log "  ${VOLUME_PATH}/ground_truth.json"
