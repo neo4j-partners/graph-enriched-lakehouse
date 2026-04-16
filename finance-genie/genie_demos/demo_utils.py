@@ -7,7 +7,7 @@ Usage in a Databricks notebook:
     _DEMO_DIR  = os.path.join(_REPO_ROOT, "finance-genie", "genie_demos")
     if _DEMO_DIR not in sys.path:
         sys.path.insert(0, _DEMO_DIR)
-    from demo_utils import genie_caller, load_ground_truth, build_ring_lookup, check_community_pairs
+    from demo_utils import genie_caller, load_ground_truth, build_ring_lookup, check_community_pairs, check_merchant_overlap
 """
 
 from __future__ import annotations
@@ -185,6 +185,67 @@ def check_community_pairs(
         "unknown_pairs": unknown,
         "rings_touched": len(ring_account_sets),
         "passed": largest_ring_footprint <= 20 and total_pairs > 0,
+    }
+
+
+def check_merchant_overlap(
+    pairs: list[tuple[int, int]],
+    rings: list[list[int]],
+) -> dict:
+    """Measure how much ring structure Genie's shared-merchant pairs reveal.
+
+    pairs  – list of (account_id_a, account_id_b) tuples from Genie's result
+    rings  – list of account ID lists, one per ring (from ground_truth["rings"])
+
+    Returns a dict with keys:
+      same_ring_fraction  – fraction of pairs where both accounts share a ring
+      total_pairs         – total rows in the input
+      same_ring_pairs     – pairs where both accounts are in the same ring
+      cross_ring_pairs    – pairs where accounts belong to different rings
+      unknown_pairs       – pairs where at least one account is not in any ring
+      rings_touched       – number of distinct rings that appear in same-ring pairs
+      passed              – True when same_ring_fraction < 0.30 and total_pairs > 0
+
+    Pass criterion: same_ring_fraction < 0.30.
+    The check passes when Genie fails to surface ring pairs — confirming that raw
+    shared-merchant count is dominated by high-volume normal accounts rather than
+    ring members with elevated anchor-merchant overlap.
+    """
+    ring_by_account: dict[int, int] = {
+        int(acct): ring_idx
+        for ring_idx, ring in enumerate(rings)
+        for acct in ring
+    }
+
+    total_pairs = len(pairs)
+    same_ring = 0
+    cross_ring = 0
+    unknown = 0
+    rings_seen: set[int] = set()
+
+    for a, b in pairs:
+        a, b = int(a), int(b)
+        ra = ring_by_account.get(a)
+        rb = ring_by_account.get(b)
+
+        if ra is None or rb is None:
+            unknown += 1
+        elif ra == rb:
+            same_ring += 1
+            rings_seen.add(ra)
+        else:
+            cross_ring += 1
+
+    same_ring_fraction = same_ring / total_pairs if total_pairs > 0 else 0.0
+
+    return {
+        "same_ring_fraction": same_ring_fraction,
+        "total_pairs": total_pairs,
+        "same_ring_pairs": same_ring,
+        "cross_ring_pairs": cross_ring,
+        "unknown_pairs": unknown,
+        "rings_touched": len(rings_seen),
+        "passed": same_ring_fraction < 0.30 and total_pairs > 0,
     }
 
 
