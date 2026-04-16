@@ -68,7 +68,7 @@ def ask_genie(
 
         if attachment.query and attachment.attachment_id:
             result["sql"] = attachment.query.query
-            data_result = w.genie.get_message_query_result_by_attachment(
+            data_result = w.genie.get_message_attachment_query_result(
                 space_id=space_id,
                 conversation_id=message.conversation_id,
                 message_id=message.id,
