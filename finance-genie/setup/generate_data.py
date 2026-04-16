@@ -46,6 +46,7 @@ import json
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional
 
 import pandas as pd
 
@@ -61,6 +62,8 @@ from config import (
     WHALE_RATE,
     WHALE_INBOUND,
     WHALE_OUTBOUND,
+    WHALE_FIXED_OUTBOUND,
+    WHALE_RECIPIENT_POOL_SIZE,
     RING_ANCHOR_CNT,
     RING_ANCHOR_PREF,
     FRAUD_LOGNORM_MU,
@@ -103,6 +106,26 @@ def build_ground_truth():
     normal_ids       = set(range(1, NUM_ACCOUNTS + 1)) - fraud_ids
     whale_ids        = set(random.sample(list(normal_ids), int(NUM_ACCOUNTS * WHALE_RATE)))
     return rings, fraud_ids, whale_ids
+
+
+def _build_whale_recipient_pools(
+    whale_ids: set,
+    fraud_ids: set,
+    pool_size: int,
+) -> dict:
+    """Assign each whale a fixed pool of recurring outbound recipients.
+
+    Recipients are sampled exclusively from plain normal accounts — not whales,
+    not ring members.  This keeps recipients low-degree so their PageRank stays
+    low, preserving the sender-peripherality property: whale outbound goes to
+    unimportant accounts, so PageRank does not compound through the whale the
+    way it does through the ring.
+
+    Returns a dict mapping whale_id -> list of recipient account_ids.
+    """
+    eligible = sorted(set(range(1, NUM_ACCOUNTS + 1)) - whale_ids - fraud_ids)
+    pool_size = min(pool_size, len(eligible))
+    return {whale: random.sample(eligible, pool_size) for whale in whale_ids}
 
 
 # ── Generators ────────────────────────────────────────────────────────
@@ -257,7 +280,17 @@ def build_ground_truth_json(
 def generate_account_links(
     rings: list,
     whale_ids: set,
+    whale_recipient_pools: Optional[dict] = None,
 ) -> pd.DataFrame:
+    """Generate peer-to-peer transfer links.
+
+    Args:
+        rings: List of sets, each set containing account IDs in one fraud ring.
+        whale_ids: Set of whale account IDs.
+        whale_recipient_pools: When provided (WHALE_FIXED_OUTBOUND=True), maps
+            each whale ID to its pre-assigned list of recurring recipients.
+            When None, whale outbound destinations are drawn randomly.
+    """
     whale_list = list(whale_ids)
     base_date  = datetime(2024, 1, 1)
 
@@ -288,13 +321,20 @@ def generate_account_links(
         elif r < WITHIN_RING_PROB + WHALE_INBOUND + WHALE_OUTBOUND:
             # Transfer FROM a whale: gives whales bidirectional P2P volume
             # so they resemble payment aggregators (high in, high out) rather
-            # than pure collection accounts.  Outbound goes to random accounts,
-            # not ring members, preserving the sender-peripherality property
-            # that PageRank uses to separate whales from ring members.
+            # than pure collection accounts.  When whale_recipient_pools is
+            # provided, each whale sends only to its pre-assigned pool of
+            # recurring plain-normal-account recipients — the consistent-
+            # counterparty pattern of a real aggregator.  Otherwise, destination
+            # is drawn randomly.  Either way, ring members are never targeted,
+            # preserving the sender-peripherality property that PageRank uses
+            # to separate whales from ring members.
             src = random.choice(whale_list)
-            dst = random.randint(1, NUM_ACCOUNTS)
-            while dst == src:
+            if whale_recipient_pools is not None:
+                dst = random.choice(whale_recipient_pools[src])
+            else:
                 dst = random.randint(1, NUM_ACCOUNTS)
+                while dst == src:
+                    dst = random.randint(1, NUM_ACCOUNTS)
 
         else:
             # Fully random transfer — background noise.
@@ -370,9 +410,14 @@ def generate_all(output_dir: Path) -> dict:
     print(f"  transactions: {len(txn_df):,}")
 
     print("Generating account links ...")
-    links_df = generate_account_links(rings, whale_ids)
+    whale_recipient_pools = (
+        _build_whale_recipient_pools(whale_ids, fraud_ids, WHALE_RECIPIENT_POOL_SIZE)
+        if WHALE_FIXED_OUTBOUND else None
+    )
+    links_df = generate_account_links(rings, whale_ids, whale_recipient_pools)
     links_df.to_csv(output_dir / "account_links.csv", index=False)
-    print(f"  account_links: {len(links_df):,}")
+    mode = f"fixed pool ({WHALE_RECIPIENT_POOL_SIZE} recipients/whale)" if WHALE_FIXED_OUTBOUND else "random"
+    print(f"  account_links: {len(links_df):,}  |  whale outbound: {mode}")
 
     return {
         "accounts":        len(accounts_df),

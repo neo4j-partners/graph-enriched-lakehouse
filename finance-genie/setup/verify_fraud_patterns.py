@@ -130,7 +130,7 @@ def check_whale_pagerank(links_df, fraud_ids, whale_ids):
         "name": "Whale-Hiding-PageRank",
         "target": (
             "Top 200 by raw inbound dominated by whales (>=180), few ring members (<=20). "
-            "whale_inbound_avg in [50, 60]. fraud_ring_inbound_avg ~12. "
+            "whale_inbound_avg ~40. fraud_ring_inbound_avg ~6. "
             "Whale senders are peripheral (low avg inbound)."
         ),
         "measured": {
@@ -192,7 +192,7 @@ def check_ring_density(links_df, rings):
     return {
         "name": "Ten-Ring Density Ratio",
         "target": (
-            "within_ring_density ~ 0.024, background_density ~ 0.00009, ratio ~ 268"
+            "within_ring_density ~ 0.048, background_density ~ 0.000056, ratio ~ 860"
         ),
         "measured": {
             "within_ring_density": round(within_ring_density, 6),
@@ -254,7 +254,7 @@ def check_anchor_jaccard(transactions_df, rings, fraud_ids, sample_cross_pairs=2
 
     return {
         "name": "Anchor-Merchant Jaccard",
-        "target": "within_ring_jaccard ~ 0.0044, cross_rate_jaccard ~ 0.0024, ratio ~ 1.78",
+        "target": "within_ring_jaccard ~ 0.011, cross_rate_jaccard ~ 0.0019, ratio ~ 6.15",
         "measured": {
             "within_ring_jaccard": round(within_avg, 5),
             "cross_rate_jaccard":  round(cross_avg, 5),

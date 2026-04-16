@@ -29,6 +29,13 @@ def _float(key: str, default: float) -> float:
     return float(os.environ.get(key, default))
 
 
+def _bool(key: str, default: bool) -> bool:
+    val = os.environ.get(key)
+    if val is None:
+        return default
+    return val.strip().lower() in ("1", "true", "yes")
+
+
 # ── Seed ──────────────────────────────────────────────────────────────
 SEED = _int("SEED", 42)
 
@@ -65,6 +72,17 @@ WHALE_INBOUND = _float("WHALE_INBOUND", 0.20)
 # property that PageRank uses to separate whales from ring members.
 # Should be set equal to WHALE_INBOUND so inbound and outbound volumes match.
 WHALE_OUTBOUND = _float("WHALE_OUTBOUND", 0.20)
+
+# When True, each whale sends only to a pre-assigned fixed pool of recurring
+# plain-normal-account recipients, matching the consistent-counterparty pattern
+# of a real payment aggregator.  When False, outbound goes to random accounts.
+WHALE_FIXED_OUTBOUND = _bool("WHALE_FIXED_OUTBOUND", True)
+
+# Number of fixed recipients in each whale's outbound pool.
+# Only used when WHALE_FIXED_OUTBOUND=True.  Recipients are sampled from plain
+# normal accounts (not whales, not ring members) so they remain low-degree,
+# preserving the sender-peripherality property that PageRank relies on.
+WHALE_RECIPIENT_POOL_SIZE = _int("WHALE_RECIPIENT_POOL_SIZE", 30)
 
 # Probability a fraud account visits a ring-anchor merchant per transaction.
 # Primary driver of within-ring Jaccard similarity.

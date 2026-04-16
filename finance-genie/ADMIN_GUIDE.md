@@ -14,7 +14,7 @@ Every fraud pattern is calibrated to expose exactly one gap between Genie's colu
 
 ### Whale Accounts Hide the Ring from Raw Sorting (PageRank)
 
-Two hundred normal accounts are designated as P2P "whales," modeled as payment aggregators with high bidirectional transfer volume. They receive 20% of all transfer links (WHALE_INBOUND), giving them raw inbound counts of roughly 40 each. They also originate 20% of all transfer links (WHALE_OUTBOUND), sending to random accounts across the population. Fraud ring members receive approximately 12 links each from within-ring transfers and send at low background rates.
+Two hundred normal accounts are designated as P2P "whales," modeled as payment aggregators with high bidirectional transfer volume. They receive 20% of all transfer links (WHALE_INBOUND), giving them raw inbound counts of roughly 40 each (measured: 40.6 average). They also originate 20% of all transfer links (WHALE_OUTBOUND). Each whale sends exclusively to a pre-assigned pool of ~30 recurring plain-normal-account recipients (WHALE_FIXED_OUTBOUND, WHALE_RECIPIENT_POOL_SIZE), matching the consistent-counterparty pattern of a real payment aggregator: the same vendors, employees, and refund recipients appearing repeatedly across the 90-day window. Fraud ring members receive approximately 6 links each from within-ring transfers and send at low background rates.
 
 Ring members represent a layering pattern: funds enter the ring through external deposits and cycle repeatedly among members before exiting, obscuring origin across dozens of bilateral hops. No individual transfer amount, merchant category, or account balance distinguishes these accounts in isolation. The structural signal is that ring members receive transfers from other ring members — accounts that are themselves highly connected. Genie should be asking not which accounts receive the most transfers, but which accounts receive from other highly-connected accounts. PageRank encodes that distinction; a column sort does not.
 
@@ -28,7 +28,7 @@ Whale topology                          Ring topology
   p ─┘      └─→ q                    └─ F ←─ E ←────┘
 
   p = peripheral sender (low PR)     each node sends to and receives from
-  q = random recipient (low PR)      other ring members; PageRank compounds
+  q = fixed-pool recipient (low PR)  other ring members; PageRank compounds
   WHALE: high volume both ways,
   but all neighbors are peripheral → moderate PageRank
 ```
@@ -57,7 +57,7 @@ What Genie sees                         What Louvain sees
                                          268x internal vs background density
 ```
 
-Within-ring edge density is 0.024. Between-account background density is 0.00009. The ratio is approximately 268x. Louvain resolves this into ten communities of ~100 accounts each. Genie sees 15 suspicious pairs involving ~30 accounts. Louvain finds all 1,000.
+Within-ring edge density is 0.048. Between-account background density is 0.000056. The ratio is approximately 860x. Louvain resolves this into ten communities of ~100 accounts each. Genie sees isolated suspicious pairs involving a fraction of ring members. Louvain finds all 1,000.
 
 The demo gap: Genie finds hints of fraud at the pair level. Louvain finds the ring.
 
@@ -85,7 +85,7 @@ What Genie sees                         What Node Similarity sees
                                          Jaccard: high; same fingerprint
 ```
 
-The structural signal is that ring members share the same five specific merchants. Average Jaccard similarity within a ring is 1.78x higher than the fraud-to-normal cross rate. GDS Node Similarity scores every account pair by merchant-set overlap simultaneously; Genie can only count raw shared merchants, where nearly all pairs share at most one.
+The structural signal is that ring members share the same specific anchor merchants. Average Jaccard similarity within a ring is approximately 6x higher than the fraud-to-normal cross rate (measured: within_ring_jaccard 0.011 vs cross_rate 0.0019). GDS Node Similarity scores every account pair by merchant-set overlap simultaneously; Genie can only count raw shared merchants, where nearly all pairs share at most one.
 
 The demo gap: Genie finds account pairs with one shared merchant. Node Similarity scores the full bipartite overlap and surfaces the ring.
 
@@ -133,6 +133,8 @@ This writes four CSV files to `./data/` with no Databricks dependency: only `pan
 - `merchants.csv`: 2,500 rows across eight categories and three risk tiers
 - `transactions.csv`: 250,000 rows, fraud transactions at ~10,100 (~4%)
 - `account_links.csv`: 40,000 rows, 30% concentrated within the ten fraud rings
+
+By default (`WHALE_FIXED_OUTBOUND=true`), each of the 200 whale accounts sends outbound transfers only to its own pre-assigned pool of 30 recurring recipients (`WHALE_RECIPIENT_POOL_SIZE=30`). Recipients are plain normal accounts, so they stay low-degree and do not inflate the whale's PageRank. To switch to random outbound destinations instead, set `WHALE_FIXED_OUTBOUND=false` in `setup/.env`. Both modes preserve the PageRank separation between whales and ring members; the fixed-pool mode adds the realistic consistent-counterparty pattern of a payment aggregator.
 
 The CSVs are for local inspection only. The setup notebook generates the Delta tables independently when each participant runs it.
 
