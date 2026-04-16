@@ -7,7 +7,7 @@ Usage in a Databricks notebook:
     _DEMO_DIR  = os.path.join(_REPO_ROOT, "finance-genie", "genie_demos")
     if _DEMO_DIR not in sys.path:
         sys.path.insert(0, _DEMO_DIR)
-    from demo_utils import ask_genie, load_ground_truth, build_ring_lookup, check_community_pairs
+    from demo_utils import genie_caller, load_ground_truth, build_ring_lookup, check_community_pairs
 """
 
 from __future__ import annotations
