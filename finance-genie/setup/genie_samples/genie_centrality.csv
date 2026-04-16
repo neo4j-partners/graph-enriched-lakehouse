@@ -1,0 +1,16 @@
+# Genie check: before GDS — "Which accounts receive the most inbound transfers? Show me the top 20 by total inbound transfer count."
+# Columns: account_id
+# Replace the rows below with the account IDs Genie returned.
+# Validator expects: whale_fraction >= 0.70, no fraud ring members.
+# The rows below are the 10 known top-inbound whale IDs for SEED=42. They should pass as-is.
+account_id
+13150
+17118
+2123
+8635
+13160
+13989
+9216
+10105
+3563
+5290

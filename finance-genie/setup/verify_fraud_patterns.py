@@ -24,12 +24,19 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from rich import box
+from rich.console import Console
+from rich.panel import Panel
+from rich.table import Table
+from rich.text import Text
 
 SNAPSHOT_SCHEMA_VERSION = 1
 
+_console = Console()
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from generate_data import (
+from config import (
     SEED,
     NUM_ACCOUNTS,
     NUM_P2P,
@@ -40,8 +47,8 @@ from generate_data import (
     WITHIN_RING_PROB,
     RING_ANCHOR_CNT,
     RING_ANCHOR_PREF,
-    build_ground_truth,
 )
+from generate_data import build_ground_truth
 
 
 # ── IO ────────────────────────────────────────────────────────────────
@@ -359,30 +366,109 @@ def check_column_signals(accounts_df, transactions_df, merchants_df, fraud_ids):
 
 # ── Report ────────────────────────────────────────────────────────────
 
-def render_report(checks):
-    lines   = ["# Fraud Pattern Verification Report", ""]
-    overall = "PASS" if all(c["passed"] for c in checks) else "FAIL"
-    lines.append(f"**Overall:** {overall}")
-    lines.append("")
+_CHECK_DESCRIPTIONS = {
+    "Whale-Hiding-PageRank": (
+        "Verifies that synthetic 'whale' accounts dominate the top-200 inbound-degree "
+        "positions, making them high-value targets for graph-based risk scoring."
+    ),
+    "Ten-Ring Density Ratio": (
+        "Confirms that transfers inside fraud rings are far denser than the background "
+        "graph, producing a clear structural signal for community-detection algorithms."
+    ),
+    "Anchor-Merchant Jaccard": (
+        "Confirms that accounts in the same fraud ring share a distinctive set of "
+        "merchant counterparties, yielding high within-ring Jaccard similarity."
+    ),
+    "Column-Signal Sanity": (
+        "Verifies that tabular feature columns carry statistically measurable separation "
+        "between fraud and non-fraud accounts."
+    ),
+    "Genie-CommunityPairs-Before-GDS": (
+        "Verifies that Genie's best SQL approximation of community structure finds "
+        "bilateral pairs (small clusters), not the 100-account rings that Louvain "
+        "resolves. PASSES when Genie fails to surface a large ring footprint — "
+        "confirming the gap that community detection closes."
+    ),
+    "Genie-MerchantOverlap-Before-GDS": (
+        "Verifies that raw shared-merchant count (no Jaccard normalization) is dominated "
+        "by high-volume normal accounts rather than ring pairs. PASSES when same-ring "
+        "fraction is low — confirming the gap that Node Similarity closes."
+    ),
+}
 
-    for c in checks:
-        verdict = "PASS" if c["passed"] else "FAIL"
-        lines.append(f"## {c['name']} — {verdict}")
-        lines.append("")
-        lines.append(f"**Target:** {c['target']}")
-        lines.append("")
-        lines.append("**Measured:**")
-        lines.append("")
-        lines.append("```")
+
+def render_report_rich(checks) -> None:
+    """Print a rich-formatted verification report to the terminal."""
+    passed_count = sum(1 for c in checks if c["passed"])
+    failed_count = len(checks) - passed_count
+    overall_passed = failed_count == 0
+
+    verdict_text = Text()
+    if overall_passed:
+        verdict_text.append("✅ PASS", style="bold green")
+    else:
+        verdict_text.append("❌ FAIL", style="bold red")
+    verdict_text.append(
+        f"  ({passed_count} passed, {failed_count} failed)",
+        style="dim",
+    )
+
+    header = Text(justify="center")
+    header.append("Fraud Pattern Verification Report\n", style="bold")
+    header.append("Overall: ")
+    header.append_text(verdict_text)
+
+    _console.print()
+    _console.print(Panel(header, box=box.ROUNDED, border_style="bold"))
+    _console.print()
+
+    for i, c in enumerate(checks, 1):
+        check_passed = c["passed"]
+        border_color = "green" if check_passed else "red"
+        icon = "✅" if check_passed else "❌"
+        verdict_label = "PASS" if check_passed else "FAIL"
+
+        description = _CHECK_DESCRIPTIONS.get(c["name"], c.get("target", ""))
+
+        body = Text()
+        body.append(description, style="italic dim")
+        body.append("\n\n")
+        body.append("Target: ", style="bold")
+        body.append(c.get("target", ""), style="dim")
+        body.append("\n")
+
+        metrics_table = Table(
+            show_header=True,
+            header_style="bold cyan",
+            box=box.SIMPLE,
+            padding=(0, 1),
+        )
+        metrics_table.add_column("Metric", style="cyan", no_wrap=True)
+        metrics_table.add_column("Value")
+
         for k, v in c["measured"].items():
-            lines.append(f"{k}: {v}")
-        lines.append("```")
-        if c.get("diagnostic"):
-            lines.append("")
-            lines.append(f"**Gap diagnostic:** {c['diagnostic']}")
-        lines.append("")
+            metrics_table.add_row(str(k), str(v))
 
-    return "\n".join(lines)
+        panel_title = f"[bold]Check {i} of {len(checks)}: {c['name']}[/bold]  {icon} [{border_color}]{verdict_label}[/{border_color}]"
+
+        from rich.console import Group
+        content_parts = [body, metrics_table]
+        if c.get("diagnostic"):
+            diag = Text()
+            diag.append("\nDiagnostic: ", style="bold red")
+            diag.append(c["diagnostic"], style="red")
+            content_parts.append(diag)
+
+        _console.print(
+            Panel(
+                Group(*content_parts),
+                title=panel_title,
+                border_style=border_color,
+                box=box.ROUNDED,
+                padding=(1, 2),
+            )
+        )
+        _console.print()
 
 
 # ── Snapshot IO ──────────────────────────────────────────────────────
@@ -390,7 +476,7 @@ def render_report(checks):
 def build_snapshot(checks: list, kind: str = "structural_checks") -> dict:
     return {
         "schema_version": SNAPSHOT_SCHEMA_VERSION,
-        "generated_at": datetime.datetime.utcnow().isoformat() + "Z",
+        "generated_at": datetime.datetime.now(datetime.UTC).isoformat(),
         "seed": SEED,
         "kind": kind,
         "checks": checks,
@@ -481,37 +567,97 @@ def compare_snapshots(baseline: dict, current: dict, tolerance_pct: float = 5.0)
     return {"passed": overall, "tolerance_pct": tolerance_pct, "checks": check_results}
 
 
-def render_comparison_report(comparison: dict) -> str:
-    lines = ["# Snapshot Comparison Report", ""]
-    overall = "PASS" if comparison["passed"] else "FAIL"
-    lines.append(f"**Overall:** {overall}  |  tolerance: {comparison['tolerance_pct']}%")
-    lines.append("")
+def render_comparison_report_rich(comparison: dict) -> None:
+    """Print a rich-formatted snapshot comparison report to the terminal."""
+    overall_passed = comparison["passed"]
+    tolerance = comparison["tolerance_pct"]
 
-    for c in comparison["checks"]:
-        verdict = "PASS" if c["passed"] else "FAIL"
-        lines.append(f"## {c['name']} — {verdict}")
-        lines.append("")
+    verdict_text = Text()
+    if overall_passed:
+        verdict_text.append("✅ PASS", style="bold green")
+    else:
+        verdict_text.append("❌ FAIL", style="bold red")
+    verdict_text.append(f"  |  tolerance: {tolerance}%", style="dim")
+
+    header = Text(justify="center")
+    header.append("Snapshot Comparison Report\n", style="bold")
+    header.append("Overall: ")
+    header.append_text(verdict_text)
+
+    _console.print()
+    _console.print(Panel(header, box=box.ROUNDED, border_style="bold"))
+    _console.print()
+
+    from rich.console import Group
+
+    for i, c in enumerate(comparison["checks"], 1):
+        check_passed = c["passed"]
+        border_color = "green" if check_passed else "red"
+        icon = "✅" if check_passed else "❌"
+        verdict_label = "PASS" if check_passed else "FAIL"
+        panel_title = f"[bold]{c['name']}[/bold]  {icon} [{border_color}]{verdict_label}[/{border_color}]"
+
+        content_parts: list = []
+
         if c.get("error"):
-            lines.append(f"**Error:** {c['error']}")
-            lines.append("")
-            continue
-        if not c["current_passed"]:
-            lines.append("**Note:** current check result is FAIL (independent of baseline drift)")
-            lines.append("")
-        lines.append("| Field | Baseline | Current | Diff% | Status |")
-        lines.append("|-------|----------|---------|-------|--------|")
-        for f in c["fields"]:
-            if f.get("elements"):
-                status = "PASS" if f["passed"] else "FAIL"
-                lines.append(f"| {f['key']} | (list) | (list) | — | {status} |")
-            else:
-                diff = f["diff_pct"]
-                diff_str = f"{diff:.2f}%" if isinstance(diff, float) else "—"
-                status = "PASS" if f["passed"] else "FAIL"
-                lines.append(f"| {f['key']} | {f['baseline']} | {f['current']} | {diff_str} | {status} |")
-        lines.append("")
+            err = Text()
+            err.append("Error: ", style="bold red")
+            err.append(c["error"], style="red")
+            content_parts.append(err)
+        else:
+            if not c.get("current_passed", True):
+                note = Text()
+                note.append(
+                    "Note: current check result is FAIL (independent of baseline drift)\n",
+                    style="bold yellow",
+                )
+                content_parts.append(note)
 
-    return "\n".join(lines)
+            fields_table = Table(
+                show_header=True,
+                header_style="bold cyan",
+                box=box.SIMPLE,
+                padding=(0, 1),
+            )
+            fields_table.add_column("Field", style="cyan", no_wrap=True)
+            fields_table.add_column("Baseline")
+            fields_table.add_column("Current")
+            fields_table.add_column("Diff %")
+            fields_table.add_column("Status")
+
+            for f in c["fields"]:
+                if f.get("elements"):
+                    status_text = "✅ PASS" if f["passed"] else "❌ FAIL"
+                    status_style = "green" if f["passed"] else "red"
+                    fields_table.add_row(
+                        f["key"], "(list)", "(list)", "—",
+                        Text(status_text, style=status_style),
+                    )
+                else:
+                    diff = f["diff_pct"]
+                    diff_str = f"{diff:.2f}%" if isinstance(diff, float) else "—"
+                    status_text = "✅ PASS" if f["passed"] else "❌ FAIL"
+                    status_style = "green" if f["passed"] else "red"
+                    fields_table.add_row(
+                        str(f["key"]),
+                        str(f["baseline"]),
+                        str(f["current"]),
+                        diff_str,
+                        Text(status_text, style=status_style),
+                    )
+
+            content_parts.append(fields_table)
+
+        _console.print(
+            Panel(
+                Group(*content_parts),
+                title=panel_title,
+                border_style=border_color,
+                box=box.ROUNDED,
+                padding=(1, 2),
+            )
+        )
+        _console.print()
 
 
 # ── Genie output checks ───────────────────────────────────────────────
@@ -583,6 +729,442 @@ def check_genie_output(genie_snapshot: dict, whale_ids: set, fraud_ids: set) -> 
             "passed": passed,
         })
     return checks_out
+
+
+# ── Genie CSV checks ──────────────────────────────────────────────────
+
+def detect_genie_csv_type(df: pd.DataFrame) -> str:
+    """Infer which Genie check a CSV represents from its column names.
+
+    Column signatures:
+        account_id_a + account_id_b + similarity_score    → similarity (after-GDS)
+        account_id_a + account_id_b + shared_merchant_count → merchant_overlap (before-GDS)
+        account_id_a + account_id_b (only)               → community_pairs (before-GDS)
+        account_id  + community_id                        → louvain (after-GDS)
+        account_id  + risk_score                          → pagerank (after-GDS)
+        account_id  (only)                               → centrality (before-GDS)
+    """
+    cols = set(df.columns)
+    if {"account_id_a", "account_id_b"}.issubset(cols):
+        if "similarity_score" in cols:
+            return "similarity"
+        if "shared_merchant_count" in cols:
+            return "merchant_overlap"
+        return "community_pairs"
+    if {"account_id", "community_id"}.issubset(cols):
+        return "louvain"
+    if {"account_id", "risk_score"}.issubset(cols):
+        return "pagerank"
+    if "account_id" in cols:
+        return "centrality"
+    raise SystemExit(
+        f"Cannot determine check type from columns {sorted(cols)}. "
+        "Expected one of: account_id (centrality), account_id+risk_score "
+        "(pagerank), account_id+community_id (louvain), "
+        "account_id_a+account_id_b+similarity_score (similarity), "
+        "account_id_a+account_id_b+shared_merchant_count (merchant_overlap), or "
+        "account_id_a+account_id_b (community_pairs)."
+    )
+
+
+def check_genie_centrality_csv(
+    df: pd.DataFrame, whale_ids: set, fraud_ids: set
+) -> dict:
+    """Verify the before-GDS centrality result returns whales, not ring members.
+
+    Genie sorts by raw inbound transfer count. The 200 whale accounts dominate
+    that ranking. A passing result confirms the demo gap: Genie names whales
+    instead of the fraud ring.
+    """
+    ids = df["account_id"].tolist()
+    whale_count = int(sum(1 for a in ids if a in whale_ids))
+    fraud_count = int(sum(1 for a in ids if a in fraud_ids))
+    other_count = len(ids) - whale_count - fraud_count
+    whale_fraction = whale_count / len(ids) if ids else 0.0
+
+    passed = whale_fraction >= 0.7 and fraud_count == 0
+
+    diagnostic = None
+    if not passed:
+        msgs = []
+        if whale_fraction < 0.7:
+            msgs.append(
+                f"{whale_count}/{len(ids)} returned accounts are whales "
+                "(expected >= 70%)"
+            )
+        if fraud_count > 0:
+            msgs.append(
+                f"{fraud_count} fraud ring members in result "
+                "(expected 0 before GDS enrichment)"
+            )
+        diagnostic = "; ".join(msgs)
+
+    return {
+        "name": "Genie-Centrality-Before-GDS",
+        "target": (
+            "whale_fraction >= 0.70, fraud_ring_count == 0. "
+            "Genie sorts by raw inbound count — whales dominate, ring members do not appear."
+        ),
+        "measured": {
+            "returned_accounts": len(ids),
+            "whale_count": whale_count,
+            "fraud_ring_count": fraud_count,
+            "other_count": other_count,
+            "whale_fraction": round(whale_fraction, 3),
+        },
+        "diagnostic": diagnostic,
+        "passed": passed,
+    }
+
+
+def check_genie_pagerank_csv(
+    df: pd.DataFrame, fraud_ids: set, whale_ids: set
+) -> dict:
+    """Verify the post-PageRank result returns fraud ring members, not whales.
+
+    After GDS writes risk_score back to the accounts table, Genie's same
+    centrality question should surface ring members. A passing result confirms
+    that PageRank closed the demo gap.
+    """
+    ids = df["account_id"].tolist()
+    fraud_count = int(sum(1 for a in ids if a in fraud_ids))
+    whale_count = int(sum(1 for a in ids if a in whale_ids))
+    ring_fraction = fraud_count / len(ids) if ids else 0.0
+
+    passed = ring_fraction >= 0.7 and whale_count == 0
+
+    diagnostic = None
+    if not passed:
+        msgs = []
+        if ring_fraction < 0.7:
+            msgs.append(
+                f"{fraud_count}/{len(ids)} returned accounts are ring members "
+                "(expected >= 70%)"
+            )
+        if whale_count > 0:
+            msgs.append(
+                f"{whale_count} whale accounts still in result "
+                "(PageRank should have demoted them)"
+            )
+        diagnostic = "; ".join(msgs)
+
+    return {
+        "name": "Genie-PageRank-After-GDS",
+        "target": (
+            "ring_member_fraction >= 0.70, whale_count == 0. "
+            "Genie sorts by risk_score — ring members rise, whales drop out."
+        ),
+        "measured": {
+            "returned_accounts": len(ids),
+            "fraud_ring_count": fraud_count,
+            "whale_count": whale_count,
+            "ring_member_fraction": round(ring_fraction, 3),
+        },
+        "diagnostic": diagnostic,
+        "passed": passed,
+    }
+
+
+def check_genie_louvain_csv(df: pd.DataFrame, rings: list) -> dict:
+    """Verify that each Genie community maps cleanly to a single fraud ring.
+
+    After Louvain assigns community_id to each account, Genie can group
+    accounts by that column. Each community in the result should be composed
+    almost entirely of accounts from one ring.
+    """
+    ring_by_account = {
+        acct: ring_idx
+        for ring_idx, ring in enumerate(rings)
+        for acct in ring
+    }
+
+    community_purities = {}
+    for cid, group in df.groupby("community_id"):
+        member_ids = group["account_id"].tolist()
+        ring_counts = {}
+        for a in member_ids:
+            r = ring_by_account.get(a)
+            if r is not None:
+                ring_counts[r] = ring_counts.get(r, 0) + 1
+        if ring_counts:
+            dominant = max(ring_counts.values())
+            purity = dominant / len(member_ids)
+        else:
+            purity = 0.0
+        community_purities[int(cid)] = round(purity, 3)
+
+    avg_purity = (
+        sum(community_purities.values()) / len(community_purities)
+        if community_purities else 0.0
+    )
+    community_count = len(community_purities)
+    passed = avg_purity >= 0.8 and community_count > 0
+
+    diagnostic = None
+    if not passed:
+        msgs = []
+        if community_count == 0:
+            msgs.append("no communities found in CSV")
+        elif avg_purity < 0.8:
+            msgs.append(
+                f"avg_community_purity {avg_purity:.3f} < 0.80 "
+                "(communities contain mixed ring members — Louvain may have merged rings "
+                "or enrichment did not write back cleanly)"
+            )
+        diagnostic = "; ".join(msgs)
+
+    return {
+        "name": "Genie-Louvain-After-GDS",
+        "target": (
+            "avg_community_purity >= 0.80. "
+            "Each community_id groups accounts from a single ring."
+        ),
+        "measured": {
+            "communities_in_result": community_count,
+            "avg_community_purity": round(avg_purity, 3),
+            "per_community_purity": community_purities,
+        },
+        "diagnostic": diagnostic,
+        "passed": passed,
+    }
+
+
+def check_genie_similarity_csv(df: pd.DataFrame, rings: list) -> dict:
+    """Verify that high-similarity account pairs belong to the same fraud ring.
+
+    After Node Similarity scores merchant-set overlap, Genie returns account
+    pairs with high similarity_score. Pairs from the same ring share anchor
+    merchants; cross-ring pairs do not.
+    """
+    ring_by_account = {
+        acct: ring_idx
+        for ring_idx, ring in enumerate(rings)
+        for acct in ring
+    }
+
+    total_pairs = len(df)
+    same_ring = 0
+    cross_ring = 0
+    unknown = 0  # at least one account not in any ring (normal account)
+
+    for _, row in df.iterrows():
+        a = int(row["account_id_a"])
+        b = int(row["account_id_b"])
+        ra = ring_by_account.get(a)
+        rb = ring_by_account.get(b)
+        if ra is None or rb is None:
+            unknown += 1
+        elif ra == rb:
+            same_ring += 1
+        else:
+            cross_ring += 1
+
+    same_ring_fraction = same_ring / total_pairs if total_pairs else 0.0
+    passed = same_ring_fraction >= 0.7 and total_pairs > 0
+
+    diagnostic = None
+    if not passed:
+        msgs = []
+        if total_pairs == 0:
+            msgs.append("no pairs found in CSV")
+        elif same_ring_fraction < 0.7:
+            msgs.append(
+                f"{same_ring}/{total_pairs} pairs belong to the same ring "
+                "(expected >= 70%); "
+                f"{cross_ring} cross-ring, {unknown} involve normal accounts"
+            )
+        diagnostic = "; ".join(msgs)
+
+    return {
+        "name": "Genie-NodeSimilarity-After-GDS",
+        "target": (
+            "same_ring_fraction >= 0.70. "
+            "High-similarity pairs should share a ring and its anchor merchants."
+        ),
+        "measured": {
+            "total_pairs": total_pairs,
+            "same_ring_pairs": same_ring,
+            "cross_ring_pairs": cross_ring,
+            "unknown_pairs": unknown,
+            "same_ring_fraction": round(same_ring_fraction, 3),
+        },
+        "diagnostic": diagnostic,
+        "passed": passed,
+    }
+
+
+def check_genie_community_pairs_csv(df: pd.DataFrame, rings: list) -> dict:
+    """Verify that before-GDS community queries find pairs, not 100-account rings.
+
+    This is a BEFORE-GDS check: it PASSES when Genie FAILS to surface a large
+    ring footprint. Genie's best SQL approximation (bidirectional pair counts or
+    transitive-closure CTE) finds ring members exchanging money, but cannot
+    compute Louvain community boundaries. Even if the pairs are correct, the
+    largest implied community visible in the result should be far smaller than
+    the actual 100-account rings.
+
+    Pass criterion: largest_ring_footprint <= 20 (Genie surfaced at most 20
+    accounts from any single ring across all returned pairs).
+    """
+    ring_by_account = {
+        acct: ring_idx
+        for ring_idx, ring in enumerate(rings)
+        for acct in ring
+    }
+
+    total_pairs = len(df)
+    same_ring = 0
+    cross_ring = 0
+    unknown = 0
+
+    # Track distinct ring accounts seen per ring across all pairs
+    ring_account_sets: dict[int, set] = {}
+
+    for _, row in df.iterrows():
+        a = int(row["account_id_a"])
+        b = int(row["account_id_b"])
+        ra = ring_by_account.get(a)
+        rb = ring_by_account.get(b)
+
+        if ra is None or rb is None:
+            unknown += 1
+        elif ra == rb:
+            same_ring += 1
+            ring_account_sets.setdefault(ra, set()).update([a, b])
+        else:
+            cross_ring += 1
+
+    largest_ring_footprint = (
+        max(len(s) for s in ring_account_sets.values())
+        if ring_account_sets else 0
+    )
+
+    passed = largest_ring_footprint <= 20 and total_pairs > 0
+
+    diagnostic = None
+    if not passed:
+        if total_pairs == 0:
+            diagnostic = "no pairs found in CSV"
+        else:
+            diagnostic = (
+                f"largest_ring_footprint {largest_ring_footprint} > 20. "
+                "Genie surfaced more ring accounts than expected for a pair-based query. "
+                "This may indicate Genie wrote a recursive CTE that resolved a large "
+                "fraction of a ring. The community-vs-pairs gap is narrower than intended."
+            )
+
+    return {
+        "name": "Genie-CommunityPairs-Before-GDS",
+        "target": (
+            "largest_ring_footprint <= 20. "
+            "Genie finds bilateral pairs or small clusters — not the 100-account rings "
+            "that Louvain resolves. Check PASSES when Genie FAILS to surface the full ring."
+        ),
+        "measured": {
+            "total_pairs": total_pairs,
+            "same_ring_pairs": same_ring,
+            "cross_ring_pairs": cross_ring,
+            "unknown_pairs": unknown,
+            "largest_ring_footprint": largest_ring_footprint,
+            "rings_touched": len(ring_account_sets),
+        },
+        "diagnostic": diagnostic,
+        "passed": passed,
+    }
+
+
+def check_genie_merchant_overlap_csv(df: pd.DataFrame, rings: list) -> dict:
+    """Verify that raw shared-merchant count does not surface ring pairs.
+
+    This is a BEFORE-GDS check: it PASSES when Genie FAILS to identify ring
+    pairs via raw merchant overlap. Without Jaccard normalization, high-volume
+    normal accounts sharing many merchants by volume dominate the top results.
+    Ring pairs share 4–5 specific anchor merchants out of 2,500 total, which
+    is a small absolute count compared to prolific normal account pairs.
+
+    Pass criterion: same_ring_fraction < 0.30.
+    """
+    ring_by_account = {
+        acct: ring_idx
+        for ring_idx, ring in enumerate(rings)
+        for acct in ring
+    }
+
+    total_pairs = len(df)
+    same_ring = 0
+    cross_ring = 0
+    unknown = 0
+
+    for _, row in df.iterrows():
+        a = int(row["account_id_a"])
+        b = int(row["account_id_b"])
+        ra = ring_by_account.get(a)
+        rb = ring_by_account.get(b)
+        if ra is None or rb is None:
+            unknown += 1
+        elif ra == rb:
+            same_ring += 1
+        else:
+            cross_ring += 1
+
+    same_ring_fraction = same_ring / total_pairs if total_pairs else 0.0
+    passed = same_ring_fraction < 0.30 and total_pairs > 0
+
+    diagnostic = None
+    if not passed:
+        if total_pairs == 0:
+            diagnostic = "no pairs found in CSV"
+        else:
+            diagnostic = (
+                f"same_ring_fraction {same_ring_fraction:.3f} >= 0.30. "
+                "Raw shared-merchant count is surfacing more ring pairs than expected. "
+                "This may mean ring anchor merchants are too distinctive in absolute "
+                "count terms, or high-volume normal accounts are underrepresented in "
+                "the result. The Node Similarity gap is narrower than intended."
+            )
+
+    return {
+        "name": "Genie-MerchantOverlap-Before-GDS",
+        "target": (
+            "same_ring_fraction < 0.30. "
+            "Raw shared-merchant count is dominated by high-volume normal accounts, "
+            "not ring pairs. Check PASSES when Genie FAILS to find the ring signal."
+        ),
+        "measured": {
+            "total_pairs": total_pairs,
+            "same_ring_pairs": same_ring,
+            "cross_ring_pairs": cross_ring,
+            "unknown_pairs": unknown,
+            "same_ring_fraction": round(same_ring_fraction, 3),
+        },
+        "diagnostic": diagnostic,
+        "passed": passed,
+    }
+
+
+def run_genie_csv_check(
+    csv_path: Path,
+    rings: list,
+    fraud_ids: set,
+    whale_ids: set,
+) -> dict:
+    """Load a Genie output CSV, detect its check type, and run the appropriate check."""
+    df = pd.read_csv(csv_path, comment="#")
+    check_type = detect_genie_csv_type(df)
+    print(f"  {csv_path.name}: detected as '{check_type}' check", file=sys.stderr)
+
+    if check_type == "centrality":
+        return check_genie_centrality_csv(df, whale_ids, fraud_ids)
+    if check_type == "community_pairs":
+        return check_genie_community_pairs_csv(df, rings)
+    if check_type == "merchant_overlap":
+        return check_genie_merchant_overlap_csv(df, rings)
+    if check_type == "pagerank":
+        return check_genie_pagerank_csv(df, fraud_ids, whale_ids)
+    if check_type == "louvain":
+        return check_genie_louvain_csv(df, rings)
+    # similarity
+    return check_genie_similarity_csv(df, rings)
 
 
 # ── GDS output checks ─────────────────────────────────────────────────
@@ -741,6 +1323,20 @@ def main():
              "Validates whale/fraud account split.",
     )
     parser.add_argument(
+        "--genie-csv", metavar="PATH", action="append", dest="genie_csvs",
+        help=(
+            "Path to a Genie output CSV. The check type is auto-detected from "
+            "column names: account_id (centrality, before-GDS), "
+            "account_id_a+account_id_b (community_pairs, before-GDS), "
+            "account_id_a+account_id_b+shared_merchant_count (merchant_overlap, before-GDS), "
+            "account_id+risk_score (pagerank, after-GDS), "
+            "account_id+community_id (louvain, after-GDS), "
+            "account_id_a+account_id_b+similarity_score (similarity, after-GDS). "
+            "Repeat the flag to validate multiple CSVs in one run. "
+            "Lines starting with # are treated as comments and ignored."
+        ),
+    )
+    parser.add_argument(
         "--emit-genie-expected", action="store_true",
         help="Print the expected Genie output template as JSON and exit. "
              "Redirect to a file to use as a --genie-json baseline.",
@@ -777,7 +1373,7 @@ def main():
         ),
     ]
 
-    print(render_report(checks))
+    render_report_rich(checks)
 
     structural_failed = not all(c["passed"] for c in checks)
 
@@ -789,13 +1385,13 @@ def main():
     if args.compare_json:
         baseline = json.loads(Path(args.compare_json).read_text())
         comparison = compare_snapshots(baseline, snapshot, args.tolerance_pct)
-        print(render_comparison_report(comparison))
+        render_comparison_report_rich(comparison)
         if not comparison["passed"]:
             sys.exit(1)
 
     if args.gds_csv:
         gds_checks = check_gds_output(Path(args.gds_csv), fraud_ids)
-        print(render_report(gds_checks))
+        render_report_rich(gds_checks)
         if args.output_json:
             gds_path = Path(args.output_json)
             gds_out = gds_path.with_stem(gds_path.stem + "_gds")
@@ -806,8 +1402,17 @@ def main():
     if args.genie_json:
         genie_data = json.loads(Path(args.genie_json).read_text())
         genie_checks = check_genie_output(genie_data, whale_ids, fraud_ids)
-        print(render_report(genie_checks))
+        render_report_rich(genie_checks)
         if not all(c["passed"] for c in genie_checks):
+            sys.exit(1)
+
+    if args.genie_csvs:
+        csv_checks = [
+            run_genie_csv_check(Path(p), rings, fraud_ids, whale_ids)
+            for p in args.genie_csvs
+        ]
+        render_report_rich(csv_checks)
+        if not all(c["passed"] for c in csv_checks):
             sys.exit(1)
 
     if structural_failed:

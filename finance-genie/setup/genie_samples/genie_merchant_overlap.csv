@@ -1,0 +1,7 @@
+# Genie check: before GDS — "Which pairs of accounts have visited the most merchants in common?"
+# Columns: account_id_a, account_id_b, shared_merchant_count
+# Replace the rows below with the pairs Genie returned (raw count, not Jaccard).
+# Validator expects: same_ring_fraction < 0.30.
+# A PASSING result means raw shared-merchant count is dominated by high-volume normal accounts,
+# not ring pairs. This check PASSES when Genie FAILS to find the ring signal.
+account_id_a,account_id_b,shared_merchant_count

@@ -1,0 +1,6 @@
+# Genie check: after Louvain — "group accounts by community_id"
+# Columns: account_id, community_id
+# Replace the rows below with the accounts Genie returned after GDS enrichment.
+# Validator expects: avg_community_purity >= 0.80 (each community maps to one ring).
+# Use the community_id values exactly as Genie returned them.
+account_id,community_id

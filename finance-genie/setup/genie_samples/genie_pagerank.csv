@@ -1,0 +1,6 @@
+# Genie check: after PageRank — "which accounts have the highest risk_score?"
+# Columns: account_id, risk_score
+# Replace the rows below with the accounts Genie returned after GDS enrichment.
+# Validator expects: ring_member_fraction >= 0.70, whale_count == 0.
+# risk_score distinguishes this file from genie_centrality.csv (required for detection).
+account_id,risk_score

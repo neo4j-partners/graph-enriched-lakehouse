@@ -30,6 +30,10 @@ Fraud design principles:
                Jaccard.  Overall high-risk fraction is nearly the same for
                fraud and normal, so a column filter cannot find them.
 
+All constants are loaded from config.py, which reads finance-genie/.env.
+Copy .env.sample to .env to override defaults. See worklog/strengthen_plan.md
+for per-phase tuning values.
+
 Usage:
     From the finance-genie/ directory (which contains pyproject.toml):
         uv run setup/generate_data.py
@@ -38,38 +42,33 @@ Usage:
 
 import argparse
 import hashlib
+import json
 import random
 from datetime import datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
 
-# ── Scale ────────────────────────────────────────────────────────────
-SEED          = 42
-NUM_ACCOUNTS  = 25_000
-NUM_MERCHANTS =  2_500
-NUM_TXN       = 250_000
-NUM_P2P       =  40_000
-FRAUD_RATE    = 0.04       # 1,000 fraud accounts total
-
-# ── Fraud ring structure ─────────────────────────────────────────────
-N_RINGS          = 10      # 10 rings × ~100 accounts = 1,000 fraud accounts
-
-# ── P2P link buckets ─────────────────────────────────────────────────
-# 30 % within-ring  → ring community structure (Louvain signal)
-# 20 % to whales    → whale accounts top raw inbound count (hides ring from Genie)
-# 50 % fully random → background noise
-WITHIN_RING_PROB = 0.30
-WHALE_RATE       = 0.008   # 200 normal whale accounts
-WHALE_INBOUND    = 0.20
-
-# ── Merchant anchor preferences ───────────────────────────────────────
-# Each ring is assigned RING_ANCHOR_CNT specific high-risk merchants.
-# Fraud txns use a ring anchor 18 % of the time.  Overall high-risk
-# fraction ends up nearly identical between fraud and normal accounts,
-# so Genie's merchant-tier filter gives nothing useful.
-RING_ANCHOR_CNT  = 5
-RING_ANCHOR_PREF = 0.18
+from config import (
+    SEED,
+    NUM_ACCOUNTS,
+    NUM_MERCHANTS,
+    NUM_TXN,
+    NUM_P2P,
+    FRAUD_RATE,
+    N_RINGS,
+    WITHIN_RING_PROB,
+    WHALE_RATE,
+    WHALE_INBOUND,
+    RING_ANCHOR_CNT,
+    RING_ANCHOR_PREF,
+    FRAUD_LOGNORM_MU,
+    FRAUD_LOGNORM_SIGMA,
+    NORMAL_LOGNORM_MU,
+    NORMAL_LOGNORM_SIGMA,
+    P2P_LOGNORM_MU,
+    P2P_LOGNORM_SIGMA,
+)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -174,10 +173,10 @@ def generate_transactions(
         is_fraud = acct_id in fraud_ids
 
         # Merchant selection:
-        # Fraud accounts use their ring's anchor merchants 18 % of the time.
-        # The anchors are picked from high-risk merchants, but the overall
-        # high-risk fraction for fraud vs normal stays within ~3 pp — not
-        # enough for Genie to separate on a merchant-tier filter.
+        # Fraud accounts use their ring's anchor merchants RING_ANCHOR_PREF of the
+        # time. The anchors are picked from high-risk merchants, but the overall
+        # high-risk fraction for fraud vs normal stays within ~3 pp — not enough
+        # for Genie to separate on a merchant-tier filter.
         if is_fraud and random.random() < RING_ANCHOR_PREF:
             merch_id = random.choice(ring_anchors[acct_to_ring[acct_id]])
         else:
@@ -187,10 +186,10 @@ def generate_transactions(
         # Lognormal distributions overlap heavily; tabular models
         # cannot cleanly separate fraud from normal on these columns alone.
         if is_fraud:
-            amount = round(random.lognormvariate(4.1, 1.2), 2)
+            amount = round(random.lognormvariate(FRAUD_LOGNORM_MU, FRAUD_LOGNORM_SIGMA), 2)
             hour   = random.choices(range(24), weights=[2]*6 + [3]*12 + [2]*6)[0]
         else:
-            amount = round(random.lognormvariate(4.0, 1.2), 2)
+            amount = round(random.lognormvariate(NORMAL_LOGNORM_MU, NORMAL_LOGNORM_SIGMA), 2)
             hour   = random.choices(range(24), weights=[1]*6 + [4]*12 + [2]*6)[0]
 
         ts = base_date + timedelta(
@@ -207,6 +206,51 @@ def generate_transactions(
             "txn_hour":      hour,
         })
     return pd.DataFrame(rows)
+
+
+def build_ground_truth_json(
+    rings: list,
+    fraud_ids: set,
+    whale_ids: set,
+    ring_anchors: dict,
+    merchants_df: "pd.DataFrame",
+) -> dict:
+    """Return a ground-truth dict suitable for JSON serialisation.
+
+    Written to ground_truth.json alongside the CSVs so a presenter can
+    check Genie query results against the known ring membership, whale list,
+    and per-ring anchor merchants without opening any CSV.
+    """
+    merch_lookup = (
+        merchants_df.set_index("merchant_id")[["category", "risk_tier"]]
+        .to_dict("index")
+    )
+    return {
+        "schema_version": 1,
+        "seed": SEED,
+        "summary": {
+            "total_rings":          len(rings),
+            "total_fraud_accounts": len(fraud_ids),
+            "total_whale_accounts": len(whale_ids),
+            "anchor_merchants_per_ring": len(next(iter(ring_anchors.values()))) if ring_anchors else 0,
+        },
+        "rings": [
+            {
+                "ring_id":         i,
+                "account_ids":     sorted(ring),
+                "anchor_merchants": [
+                    {
+                        "merchant_id": mid,
+                        "category":    merch_lookup[mid]["category"],
+                        "risk_tier":   merch_lookup[mid]["risk_tier"],
+                    }
+                    for mid in ring_anchors[i]
+                ],
+            }
+            for i, ring in enumerate(rings)
+        ],
+        "whale_account_ids": sorted(whale_ids),
+    }
 
 
 def generate_account_links(
@@ -247,7 +291,7 @@ def generate_account_links(
             while dst == src:
                 dst = random.randint(1, NUM_ACCOUNTS)
 
-        amount = round(random.lognormvariate(5.0, 1.5), 2)
+        amount = round(random.lognormvariate(P2P_LOGNORM_MU, P2P_LOGNORM_SIGMA), 2)
         ts = base_date + timedelta(
             days=random.randint(0, 89),
             hours=random.randint(0, 23),
@@ -300,6 +344,13 @@ def generate_all(output_dir: Path) -> dict:
     }
     print(f"  merchants: {len(merchants_df):,}  |  high-risk: {len(high_risk_ids)}  "
           f"|  anchor merchants/ring: {RING_ANCHOR_CNT}")
+
+    print("Writing ground truth ...")
+    gt = build_ground_truth_json(rings, fraud_ids, whale_ids, ring_anchors, merchants_df)
+    (output_dir / "ground_truth.json").write_text(json.dumps(gt, indent=2))
+    ring_sizes = [len(r) for r in rings]
+    print(f"  ground_truth.json: {N_RINGS} rings × ~{sum(ring_sizes)//N_RINGS} accounts, "
+          f"{len(whale_ids)} whales, {RING_ANCHOR_CNT} anchors/ring")
 
     print("Generating transactions ...")
     txn_df = generate_transactions(fraud_ids, rings, merchants_df, ring_anchors)

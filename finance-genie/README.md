@@ -1,95 +1,14 @@
 # Graph-Enriched Lakehouse: Finance Genie
 
-Genie can answer most questions a fraud analyst asks against raw Delta tables. It can sort accounts by inbound transfer volume, find account pairs with the most mutual transfers, and filter by merchant risk tier. What it cannot do is identify which account sits at the structural center of a money-flow network, which accounts form a closed transfer ring regardless of individual volume, or which accounts share the same small set of merchants in a pattern too sparse for any column filter to catch. Those three gaps are what this demo is designed to expose.
+In this session, you will investigate a synthetic fraud dataset using two tools in sequence: Databricks Genie and Neo4j Graph Data Science.
 
-The walkthrough runs in two acts. In the first act, participants open a Genie space against the raw Delta tables and work through three fraud-investigation queries. Genie returns plausible but structurally incomplete answers. In the second act, the same tables are loaded into Neo4j Aura, PageRank, Louvain, and Node Similarity run as GDS algorithms, and the results write back to the lakehouse as three new columns on the accounts table. Genie then answers the same questions with full structural depth.
+Genie works against flat Delta tables. It can sort accounts by transfer volume, identify the most active bilateral pairs, and filter by merchant category. Those queries answer most questions a fraud analyst asks on a given morning. They do not answer questions about structural position in a transfer network, membership in a closed transfer ring, or shared merchant exposure across a group of accounts. The fraud in this dataset lives in exactly those three structures.
 
----
+The session runs in two acts. In the first, you open a Genie space against the raw tables and work through five questions. Genie returns plausible answers. Each question is designed so that plausible and correct diverge: Genie's top results are not the fraud accounts, and the column values make clear why. In the second act, the same tables load into Neo4j Aura. PageRank, Louvain, and Node Similarity run against the graph and write three new columns back to the accounts table. Genie then answers the same questions correctly.
 
-## The Dataset and Why It's Designed This Way
+The session closes with a model comparison. A gradient-boosting classifier trained on baseline tabular features runs head-to-head against one trained with the three graph features, with the lift in fraud caught translated to an estimated dollar impact.
 
-The synthetic dataset contains 25,000 accounts, 2,500 merchants, 250,000 transactions, and 40,000 peer-to-peer transfers. One thousand accounts (4%) are planted as fraud, distributed across ten rings of approximately 100 accounts each.
-
-Every fraud pattern is calibrated to expose exactly one gap between Genie's column-based analysis and GDS graph analysis. Tabular signals, including transaction amounts, hours, and merchant tier fractions, are kept nearly identical between fraud and normal accounts. The signal lives in structure.
-
-### Whale Accounts Hide the Ring from Raw Sorting (PageRank)
-
-Two hundred normal accounts are designated as P2P "whales." They receive 20% of all transfer links, giving them raw inbound counts of 50–60 each. Fraud ring members receive approximately 12 links each from within-ring transfers.
-
-When Genie sorts accounts by inbound transfer count, the top 20 results are all whales. None are fraud ring members. Whales attract transfers from low-degree peripheral accounts, so their recursive hub score (PageRank) is moderate despite the high raw count. Ring members receive from other ring members who also have elevated connectivity. Their PageRank compounds through the ring topology.
-
-The demo gap: Genie names whales. PageRank names the ring.
-
-### Ten Rings Produce a 268x Density Signal (Louvain)
-
-The ten fraud rings are partitioned before any links are generated. Within-ring P2P links account for 30% of all 40,000 transfers, distributed randomly across ring pairs rather than concentrated on specific bilateral relationships. This keeps individual pair counts at 1–4 transfers, low enough that Genie's top bilateral pairs look like isolated suspicious activity rather than a ring.
-
-Within-ring edge density is 0.024. Between-account background density is 0.00009. The ratio is approximately 268x. Louvain resolves this into ten communities of ~100 accounts each. Genie sees 15 suspicious pairs involving ~30 accounts. Louvain finds all 1,000.
-
-The demo gap: Genie finds hints of fraud at the pair level. Louvain finds the ring.
-
-### Anchor Merchants Create Jaccard Signal Without a Column Signal (Node Similarity)
-
-Each ring is assigned five specific anchor merchants, sampled from the full merchant pool rather than exclusively from high-risk merchants. Fraud accounts transact at a ring anchor 18% of the time. Because the anchors are drawn from all 2,500 merchants, the overall high-risk merchant fraction for fraud accounts (23.4%) stays within 2.4 percentage points of normal accounts (21.0%), not enough for a merchant-tier column filter to be useful.
-
-The structural signal is that ring members share the same five specific merchants. Average Jaccard similarity within a ring is 1.78x higher than the fraud-to-normal cross rate. GDS Node Similarity scores every account pair by merchant-set overlap simultaneously; Genie can only count raw shared merchants, where nearly all pairs share at most one.
-
-The demo gap: Genie finds account pairs with one shared merchant. Node Similarity scores the full bipartite overlap and surfaces the ring.
-
----
-
-## Notebooks
-
-| # | File | Runs In | Purpose |
-|---|------|---------|---------|
-| 00 | `00_required_setup.ipynb` | Databricks | Widget-based setup: creates a per-user Unity Catalog, generates the synthetic dataset as Delta tables, stores Neo4j credentials as Databricks secrets, and verifies the Aura connection. |
-| 01 | `01_neo4j_ingest.ipynb` | Databricks | Pushes the operational Delta tables (`accounts`, `merchants`, `transactions`, `account_links`) into Neo4j Aura as a typed property graph via the Neo4j Spark Connector. |
-| 02 | `02_aura_gds_guide.ipynb` | Neo4j Aura Workspace | Cypher and GDS commands to project the graph, run PageRank / Louvain / Node Similarity, and write `risk_score`, `community_id`, and `similarity_score` back as Account node properties. Also available as [`aura_gds_guide.md`](./aura_gds_guide.md). |
-| 03 | `03_pull_and_model.ipynb` | Databricks | Reads enriched Account nodes back via the Spark Connector, registers graph features in Unity Catalog Feature Store, trains a baseline vs graph-augmented `GradientBoostingClassifier`, and compares AUC / F1 / ROC curves with an estimated dollar impact from additional fraud caught. |
-
----
-
-## Admin Quick Start
-
-Run these steps before the workshop. Participants do not need to follow this section.
-
-### 1. Prerequisites
-
-- Databricks workspace admin access (Unity Catalog enabled)
-- Dedicated compute cluster with the Neo4j Spark Connector installed:
-  - Maven: `org.neo4j:neo4j-connector-apache-spark_2.12:5.3.1_for_spark_3`
-  - Runtime: 13.3 LTS or higher
-- Neo4j Aura instance with GDS enabled (AuraDS or Aura Plugin)
-- `uv` installed locally (`pip install uv` or via [uv docs](https://docs.astral.sh/uv/))
-
-### 2. Generate and Validate the Dataset
-
-Run the data generator locally before the workshop to confirm the fraud patterns are intact and the CSVs look as expected:
-
-```bash
-cd finance-genie
-```
-
-```bash
-uv run setup/generate_data.py --output ./data/
-```
-
-This writes four CSV files to `./data/` with no Databricks dependency: only `pandas` and Python 3.9+ are required. Inspect the outputs to confirm:
-
-- `accounts.csv`: 25,000 rows, 1,000 marked `is_fraud = True`
-- `merchants.csv`: 2,500 rows across eight categories and three risk tiers
-- `transactions.csv`: 250,000 rows, fraud transactions at ~10,100 (~4%)
-- `account_links.csv`: 40,000 rows, 30% concentrated within the ten fraud rings
-
-The CSVs are for local inspection only. The setup notebook generates the Delta tables independently when each participant runs it.
-
-### 3. Prepare the Workspace
-
-Before participants arrive:
-
-- Confirm the dedicated cluster has the Neo4j Spark Connector Maven library attached and is running on Runtime 13.3 LTS or higher
-- Confirm participants have `CREATE CATALOG` permission in the Unity Catalog metastore, or pre-create a catalog they can write to
-- Share the Neo4j Aura connection details (URI, username, password) with participants. Each participant enters these into the setup notebook widgets.
+See [ADMIN_GUIDE.md](./ADMIN_GUIDE.md) for dataset design details, notebook descriptions, and pre-workshop setup instructions.
 
 ---
 

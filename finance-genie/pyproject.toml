@@ -5,6 +5,8 @@ description = "Synthetic fraud dataset generator and verification for the financ
 requires-python = ">=3.9"
 dependencies = [
     "pandas",
+    "python-dotenv",
+    "rich",
 ]
 
 [tool.uv]

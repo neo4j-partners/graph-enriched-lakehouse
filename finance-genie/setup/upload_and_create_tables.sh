@@ -93,9 +93,18 @@ run_sql "CREATE SCHEMA IF NOT EXISTS" \
 run_sql "CREATE VOLUME IF NOT EXISTS" \
   "CREATE VOLUME IF NOT EXISTS \`${CATALOG}\`.\`${SCHEMA}\`.\`${VOLUME}\`"
 
-# ── Step 2: Upload CSVs to Volume ─────────────────────────────────────────────
+# ── Step 2: Drop existing tables ─────────────────────────────────────────────
 log ""
-log "=== Step 2: Uploading CSVs → ${VOLUME_PATH} ==="
+log "=== Step 2: Dropping existing tables (clean reset) ==="
+
+for tbl in accounts merchants transactions account_links account_labels; do
+  run_sql "DROP TABLE IF EXISTS ${tbl}" \
+    "DROP TABLE IF EXISTS \`${CATALOG}\`.\`${SCHEMA}\`.\`${tbl}\`"
+done
+
+# ── Step 3: Upload CSVs to Volume ─────────────────────────────────────────────
+log ""
+log "=== Step 3: Uploading CSVs → ${VOLUME_PATH} ==="
 
 if [[ ! -d "$DATA_DIR" ]]; then
   err "Data directory not found: ${DATA_DIR}"
@@ -110,9 +119,9 @@ for csv_file in "${DATA_DIR}"/*.csv; do
   ok "${filename} → ${VOLUME_PATH}/${filename}"
 done
 
-# ── Step 3: Create Delta tables from Volume CSVs ──────────────────────────────
+# ── Step 4: Create Delta tables from Volume CSVs ──────────────────────────────
 log ""
-log "=== Step 3: Creating Delta tables in \`${CATALOG}\`.\`${SCHEMA}\` ==="
+log "=== Step 4: Creating Delta tables in \`${CATALOG}\`.\`${SCHEMA}\` ==="
 
 # accounts — one row per account holder
 run_sql "CREATE TABLE accounts" \
