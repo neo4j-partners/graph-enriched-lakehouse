@@ -215,7 +215,8 @@ def main() -> None:
     if not RESULTS_VOLUME_DIR:
         _die("RESULTS_VOLUME_DIR is not set. Check automated/.env.")
 
-    w = WorkspaceClient()
+    _profile = os.environ.get("DATABRICKS_PROFILE") or None
+    w = WorkspaceClient(profile=_profile)
     LOGS_DIR.mkdir(parents=True, exist_ok=True)
 
     # --- Discover or accept explicit paths ---

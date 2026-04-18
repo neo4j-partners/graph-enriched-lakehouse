@@ -54,9 +54,9 @@ The notebooks under `workshop/` push Delta Lake tables into Neo4j and pull enric
 │                gold_fraud_ring_communities                      │
 │  9.  validate_gold_tables.py  (data-correctness gate)           │
 │        6 checks against ground_truth.json — exits 1 on fail     │
-│  10. genie_run.py LABEL=before  (BEFORE space — observation)    │
+│  10. genie_run_before.py  (BEFORE space — observation)          │
 │        logs 3 questions against base-table-only space           │
-│  11. genie_run.py LABEL=after   (AFTER space — observation)     │
+│  11. genie_run_after.py   (AFTER space — observation)           │
 │        logs 3 questions against gold-table-enriched space       │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -181,18 +181,17 @@ uv run python -m cli submit validate_gold_tables.py
 
 Parameterized Genie runner — runs the same three analyst-phrased questions against any Genie Space, records results, and writes a JSON artifact to `RESULTS_VOLUME_DIR`. No pass/fail gating by default. See [Automated Genie testing](#automated-genie-testing).
 
+Use the thin submit wrappers below — the CLI runner passes parameters from `.env`, so each wrapper resolves `GENIE_SPACE_ID_BEFORE` / `GENIE_SPACE_ID_AFTER` and sets the correct label before delegating to `genie_run.main()`.
+
 ```bash
 # BEFORE space (base tables only)
-uv run python -m cli submit genie_run.py \
-    GENIE_SPACE_ID=$GENIE_SPACE_ID_BEFORE LABEL=before
+uv run python -m cli submit genie_run_before.py
 
 # AFTER space (base + gold tables)
-uv run python -m cli submit genie_run.py \
-    GENIE_SPACE_ID=$GENIE_SPACE_ID_AFTER LABEL=after
+uv run python -m cli submit genie_run_after.py
 
 # Optional — reproduce legacy gating behavior (exits non-zero if thresholds not met)
-uv run python -m cli submit genie_run.py \
-    GENIE_SPACE_ID=$GENIE_SPACE_ID_AFTER LABEL=after GATE=true
+# Add GATE=true to .env, submit genie_run_after.py, then remove it from .env
 ```
 
 ### `compare_genie_runs.py`
@@ -316,7 +315,9 @@ automated/
 │   ├── neo4j_ingest.py         # push Delta tables into Neo4j as a property graph
 │   ├── pull_gold_tables.py     # pull GDS features back to Delta gold tables
 │   ├── validate_gold_tables.py # data-correctness gate for the three gold tables
-│   ├── genie_run.py            # parameterized Genie runner (BEFORE or AFTER space)
+│   ├── genie_run.py            # parameterized Genie runner (core logic)
+│   ├── genie_run_before.py     # submit wrapper — targets GENIE_SPACE_ID_BEFORE
+│   ├── genie_run_after.py      # submit wrapper — targets GENIE_SPACE_ID_AFTER
 │   ├── demo_utils.py           # Genie API + check helpers
 │   ├── gold_constants.py       # shared thresholds used by pull and validate
 │   └── neo4j_secrets.py        # loads Neo4j credentials from Databricks secret scope
