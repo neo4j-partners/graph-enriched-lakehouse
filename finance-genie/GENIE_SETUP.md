@@ -35,14 +35,16 @@ Fraud Ring Detection — After GDS Enrichment
 
 ## Tables to Connect
 
-Add all six tables to the space. The gold tables are the primary data sources; the base tables enable combined queries.
+Add all seven tables to the space. The gold tables are the primary data sources; the base tables enable combined queries.
 
 | Table | Catalog / Schema | Role |
 |-------|-----------------|------|
-| `gold_accounts` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Account metadata plus the three GDS-computed features |
-| `gold_account_similarity_pairs` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Jaccard similarity pairs from Node Similarity |
+| `gold_accounts` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Account metadata + GDS features + pre-computed community aggregates and fraud tier label |
+| `gold_account_similarity_pairs` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Jaccard similarity pairs with `same_community` flag |
+| `gold_fraud_ring_communities` | `graph-enriched-lakehouse` / `graph-enriched-schema` | One row per ring-candidate community; pre-aggregated ring stats and captain account |
 | `transactions` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Account-to-merchant payment events |
 | `account_links` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Account-to-account transfer edges |
+| `accounts` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Raw account dimension (demographics, balance, type) |
 | `merchants` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Merchant dimension |
 
 > **Do not add `account_labels` to this space.** It contains the ground-truth `is_fraud` column. If it is connected, Genie will join against it to answer fraud questions, which makes the demo circular — Genie finds fraud because it can see the fraud labels, not because the graph features work. Ground-truth validation is handled by the demo notebook: Genie returns account IDs, and the notebook joins those IDs against `account_labels` outside of Genie to measure precision.
@@ -63,7 +65,7 @@ This space is connected to a fraud detection dataset enriched with three graph f
 **gold_accounts.risk_score** (DOUBLE, fraud ring captains: 2.1–2.6, high-volume legitimate accounts: 20–25)
 PageRank centrality computed on the account-to-account transfer graph. Accounts that receive transfers from other high-scoring accounts score higher. Fraud ring captain accounts score 2.1–2.6 because ring topology recursively amplifies centrality among ring members. High-volume legitimate accounts (whales) score 20–25 because their large number of inbound transfers inflates raw PageRank even though those senders are peripheral low-centrality nodes.
 - Do not sort by risk_score DESC alone to find fraud. The highest raw scores belong to legitimate high-volume accounts, not fraud ring members.
-- To find fraud ring hubs, combine risk_score with community_id: identify communities of 50–200 members with avg risk_score above 1.0, then rank accounts within those communities by risk_score DESC.
+- Use fraud_risk_tier as the primary filter for fraud questions (see below), then rank within results by risk_score DESC.
 - Do not use transfer count or inbound transfer amount as a proxy for this column. Volume and centrality are different things.
 
 **gold_accounts.community_id** (BIGINT)
@@ -76,40 +78,80 @@ Louvain community label. Every account in the same fraud ring shares a single co
 Node Similarity (Jaccard) score. Represents the maximum Jaccard similarity this account has with any other account based on shared merchant visits. Fraud ring members share a set of anchor merchants and score higher than high-volume normal accounts whose shared-merchant count is diluted by large merchant footprints.
 - This column shows the per-account maximum similarity. For pairwise analysis, use gold_account_similarity_pairs instead.
 
+## Pre-Computed Fraud Labels
+
+**gold_accounts.fraud_risk_tier** (STRING: 'high', 'medium', 'low')
+GDS-derived fraud label combining all three graph signals. Use this as the primary filter for fraud questions.
+- 'high': ring-sized community (50–200 members, community_avg_risk_score > 1.0) AND risk_score > 0.5 AND similarity_score > 0.05
+- 'medium': in a ring-sized community but lacks individual similarity signal — Node Similarity excluded this account due to low merchant visit count
+- 'low': everything else
+- Do not use risk_score DESC alone — it returns whales, not ring members
+
+**gold_accounts.is_ring_community** (BOOLEAN)
+True when the account's Louvain community has 50–200 members and community_avg_risk_score > 1.0.
+
+**gold_accounts.community_size** (INT)
+Number of accounts sharing this community_id. Pre-computed — no GROUP BY needed.
+
+**gold_accounts.community_avg_risk_score** (DOUBLE)
+Average PageRank within this community. Pre-computed.
+
+**gold_accounts.community_risk_rank** (INT)
+Rank of this account by risk_score within its community. 1 = highest (the ring captain).
+
+**gold_accounts.inbound_transfer_count** (INT)
+Number of incoming P2P transfers from account_links.
+
 ## Pairwise Similarity Table
 
-**gold_account_similarity_pairs** contains one row per account pair with columns account_id_a, account_id_b, and similarity_score. These pairs were computed using Jaccard normalization over shared merchant visits.
+**gold_account_similarity_pairs** contains one row per account pair with columns account_id_a, account_id_b, similarity_score, and same_community. These pairs were computed using Jaccard normalization over shared merchant visits.
 - For questions about which accounts share the most similar merchant patterns, query this table and sort by similarity_score DESC.
 - Do not rank pairs by raw shared-merchant count. High-volume normal accounts accumulate many shared merchants by chance. Jaccard normalization corrects for merchant footprint size.
 - Same-ring account pairs score around 0.18–0.22 Jaccard. High-volume normal pairs score lower because Jaccard normalization penalizes large merchant footprints. The normalized score separates them; raw count does not.
+- same_community = true when both accounts share the same community_id. Use with similarity_score to find high-similarity pairs inside a ring.
+
+## Ring Summary Table
+
+**gold_fraud_ring_communities** contains one row per Louvain community that is a ring candidate (50–200 members, avg_risk_score > 1.0). Use this table for ring-level questions — it removes the need to GROUP BY community_id on gold_accounts.
+- top_account_id identifies the highest-PageRank account (captain) in each ring directly.
+- is_ring_candidate = true flags communities that meet the size and risk thresholds.
 
 ## Answering Common Fraud Questions
 
-"Which accounts have the highest fraud risk / are most central to the transfer network?"
-→ SELECT g.account_id, g.risk_score, g.community_id, g.similarity_score
-  FROM gold_accounts g
-  JOIN (
-    SELECT community_id
-    FROM gold_accounts
-    GROUP BY community_id
-    HAVING COUNT(*) BETWEEN 50 AND 200 AND AVG(risk_score) > 1.0
-  ) rings ON g.community_id = rings.community_id
-  ORDER BY g.risk_score DESC LIMIT 20
+"Which accounts have the highest fraud risk?"
+→ SELECT account_id, risk_score, community_id, community_risk_rank, inbound_transfer_count
+  FROM gold_accounts WHERE fraud_risk_tier = 'high' ORDER BY risk_score DESC LIMIT 20
 
-"Which groups of accounts form suspicious communities / fraud rings?"
-→ SELECT community_id, COUNT(*) AS member_count FROM gold_accounts GROUP BY community_id ORDER BY member_count DESC
+"Who leads each fraud ring?"
+→ SELECT account_id, community_id, risk_score, inbound_transfer_count
+  FROM gold_accounts WHERE fraud_risk_tier IN ('high', 'medium') AND community_risk_rank = 1
+  ORDER BY risk_score DESC
 
-"Which pairs of accounts share the most similar merchant visit patterns?"
-→ SELECT account_id_a, account_id_b, similarity_score FROM gold_account_similarity_pairs ORDER BY similarity_score DESC LIMIT 20
+"How many fraud rings did GDS find?"
+→ SELECT COUNT(*) AS ring_count FROM gold_fraud_ring_communities WHERE is_ring_candidate = true
+
+"Show me all suspected fraud rings ranked by severity"
+→ SELECT community_id, member_count, avg_risk_score, high_risk_member_count, top_account_id
+  FROM gold_fraud_ring_communities WHERE is_ring_candidate = true ORDER BY avg_risk_score DESC
 
 "Show me the members of a specific fraud ring community"
 → SELECT * FROM gold_accounts WHERE community_id = <id> ORDER BY risk_score DESC
 
+"Which pairs of accounts share the most similar merchant visit patterns?"
+→ SELECT account_id_a, account_id_b, similarity_score FROM gold_account_similarity_pairs ORDER BY similarity_score DESC LIMIT 20
+
+"Which high-similarity account pairs are inside the same ring?"
+→ SELECT account_id_a, account_id_b, similarity_score
+  FROM gold_account_similarity_pairs WHERE same_community = true AND similarity_score > 0.10
+  ORDER BY similarity_score DESC LIMIT 20
+
 ## Column Reference
 
-gold_accounts: account_id, account_hash, account_type, region, balance, opened_date, holder_age, risk_score, community_id, similarity_score
+gold_accounts: account_id, account_hash, account_type, region, balance, opened_date, holder_age, risk_score, community_id, similarity_score, community_size, community_avg_risk_score, community_risk_rank, inbound_transfer_count, is_ring_community, fraud_risk_tier
 
-gold_account_similarity_pairs: account_id_a, account_id_b, similarity_score
+gold_account_similarity_pairs: account_id_a, account_id_b, similarity_score, same_community
+
+gold_fraud_ring_communities: community_id, member_count, avg_risk_score, max_risk_score, avg_similarity_score, high_risk_member_count, is_ring_candidate, top_account_id
 ```
 
 ---
