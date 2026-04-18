@@ -41,9 +41,10 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
 from graphdatascience import GraphDataScience
 from neo4j.exceptions import AuthError, ServiceUnavailable
+
+from _common import fail, header, load_env, ok
 
 REQUIRED_VARS = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
 
@@ -64,19 +65,6 @@ NODESIM_DEGREE_CUTOFF = 5
 # NODESIM_DEGREE_CUTOFF — at that point fraud_risk_tier='high' coverage on
 # ring members drops below demo-viable levels (<80%).
 RING_EXCLUSION_MAX = 0.20
-
-
-def fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    print(f"FAIL  {msg}")
-    sys.exit(1)
-
-
-def ok(msg: str) -> None:
-    print(f"OK    {msg}")
-
-
-def header(label: str) -> None:
-    print(f"\n── {label} " + "─" * max(0, 60 - len(label)))
 
 
 def load_ground_truth(script_dir: Path) -> dict:
@@ -175,7 +163,7 @@ def run_pipeline(gds: GraphDataScience) -> None:
         G2,
         similarityMetric="JACCARD",
         topK=10,
-        degreeCutoff=5,
+        degreeCutoff=NODESIM_DEGREE_CUTOFF,
         writeRelationshipType="SIMILAR_TO",
         writeProperty="similarity_score",
     )
@@ -447,16 +435,8 @@ def check_ring_member_nodesim_exclusion(
 
 
 def main() -> None:
+    load_env(REQUIRED_VARS)
     script_dir = Path(__file__).parent
-    env_path = script_dir.parent / ".env"
-    if not env_path.is_file():
-        fail(f".env not found at {env_path}")
-    load_dotenv(env_path, override=True)
-
-    missing = [v for v in REQUIRED_VARS if not os.environ.get(v)]
-    if missing:
-        fail(f"missing in .env: {', '.join(missing)}")
-
     gt = load_ground_truth(script_dir)
     rings = gt["rings"]
     fraud_ids = [int(a) for r in rings for a in r["account_ids"]]

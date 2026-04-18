@@ -1,19 +1,19 @@
 """Direct-SQL data-correctness gate for the gold tables.
 
-This runs as a Databricks Python task (not locally). It reads the three gold
-tables written by pull_gold_tables.py, joins them against ground_truth.json
-from the UC Volume, and verifies that the fraud labels and ring aggregates
-align with the simulated ground truth. Runs BEFORE genie_test.py so that a
-Genie test failure can be distinguished from a bad gold-table build.
+Runs as a Databricks Python task. Reads the three gold tables written by
+pull_gold_tables.py, joins them against ground_truth.json from the UC Volume,
+and verifies that the fraud labels and ring aggregates align with the
+simulated ground truth. Runs BEFORE genie_test.py so that a Genie test
+failure can be distinguished from a bad gold-table build.
 
-All joins against ground truth are keyed on `account_id` — never on the raw
-`community_id`, which drifts across GDS runs.
+All joins against ground truth are keyed on account_id — never on the raw
+community_id, which drifts across GDS runs.
 
 Six checks:
 
   1. gold_fraud_ring_communities has exactly 10 rows with is_ring_candidate=true
-  2. Each ring-candidate community contains ≥ 80% of exactly one fraud ring's
-     accounts (per ground_truth.json)
+  2. Each ring-candidate community is dominated by a single ground-truth ring:
+     the dominant ring's members cover ≥80% of their home ring
   3. All ring-candidate communities have member_count BETWEEN 50 AND 200
   4. fraud_risk_tier='high' covers ≥ 60% of the 1,000 ring-member accounts
   5. For each ring-candidate community, top_account_id is a member of the
@@ -61,6 +61,8 @@ SCHEMA = os.environ["SCHEMA"]
 GROUND_TRUTH_PATH = os.environ["GROUND_TRUTH_PATH"]
 RESULTS_VOLUME_DIR = os.environ["RESULTS_VOLUME_DIR"].rstrip("/")
 
+TIER_HIGH = "high"
+
 RING_CANDIDATE_COUNT_EXPECTED = 10
 RING_DOMINANCE_MIN = 0.80
 MEMBER_COUNT_LOW = 50
@@ -77,38 +79,106 @@ def header(label: str) -> None:
     print(f"\n── {label} " + "─" * max(0, 60 - len(label)))
 
 
-def read_ground_truth() -> dict:
-    ws = WorkspaceClient()
-    volume_path = GROUND_TRUTH_PATH
-    with io.BytesIO() as buf:
-        download = ws.files.download(volume_path)
-        buf.write(download.contents.read())
-        raw = buf.getvalue()
-    return json.loads(raw.decode("utf-8"))
+def load_ground_truth(ws: WorkspaceClient) -> dict:
+    try:
+        download = ws.files.download(GROUND_TRUTH_PATH)
+        raw = download.contents.read()
+    except Exception as e:
+        print(f"FAIL  cannot read ground_truth at {GROUND_TRUTH_PATH}: {e}")
+        sys.exit(1)
+    try:
+        return json.loads(raw.decode("utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"FAIL  ground_truth at {GROUND_TRUTH_PATH} is not valid JSON: {e}")
+        sys.exit(1)
 
 
 def main() -> None:
     spark = SparkSession.builder.getOrCreate()
+    ws = WorkspaceClient()
 
-    gt = read_ground_truth()
+    gt = load_ground_truth(ws)
     rings = gt["rings"]
     ring_id_to_members: dict[int, set[int]] = {
         int(r["ring_id"]): {int(a) for a in r["account_ids"]} for r in rings
     }
-    fraud_ids = {a for members in ring_id_to_members.values() for a in members}
     print(
         f"OK    ground_truth.json loaded: {len(rings)} rings, "
-        f"{len(fraud_ids):,} fraud accounts"
+        f"{sum(len(m) for m in ring_id_to_members.values()):,} fraud accounts"
+    )
+
+    # One flat mapping of (account_id, ring_id) reused across checks 2, 4, 5, 6.
+    ring_rows = [
+        (int(a), int(rid))
+        for rid, members in ring_id_to_members.items()
+        for a in members
+    ]
+    ring_df = spark.createDataFrame(ring_rows, ["account_id", "ring_id"]).cache()
+
+    ga_df = (
+        spark.table(GOLD_ACCOUNTS)
+        .select("account_id", "community_id", "fraud_risk_tier")
+        .cache()
+    )
+    rc_df = (
+        spark.table(GOLD_RINGS)
+        .filter(F.col("is_ring_candidate"))
+        .select("community_id", "member_count", "top_account_id")
+        .cache()
     )
 
     problems: list[str] = []
     results: dict[str, dict] = {}
+    try:
+        problems += _run_checks(
+            spark, ga_df, rc_df, ring_df, ring_id_to_members, results
+        )
+    finally:
+        rc_df.unpersist()
+        ga_df.unpersist()
+        ring_df.unpersist()
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
+    artifact_path = f"{RESULTS_VOLUME_DIR}/validate_gold_tables_{timestamp}.json"
+    artifact = {
+        "timestamp": timestamp,
+        "catalog": CATALOG,
+        "schema": SCHEMA,
+        "problems": problems,
+        "results": results,
+    }
+    artifact_bytes = json.dumps(artifact, indent=2).encode("utf-8")
+    try:
+        with io.BytesIO(artifact_bytes) as buf:
+            ws.files.upload(artifact_path, buf, overwrite=True)
+        print(f"\nArtifact: {artifact_path}")
+    except Exception as e:
+        print(f"\nWARN  failed to write artifact to {artifact_path}: {e}")
+
+    print()
+    print("=" * 62)
+    if problems:
+        print(f"FAIL  {len(problems)} problem(s):")
+        for p in problems:
+            print(f"  - {p}")
+        sys.exit(1)
+    print("PASS  gold tables match ground truth (6/6).")
+
+
+def _run_checks(
+    spark,
+    ga_df,
+    rc_df,
+    ring_df,
+    ring_id_to_members: dict[int, set[int]],
+    results: dict[str, dict],
+) -> list[str]:
+    problems: list[str] = []
 
     # ------------------------------------------------------------------- #
     # Check 1 — exactly 10 ring candidates                                #
     # ------------------------------------------------------------------- #
     header("[1/6] gold_fraud_ring_communities ring-candidate count")
-    rc_df = spark.table(GOLD_RINGS).filter(F.col("is_ring_candidate"))
     rc_count = rc_df.count()
     print(f"      is_ring_candidate=true: {rc_count}")
     results["ring_candidate_count"] = {
@@ -123,117 +193,66 @@ def main() -> None:
         )
 
     # ------------------------------------------------------------------- #
-    # Check 2 — each ring-candidate community dominated by one ring ≥80%  #
+    # Check 2 — each ring-candidate community dominated by one ring       #
+    # Dominance = ring members in this community / total ring members.    #
+    # Also builds community_to_ring for Check 5.                          #
     # ------------------------------------------------------------------- #
-    header("[2/6] Each ring-candidate community ≥80% one ground-truth ring")
-    ga_df = spark.table(GOLD_ACCOUNTS).select("account_id", "community_id")
-
-    rc_members = (
-        rc_df.select("community_id", "member_count")
-        .join(ga_df, "community_id")
+    header("[2/6] Each ring-candidate community ≥80% of its dominant ring")
+    community_to_ring = _check_ring_dominance(
+        rc_df, ga_df, ring_df, ring_id_to_members, results, problems
     )
-
-    # Build (community_id, ring_id) rows from ground truth join.
-    ring_rows = [
-        (int(a), int(rid))
-        for rid, members in ring_id_to_members.items()
-        for a in members
-    ]
-    ring_df = spark.createDataFrame(ring_rows, ["account_id", "ring_id"])
-
-    per_community = (
-        rc_members.join(ring_df, "account_id", "left")
-        .groupBy("community_id", "member_count")
-        .agg(
-            F.count(F.when(F.col("ring_id").isNotNull(), 1)).alias("fraud_members"),
-            F.collect_list("ring_id").alias("ring_ids"),
-        )
-    )
-
-    rows = per_community.collect()
-    dominance_records = []
-    ring_to_community: dict[int, int] = {}
-    for r in rows:
-        cid = int(r["community_id"])
-        member_count = int(r["member_count"])
-        ring_ids = [x for x in r["ring_ids"] if x is not None]
-        if not ring_ids:
-            problems.append(
-                f"community {cid}: no ground-truth ring members in a ring-candidate community"
-            )
-            continue
-        # Pick the dominant ring in this community.
-        counts: dict[int, int] = {}
-        for rid in ring_ids:
-            counts[rid] = counts.get(rid, 0) + 1
-        dominant_ring, dominant_count = max(counts.items(), key=lambda kv: kv[1])
-        dominance = dominant_count / len(ring_id_to_members[dominant_ring])
-        dominance_records.append(
-            {
-                "community_id": cid,
-                "member_count": member_count,
-                "dominant_ring": dominant_ring,
-                "ring_members_in_community": dominant_count,
-                "ring_dominance": round(dominance, 3),
-            }
-        )
-        ring_to_community[dominant_ring] = cid
-        print(
-            f"      community {cid} (size {member_count}): dominant ring={dominant_ring} "
-            f"({dominant_count}/{len(ring_id_to_members[dominant_ring])} = {dominance:.0%})"
-        )
-        if dominance < RING_DOMINANCE_MIN:
-            problems.append(
-                f"community {cid}: dominant ring dominance {dominance:.0%} < "
-                f"{RING_DOMINANCE_MIN:.0%}"
-            )
-    results["ring_dominance"] = dominance_records
 
     # ------------------------------------------------------------------- #
     # Check 3 — ring-candidate member_count BETWEEN 50 AND 200             #
+    # Min/max and out-of-range count in a single aggregation.              #
     # ------------------------------------------------------------------- #
     header("[3/6] Ring-candidate member_count in [50, 200]")
-    out_of_range = (
-        rc_df.filter(
-            ~F.col("member_count").between(MEMBER_COUNT_LOW, MEMBER_COUNT_HIGH)
-        )
-        .select("community_id", "member_count")
-        .collect()
+    range_row = rc_df.agg(
+        F.min("member_count").alias("min_size"),
+        F.max("member_count").alias("max_size"),
+        F.sum(
+            F.when(
+                ~F.col("member_count").between(MEMBER_COUNT_LOW, MEMBER_COUNT_HIGH),
+                1,
+            ).otherwise(0)
+        ).alias("out_of_range"),
+    ).collect()[0]
+    out_of_range = int(range_row["out_of_range"] or 0)
+    min_size = int(range_row["min_size"]) if range_row["min_size"] is not None else None
+    max_size = int(range_row["max_size"]) if range_row["max_size"] is not None else None
+    print(
+        f"      member_count range: {min_size}–{max_size}  "
+        f"out_of_range: {out_of_range}"
     )
-    if out_of_range:
-        for r in out_of_range:
-            problems.append(
-                f"community {int(r['community_id'])} member_count "
-                f"{int(r['member_count'])} outside [{MEMBER_COUNT_LOW},{MEMBER_COUNT_HIGH}]"
-            )
-    else:
-        sizes = [int(r["member_count"]) for r in rc_df.select("member_count").collect()]
-        sizes.sort()
-        print(f"      member_count range: {sizes[0]}–{sizes[-1]} (all inside [50, 200])")
-        print("OK    all ring candidates in range")
     results["ring_size_range"] = {
         "low": MEMBER_COUNT_LOW,
         "high": MEMBER_COUNT_HIGH,
-        "out_of_range": len(out_of_range),
+        "min": min_size,
+        "max": max_size,
+        "out_of_range": out_of_range,
     }
+    if out_of_range:
+        problems.append(
+            f"{out_of_range} ring-candidate communities have member_count "
+            f"outside [{MEMBER_COUNT_LOW}, {MEMBER_COUNT_HIGH}]"
+        )
+    else:
+        print("OK    all ring candidates in range")
 
     # ------------------------------------------------------------------- #
     # Check 4 — fraud_risk_tier='high' covers ≥ 60% of ring members       #
     # ------------------------------------------------------------------- #
     header("[4/6] fraud_risk_tier='high' coverage of ring members")
-    fraud_df = spark.createDataFrame(
-        [(a,) for a in sorted(fraud_ids)], ["account_id"]
-    )
-    tier_df = spark.table(GOLD_ACCOUNTS).select("account_id", "fraud_risk_tier")
+    fraud_df = ring_df.select("account_id").distinct()
     tier_counts_row = (
-        fraud_df.join(tier_df, "account_id", "left")
+        fraud_df.join(ga_df.select("account_id", "fraud_risk_tier"), "account_id", "left")
         .groupBy("fraud_risk_tier")
         .count()
         .collect()
     )
     tier_counts = {r["fraud_risk_tier"]: int(r["count"]) for r in tier_counts_row}
     total_ring_members = sum(tier_counts.values())
-    high_count = tier_counts.get("high", 0)
+    high_count = tier_counts.get(TIER_HIGH, 0)
     high_frac = high_count / total_ring_members if total_ring_members else 0.0
     print(f"      ring members by tier: {tier_counts}")
     print(
@@ -257,21 +276,18 @@ def main() -> None:
     # Check 5 — top_account_id is a member of the dominant ring            #
     # ------------------------------------------------------------------- #
     header("[5/6] top_account_id belongs to the dominant ring")
-    rc_top_df = rc_df.select("community_id", "top_account_id").collect()
     top_records = []
-    for r in rc_top_df:
-        cid = int(r["community_id"])
-        top_id = int(r["top_account_id"]) if r["top_account_id"] is not None else None
+    for row in rc_df.select("community_id", "top_account_id").collect():
+        cid = int(row["community_id"])
+        top_id = (
+            int(row["top_account_id"]) if row["top_account_id"] is not None else None
+        )
         if top_id is None:
             problems.append(f"community {cid}: top_account_id is null")
             continue
-        dominant_ring = next(
-            (rid for rid, c in ring_to_community.items() if c == cid), None
-        )
+        dominant_ring = community_to_ring.get(cid)
         if dominant_ring is None:
-            problems.append(
-                f"community {cid}: no dominant ring mapping (Check 2 inconsistency)"
-            )
+            # Check 2 already recorded the reason this community was skipped.
             continue
         in_ring = top_id in ring_id_to_members[dominant_ring]
         top_records.append(
@@ -296,15 +312,13 @@ def main() -> None:
 
     # ------------------------------------------------------------------- #
     # Check 6 — same_community=true for ≥95% of same-ring pairs           #
+    # Single pass: count + sum(cast to int) in one aggregation.           #
     # ------------------------------------------------------------------- #
     header("[6/6] same_community=true holds for same-ring similarity pairs")
-    pairs_df = spark.table(GOLD_PAIRS).select(
-        "account_id_a", "account_id_b", "same_community"
-    )
-    # Join ring_id for both sides; keep only pairs where both accounts are
-    # in the same ground-truth ring.
     pairs_with_rings = (
-        pairs_df.join(
+        spark.table(GOLD_PAIRS)
+        .select("account_id_a", "account_id_b", "same_community")
+        .join(
             ring_df.withColumnRenamed("account_id", "account_id_a")
                    .withColumnRenamed("ring_id", "ring_id_a"),
             "account_id_a",
@@ -316,8 +330,12 @@ def main() -> None:
         )
         .filter(F.col("ring_id_a") == F.col("ring_id_b"))
     )
-    same_ring_total = pairs_with_rings.count()
-    same_ring_true = pairs_with_rings.filter(F.col("same_community")).count()
+    pair_row = pairs_with_rings.agg(
+        F.count("*").alias("total"),
+        F.sum(F.col("same_community").cast("int")).alias("true_count"),
+    ).collect()[0]
+    same_ring_total = int(pair_row["total"] or 0)
+    same_ring_true = int(pair_row["true_count"] or 0)
     same_ring_frac = same_ring_true / same_ring_total if same_ring_total else 0.0
     print(
         f"      same-ring pairs in gold_account_similarity_pairs: {same_ring_total:,}  "
@@ -345,34 +363,71 @@ def main() -> None:
             f"{SAME_COMMUNITY_FRAC_MIN:.0%}"
         )
 
-    # ------------------------------------------------------------------- #
-    # Write artifact + summary                                            #
-    # ------------------------------------------------------------------- #
-    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%SZ")
-    artifact_path = f"{RESULTS_VOLUME_DIR}/validate_gold_tables_{timestamp}.json"
-    artifact = {
-        "timestamp": timestamp,
-        "catalog": CATALOG,
-        "schema": SCHEMA,
-        "problems": problems,
-        "results": results,
-    }
-    artifact_bytes = json.dumps(artifact, indent=2).encode("utf-8")
-    try:
-        ws = WorkspaceClient()
-        ws.files.upload(artifact_path, io.BytesIO(artifact_bytes), overwrite=True)
-        print(f"\nArtifact: {artifact_path}")
-    except Exception as e:
-        print(f"\nWARN  failed to write artifact to {artifact_path}: {e}")
+    return problems
 
-    print()
-    print("=" * 62)
-    if problems:
-        print(f"FAIL  {len(problems)} problem(s):")
-        for p in problems:
-            print(f"  - {p}")
-        sys.exit(1)
-    print("PASS  gold tables match ground truth (6/6).")
+
+def _check_ring_dominance(
+    rc_df,
+    ga_df,
+    ring_df,
+    ring_id_to_members: dict[int, set[int]],
+    results: dict[str, dict],
+    problems: list[str],
+) -> dict[int, int]:
+    """Returns community_id → dominant ring_id for communities that passed the
+    ring-lookup. Records problems for communities with no ring members or low
+    dominance. Used by Check 5."""
+    rc_members = (
+        rc_df.select("community_id", "member_count")
+        .join(ga_df.select("account_id", "community_id"), "community_id")
+    )
+    per_community = (
+        rc_members.join(ring_df, "account_id", "left")
+        .groupBy("community_id", "member_count")
+        .agg(F.collect_list("ring_id").alias("ring_ids"))
+    ).collect()
+
+    community_to_ring: dict[int, int] = {}
+    dominance_records = []
+
+    for r in per_community:
+        cid = int(r["community_id"])
+        member_count = int(r["member_count"])
+        ring_ids = [int(x) for x in r["ring_ids"] if x is not None]
+        if not ring_ids:
+            problems.append(
+                f"community {cid}: no ground-truth ring members in a "
+                f"ring-candidate community"
+            )
+            continue
+        counts: dict[int, int] = {}
+        for rid in ring_ids:
+            counts[rid] = counts.get(rid, 0) + 1
+        dominant_ring, dominant_count = max(counts.items(), key=lambda kv: kv[1])
+        ring_size = len(ring_id_to_members[dominant_ring])
+        dominance = dominant_count / ring_size
+        community_to_ring[cid] = dominant_ring
+        dominance_records.append(
+            {
+                "community_id": cid,
+                "member_count": member_count,
+                "dominant_ring": dominant_ring,
+                "ring_members_in_community": dominant_count,
+                "ring_dominance": round(dominance, 3),
+            }
+        )
+        print(
+            f"      community {cid} (size {member_count}): dominant ring="
+            f"{dominant_ring} ({dominant_count}/{ring_size} = {dominance:.0%})"
+        )
+        if dominance < RING_DOMINANCE_MIN:
+            problems.append(
+                f"community {cid}: dominant ring dominance {dominance:.0%} < "
+                f"{RING_DOMINANCE_MIN:.0%}"
+            )
+
+    results["ring_dominance"] = dominance_records
+    return community_to_ring
 
 
 if __name__ == "__main__":

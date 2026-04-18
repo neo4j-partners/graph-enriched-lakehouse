@@ -31,9 +31,10 @@ import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from neo4j.exceptions import AuthError, ServiceUnavailable
+
+from _common import fail, load_env, ok
 
 REQUIRED_VARS = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
 
@@ -53,23 +54,6 @@ TRANSFERRED_MIN = 100_000  # sanity floor; catches an empty or near-empty ingest
 
 DENSITY_RATIO_MIN = 100.0
 ANCHOR_VISIT_RATIO_MIN = 2.0
-
-
-class Failure(Exception):
-    pass
-
-
-def fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    print(f"FAIL  {msg}")
-    sys.exit(1)
-
-
-def ok(msg: str) -> None:
-    print(f"OK    {msg}")
-
-
-def warn(check: str, msg: str) -> None:
-    print(f"WARN  {check}: {msg}")
 
 
 def load_ground_truth(script_dir: Path) -> dict:
@@ -255,16 +239,8 @@ def check_ring_anchors(session, gt: dict) -> list[str]:
 
 
 def main() -> None:
+    load_env(REQUIRED_VARS)
     script_dir = Path(__file__).parent
-    env_path = script_dir.parent / ".env"
-    if not env_path.is_file():
-        fail(f".env not found at {env_path}")
-    load_dotenv(env_path, override=True)
-
-    missing = [v for v in REQUIRED_VARS if not os.environ.get(v)]
-    if missing:
-        fail(f"missing or empty in .env: {', '.join(missing)}")
-
     gt = load_ground_truth(script_dir)
     n_rings = len(gt["rings"])
     n_fraud = gt["summary"]["total_fraud_accounts"]

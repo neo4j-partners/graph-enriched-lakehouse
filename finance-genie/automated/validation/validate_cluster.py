@@ -31,23 +31,20 @@ from __future__ import annotations
 import os
 import re
 import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
+from databricks.sdk import WorkspaceClient
+from databricks.sdk.errors import NotFound
+
+from _common import fail, load_env, ok
 
 CLUSTER_ID_RE = re.compile(r"^\d{4}-\d{6}-[a-z0-9]{8}$")
 
 REQUIRED_PYPI = "graphdatascience"
-REQUIRED_MAVEN = "org.neo4j:neo4j-connector-apache-spark_2.12:5.3.1_for_spark_3"
-
-
-def fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    print(f"FAIL  {msg}")
-    sys.exit(1)
-
-
-def ok(msg: str) -> None:
-    print(f"OK    {msg}")
+# Match on artifact prefix only; the Scala version (_2.12 vs _2.13) and
+# connector release (5.3.1, 5.3.10, …) depend on the cluster's Spark runtime
+# and are chosen per-cluster. Hardcoding the full coordinate rejects valid
+# installs for no benefit.
+REQUIRED_MAVEN_PREFIX = "org.neo4j:neo4j-connector-apache-spark"
 
 
 def check_id_shape(cluster_id: str) -> list[str]:
@@ -64,6 +61,11 @@ def check_id_shape(cluster_id: str) -> list[str]:
 def check_cluster_state(ws, cluster_id: str) -> list[str]:
     try:
         cluster = ws.clusters.get(cluster_id)
+    except NotFound:
+        return [
+            f"cluster {cluster_id} does not exist in this workspace — "
+            f"check DATABRICKS_CLUSTER_ID in .env"
+        ]
     except Exception as e:
         return [f"cannot fetch cluster {cluster_id}: {e}"]
 
@@ -84,8 +86,8 @@ def check_libraries(ws, cluster_id: str) -> list[str]:
     except Exception as e:
         return [f"cannot fetch library status for {cluster_id}: {e}"]
 
-    found_pypi = False
-    found_maven = False
+    found_pypi: str | None = None
+    found_maven: str | None = None
     installed_labels: list[str] = []
 
     for lib_full_status in status:
@@ -95,23 +97,26 @@ def check_libraries(ws, cluster_id: str) -> list[str]:
             pkg = lib.pypi.package.split("==")[0].split(">")[0].split("<")[0].strip()
             installed_labels.append(f"pypi:{pkg}({lib_state})")
             if pkg.lower() == REQUIRED_PYPI.lower() and lib_state == "INSTALLED":
-                found_pypi = True
+                found_pypi = pkg
         elif lib.maven and lib.maven.coordinates:
             coord = lib.maven.coordinates
             installed_labels.append(f"maven:{coord}({lib_state})")
-            if coord == REQUIRED_MAVEN and lib_state == "INSTALLED":
-                found_maven = True
+            if coord.startswith(REQUIRED_MAVEN_PREFIX) and lib_state == "INSTALLED":
+                found_maven = coord
 
     problems: list[str] = []
     if found_pypi:
-        ok(f"library installed: pypi:{REQUIRED_PYPI}")
+        ok(f"library installed: pypi:{found_pypi}")
     else:
         problems.append(f"required PyPI library not INSTALLED: {REQUIRED_PYPI}")
 
     if found_maven:
-        ok(f"library installed: maven:{REQUIRED_MAVEN}")
+        ok(f"library installed: maven:{found_maven}")
     else:
-        problems.append(f"required Maven library not INSTALLED: {REQUIRED_MAVEN}")
+        problems.append(
+            f"required Maven library not INSTALLED: "
+            f"{REQUIRED_MAVEN_PREFIX}_<scala>:<version>_for_spark_<n>"
+        )
 
     if problems:
         print(f"      installed libraries on cluster: {installed_labels or '(none)'}")
@@ -120,15 +125,8 @@ def check_libraries(ws, cluster_id: str) -> list[str]:
 
 
 def main() -> None:
-    script_dir = Path(__file__).parent
-    env_path = script_dir.parent / ".env"
-    if not env_path.is_file():
-        fail(f".env not found at {env_path}")
-    load_dotenv(env_path, override=True)
-
-    cluster_id = os.environ.get("DATABRICKS_CLUSTER_ID", "").strip()
-    if not cluster_id:
-        fail("DATABRICKS_CLUSTER_ID is not set in .env")
+    load_env(("DATABRICKS_CLUSTER_ID",))
+    cluster_id = os.environ["DATABRICKS_CLUSTER_ID"].strip()
 
     profile = os.environ.get("DATABRICKS_PROFILE", "").strip()
     if profile:
@@ -145,11 +143,6 @@ def main() -> None:
         for p in problems:
             print(f"  - {p}")
         sys.exit(1)
-
-    try:
-        from databricks.sdk import WorkspaceClient
-    except ImportError as e:
-        fail(f"databricks-sdk not installed: {e}")
 
     try:
         ws = WorkspaceClient()

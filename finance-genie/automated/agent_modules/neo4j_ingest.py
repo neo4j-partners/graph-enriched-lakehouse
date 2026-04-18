@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 
 # --------------------------------------------------------------------------- #
@@ -32,50 +33,47 @@ for _arg in sys.argv[1:]:
         remaining.append(_arg)
 sys.argv[1:] = remaining
 
+# __file__ is not set when the cluster runs this via exec(compile(...));
+# fall back to the frame's co_filename to find our sibling modules.
+try:
+    _HERE = Path(__file__).resolve().parent
+except NameError:
+    import inspect as _inspect
+    _HERE = Path(_inspect.currentframe().f_code.co_filename).resolve().parent
+    del _inspect
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
 from graphdatascience import GraphDataScience  # noqa: E402
 from pyspark.sql import SparkSession  # noqa: E402
 
+from neo4j_secrets import load_neo4j_opts  # noqa: E402
+
 # --------------------------------------------------------------------------- #
-# 3. Config — pulled from os.environ after inject_params()                     #
+# 2. Config + Neo4j credentials                                                #
 # --------------------------------------------------------------------------- #
 CATALOG = os.environ["CATALOG"]
 SCHEMA = os.environ["SCHEMA"]
 SECRET_SCOPE = os.environ["NEO4J_SECRET_SCOPE"]
 
-# --------------------------------------------------------------------------- #
-# 4. Fetch Neo4j credentials from Databricks Secrets (replaces dbutils)        #
-# --------------------------------------------------------------------------- #
-from databricks.sdk import WorkspaceClient  # noqa: E402
-
-_ws = WorkspaceClient()
-
-NEO4J_URI = _ws.dbutils.secrets.get(scope=SECRET_SCOPE, key="uri")
-NEO4J_USER = _ws.dbutils.secrets.get(scope=SECRET_SCOPE, key="username")
-NEO4J_PASSWORD = _ws.dbutils.secrets.get(scope=SECRET_SCOPE, key="password")
-
-NEO4J_OPTS = {
-    "url": NEO4J_URI,
-    "authentication.basic.username": NEO4J_USER,
-    "authentication.basic.password": NEO4J_PASSWORD,
-    "batch.size": "10000",
-}
+NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_OPTS = load_neo4j_opts(SECRET_SCOPE)
 
 # --------------------------------------------------------------------------- #
-# 5. Spark session + catalog                                                   #
+# 3. Spark session + catalog                                                   #
 # --------------------------------------------------------------------------- #
 spark = SparkSession.builder.getOrCreate()
 spark.sql(f"USE CATALOG `{CATALOG}`")
 spark.sql(f"USE SCHEMA `{SCHEMA}`")
 
 # --------------------------------------------------------------------------- #
-# 6. Clear Neo4j (idempotent re-runs)                                          #
+# 4. Clear Neo4j (idempotent re-runs)                                          #
 # --------------------------------------------------------------------------- #
 gds = GraphDataScience(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
 gds.run_cypher("MATCH (n) DETACH DELETE n")
 print("Neo4j cleared.")
 
 # --------------------------------------------------------------------------- #
-# 7. Write Account nodes                                                        #
+# 5. Write Account nodes                                                        #
 # --------------------------------------------------------------------------- #
 accounts_df = (
     spark.table(f"`{CATALOG}`.`{SCHEMA}`.accounts")
@@ -93,7 +91,7 @@ accounts_df = (
 print("Account nodes written.")
 
 # --------------------------------------------------------------------------- #
-# 8. Write Merchant nodes                                                       #
+# 6. Write Merchant nodes                                                       #
 # --------------------------------------------------------------------------- #
 merchants_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.merchants")
 
@@ -108,7 +106,7 @@ merchants_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.merchants")
 print("Merchant nodes written.")
 
 # --------------------------------------------------------------------------- #
-# 9. Create indexes before relationship writes                                  #
+# 7. Create indexes before relationship writes                                  #
 #    Uniqueness constraints also create an index; without these the Spark      #
 #    Connector does a full node scan per relationship row.                     #
 # --------------------------------------------------------------------------- #
@@ -123,7 +121,7 @@ gds.run_cypher("""
 print("Indexes ready.")
 
 # --------------------------------------------------------------------------- #
-# 10. Write TRANSACTED_WITH relationships (Account -> Merchant)                  #
+# 8. Write TRANSACTED_WITH relationships (Account -> Merchant)                  #
 # --------------------------------------------------------------------------- #
 txn_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.transactions")
 
@@ -142,7 +140,7 @@ txn_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.transactions")
 print("TRANSACTED_WITH relationships written.")
 
 # --------------------------------------------------------------------------- #
-# 11. Write TRANSFERRED_TO relationships (Account -> Account)                   #
+# 9. Write TRANSFERRED_TO relationships (Account -> Account)                   #
 # --------------------------------------------------------------------------- #
 p2p_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.account_links")
 
@@ -161,7 +159,7 @@ p2p_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.account_links")
 print("TRANSFERRED_TO relationships written.")
 
 # --------------------------------------------------------------------------- #
-# 12. Verify — quick counts                                                     #
+# 10. Verify — quick counts                                                    #
 # --------------------------------------------------------------------------- #
 counts = gds.run_cypher("""
     MATCH (a:Account) WITH count(a) AS accounts

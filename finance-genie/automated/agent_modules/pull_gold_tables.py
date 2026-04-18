@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import os
 import sys
+from pathlib import Path
 
 # --------------------------------------------------------------------------- #
 # 1. Load .env extras forwarded by the runner as KEY=VALUE argv               #
@@ -40,40 +41,48 @@ for _arg in sys.argv[1:]:
         remaining.append(_arg)
 sys.argv[1:] = remaining
 
+# __file__ is not set when the cluster runs this via exec(compile(...));
+# fall back to the frame's co_filename to find our sibling modules.
+try:
+    _HERE = Path(__file__).resolve().parent
+except NameError:
+    import inspect as _inspect
+    _HERE = Path(_inspect.currentframe().f_code.co_filename).resolve().parent
+    del _inspect
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
 from pyspark.sql import SparkSession, Window  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
-from databricks.sdk import WorkspaceClient  # noqa: E402
+
+from neo4j_secrets import load_neo4j_opts  # noqa: E402
 
 # --------------------------------------------------------------------------- #
-# 2. Config                                                                   #
+# 2. Config + Neo4j credentials                                                #
 # --------------------------------------------------------------------------- #
 CATALOG = os.environ["CATALOG"]
 SCHEMA = os.environ["SCHEMA"]
 SECRET_SCOPE = os.environ["NEO4J_SECRET_SCOPE"]
 
-# --------------------------------------------------------------------------- #
-# 3. Fetch Neo4j credentials from Databricks Secrets                          #
-# --------------------------------------------------------------------------- #
-_ws = WorkspaceClient()
+TIER_HIGH = "high"
+TIER_MEDIUM = "medium"
+TIER_LOW = "low"
 
-NEO4J_URI = _ws.dbutils.secrets.get(scope=SECRET_SCOPE, key="uri")
-NEO4J_USER = _ws.dbutils.secrets.get(scope=SECRET_SCOPE, key="username")
-NEO4J_PASSWORD = _ws.dbutils.secrets.get(scope=SECRET_SCOPE, key="password")
+RING_SIZE_LOW = 50
+RING_SIZE_HIGH = 200
+COMMUNITY_AVG_RISK_MIN = 1.0
+HIGH_TIER_RISK_MIN = 0.5
+HIGH_TIER_SIM_MIN = 0.05
 
-NEO4J_OPTS = {
-    "url": NEO4J_URI,
-    "authentication.basic.username": NEO4J_USER,
-    "authentication.basic.password": NEO4J_PASSWORD,
-    "batch.size": "10000",
-}
+NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_OPTS = load_neo4j_opts(SECRET_SCOPE)
 
 # --------------------------------------------------------------------------- #
-# 4. Spark session                                                             #
+# 3. Spark session                                                             #
 # --------------------------------------------------------------------------- #
 spark = SparkSession.builder.getOrCreate()
 
 # --------------------------------------------------------------------------- #
-# 5. Read GDS features from Neo4j Account nodes                               #
+# 4. Read GDS features from Neo4j Account nodes                               #
 #    Cache so the DataFrame is only read from Neo4j once — it is reused in   #
 #    the gold_accounts join and would otherwise trigger a second full read.   #
 # --------------------------------------------------------------------------- #
@@ -94,14 +103,14 @@ graph_features_df = (
 print(f"Read {graph_features_df.count():,} Account nodes with GDS features")
 
 # --------------------------------------------------------------------------- #
-# 6. Build gold_accounts with community aggregates + fraud_risk_tier          #
+# 5. Build gold_accounts with community aggregates + fraud_risk_tier          #
 #                                                                              #
-#    Q1 (fillna): targeted fillna on inbound_transfer_events only; community_ #
-#    id / risk_score / similarity_score stay null for unscored accounts so   #
-#    window functions do not bucket them into a synthetic community_id=0.   #
+# Targeted fillna on inbound_transfer_events only — leaving community_id,     #
+# risk_score, and similarity_score null for unscored accounts is intentional:  #
+# a blanket fillna(0) would bucket every unscored account into a synthetic    #
+# community_id=0 and poison the window aggregates.                            #
 #                                                                              #
-#    Q3 (section ordering): gold_df is cached in memory and reused in Sec 7 #
-#    and Sec 8. No write-then-read cycle.                                    #
+# gold_df is cached and reused in Sections 7 and 8; no write-then-read cycle. #
 # --------------------------------------------------------------------------- #
 GOLD_ACCOUNTS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_accounts"
 
@@ -124,19 +133,19 @@ gold_df = (
     .withColumn("community_risk_rank", F.rank().over(w_community_rank))
     .withColumn(
         "is_ring_community",
-        (F.col("community_size").between(50, 200))
-        & (F.col("community_avg_risk_score") > 1.0),
+        (F.col("community_size").between(RING_SIZE_LOW, RING_SIZE_HIGH))
+        & (F.col("community_avg_risk_score") > COMMUNITY_AVG_RISK_MIN),
     )
     .withColumn(
         "fraud_risk_tier",
         F.when(
             F.col("is_ring_community")
-            & (F.col("risk_score") > 0.5)
-            & (F.col("similarity_score") > 0.05),
-            "high",
+            & (F.col("risk_score") > HIGH_TIER_RISK_MIN)
+            & (F.col("similarity_score") > HIGH_TIER_SIM_MIN),
+            TIER_HIGH,
         )
-        .when(F.col("is_ring_community"), "medium")
-        .otherwise("low"),
+        .when(F.col("is_ring_community"), TIER_MEDIUM)
+        .otherwise(TIER_LOW),
     )
     .select(
         "account_id",
@@ -159,20 +168,21 @@ gold_df = (
     .cache()
 )
 
+n_gold = gold_df.count()  # materializes the cache; subsequent reads are free.
+
 (
     gold_df
     .write.format("delta").mode("overwrite")
     .option("overwriteSchema", "true")
     .saveAsTable(GOLD_ACCOUNTS_TABLE)
 )
-n_gold = spark.table(GOLD_ACCOUNTS_TABLE).count()
 print(f"Written {GOLD_ACCOUNTS_TABLE} ({n_gold:,} rows, 16 columns)")
 
 # --------------------------------------------------------------------------- #
-# 7. Build gold_account_similarity_pairs with same_community flag             #
+# 6. Build gold_account_similarity_pairs with same_community flag             #
 #                                                                              #
-#    Q4 (null check): require both community IDs non-null before equality    #
-#    so pairs where either account was unscored come out as false, not null. #
+# Both sides are guarded non-null before equality so pairs involving an        #
+# unscored account come out as false, not null.                                #
 # --------------------------------------------------------------------------- #
 GOLD_PAIRS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_account_similarity_pairs"
 
@@ -221,20 +231,23 @@ similarity_pairs_df = (
     .drop("community_id_a", "community_id_b")
 )
 
+similarity_pairs_df = similarity_pairs_df.cache()
+n_pairs = similarity_pairs_df.count()
+
 (
     similarity_pairs_df
     .write.format("delta").mode("overwrite")
     .option("overwriteSchema", "true")
     .saveAsTable(GOLD_PAIRS_TABLE)
 )
-n_pairs = spark.table(GOLD_PAIRS_TABLE).count()
 print(f"Written {GOLD_PAIRS_TABLE} ({n_pairs:,} rows)")
+similarity_pairs_df.unpersist()
 
 # --------------------------------------------------------------------------- #
-# 8. Build gold_fraud_ring_communities — one row per Louvain community         #
+# 7. Build gold_fraud_ring_communities — one row per Louvain community         #
 #                                                                              #
-#    Q2 (rank): ROW_NUMBER() instead of RANK() so tied max_risk_score values #
-#    do not produce duplicate top_account_id rows.                            #
+# ROW_NUMBER (not RANK) with a deterministic tiebreak on account_id so ties   #
+# on max_risk_score cannot produce duplicate top_account_id rows.             #
 # --------------------------------------------------------------------------- #
 GOLD_RING_COMMUNITIES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_fraud_ring_communities"
 
@@ -252,7 +265,8 @@ ring_aggregates = (
     )
     .withColumn(
         "is_ring_candidate",
-        F.col("member_count").between(50, 200) & (F.col("avg_risk_score") > 1.0),
+        F.col("member_count").between(RING_SIZE_LOW, RING_SIZE_HIGH)
+        & (F.col("avg_risk_score") > COMMUNITY_AVG_RISK_MIN),
     )
 )
 
@@ -272,7 +286,14 @@ top_accounts = (
     )
 )
 
-ring_communities_df = ring_aggregates.join(top_accounts, "community_id", "left")
+ring_communities_df = ring_aggregates.join(top_accounts, "community_id", "left").cache()
+
+ring_counts = ring_communities_df.agg(
+    F.count("*").alias("total"),
+    F.sum(F.col("is_ring_candidate").cast("int")).alias("candidates"),
+).collect()[0]
+n_ring = int(ring_counts["total"])
+n_ring_candidates = int(ring_counts["candidates"] or 0)
 
 (
     ring_communities_df
@@ -280,20 +301,12 @@ ring_communities_df = ring_aggregates.join(top_accounts, "community_id", "left")
     .option("overwriteSchema", "true")
     .saveAsTable(GOLD_RING_COMMUNITIES_TABLE)
 )
-n_ring = spark.table(GOLD_RING_COMMUNITIES_TABLE).count()
-n_ring_candidates = (
-    spark.table(GOLD_RING_COMMUNITIES_TABLE)
-    .filter(F.col("is_ring_candidate"))
-    .count()
-)
 print(
     f"Written {GOLD_RING_COMMUNITIES_TABLE} "
     f"({n_ring:,} rows, {n_ring_candidates} ring candidates)"
 )
 
-# --------------------------------------------------------------------------- #
-# 9. Cleanup cached DataFrames                                                 #
-# --------------------------------------------------------------------------- #
+ring_communities_df.unpersist()
 gold_df.unpersist()
 graph_features_df.unpersist()
 

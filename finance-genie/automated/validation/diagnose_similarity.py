@@ -25,27 +25,17 @@ Exits 0 always — this is diagnostic-only, no pass/fail thresholds.
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
 from graphdatascience import GraphDataScience
+
+from _common import load_env
 
 
 REQUIRED_VARS = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
 
 
-def load_env() -> tuple[str, str, str]:
-    script_dir = Path(__file__).parent
-    env_path = script_dir.parent / ".env"
-    if not env_path.is_file():
-        print(f"FAIL  .env not found at {env_path}")
-        sys.exit(1)
-    load_dotenv(env_path, override=True)
-    missing = [v for v in REQUIRED_VARS if not os.environ.get(v)]
-    if missing:
-        print(f"FAIL  missing or empty in .env: {', '.join(missing)}")
-        sys.exit(1)
+def load_neo4j_creds() -> tuple[str, str, str]:
+    load_env(REQUIRED_VARS)
     return (
         os.environ["NEO4J_URI"],
         os.environ["NEO4J_USERNAME"],
@@ -218,7 +208,7 @@ def diagnose_fraud_vs_normal(gds: GraphDataScience) -> None:
 
 
 def main() -> None:
-    uri, user, password = load_env()
+    uri, user, password = load_neo4j_creds()
     gds = connect(uri, user, password)
     print(f"connected to {uri}")
 

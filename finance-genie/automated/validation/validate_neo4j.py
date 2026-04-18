@@ -17,37 +17,23 @@ Exits 0 on success, 1 on failure.
 from __future__ import annotations
 
 import os
-import sys
-from pathlib import Path
 
-from dotenv import load_dotenv
 from neo4j import GraphDatabase
 from neo4j.exceptions import AuthError, ServiceUnavailable
+
+from _common import fail, load_env
 
 REQUIRED_VARS = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
 
 
-def fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
-    print(f"FAIL  {msg}")
-    sys.exit(1)
-
-
 def main() -> None:
-    env_path = Path(__file__).parent.parent / ".env"
-    if not env_path.is_file():
-        fail(f".env not found at {env_path}")
-
-    load_dotenv(env_path, override=True)
-
-    missing = [v for v in REQUIRED_VARS if not os.environ.get(v)]
-    if missing:
-        fail(f"missing or empty in .env: {', '.join(missing)}")
+    load_env(REQUIRED_VARS)
 
     uri = os.environ["NEO4J_URI"]
     user = os.environ["NEO4J_USERNAME"]
     password = os.environ["NEO4J_PASSWORD"]
 
-    print(f"OK    .env loaded from {env_path}")
+    print(f"OK    .env loaded")
     print(f"OK    NEO4J_URI      = {uri}")
     print(f"OK    NEO4J_USERNAME = {user}")
     print(f"OK    NEO4J_PASSWORD = <{len(password)} chars>")
