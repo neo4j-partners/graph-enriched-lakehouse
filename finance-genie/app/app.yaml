@@ -1,0 +1,14 @@
+command:
+  - streamlit
+  - run
+  - app.py
+
+resources:
+  - name: sql-warehouse
+    sql_warehouse:
+      id: ${WAREHOUSE_ID}
+      permission: CAN_USE
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse

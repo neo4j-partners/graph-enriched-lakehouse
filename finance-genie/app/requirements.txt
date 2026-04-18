@@ -1,0 +1,3 @@
+databricks-sql-connector
+databricks-sdk
+plotly>=5.18
