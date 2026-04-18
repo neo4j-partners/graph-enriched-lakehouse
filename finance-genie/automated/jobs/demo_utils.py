@@ -209,6 +209,26 @@ def check_community_purity(
                 coverage = len(accounts_in_group & ring_set) / len(ring_set) if ring_set else 0.0
                 if coverage > max_coverage:
                     max_coverage = coverage
+    elif group_col and not account_cols:
+        total_rows = len(df)
+        if "is_ring_candidate" in df.columns:
+            ring_candidate_count = int(df["is_ring_candidate"].astype(bool).sum())
+            max_coverage = ring_candidate_count / total_rows if total_rows > 0 else 0.0
+            return {
+                "structure_type": "aggregates_ring_candidate",
+                "max_ring_coverage": max_coverage,
+                "groups_returned": ring_candidate_count,
+                "total_rows": total_rows,
+                "passed": max_coverage >= 0.80,
+            }
+        else:
+            return {
+                "structure_type": "aggregates_no_flag",
+                "max_ring_coverage": 0.0,
+                "groups_returned": 0,
+                "total_rows": total_rows,
+                "passed": False,
+            }
     else:
         structure_type = "pairs"
         max_coverage = 0.0
@@ -278,5 +298,5 @@ def check_ring_pair_fraction(
         "cross_ring_pairs": cross_ring,
         "unknown_pairs": unknown,
         "rings_touched": len(rings_seen),
-        "passed": same_ring_fraction > 0.60 and total_pairs > 0,
+        "passed": same_ring_fraction > 0.60 and total_pairs >= 5,
     }

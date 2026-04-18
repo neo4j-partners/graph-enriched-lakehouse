@@ -163,7 +163,7 @@ def main() -> None:
     # identifies exactly one account per community — same row that
     # gold_fraud_ring_communities.top_account_id points at.
     w_community_rank = Window.partitionBy("community_id").orderBy(
-        F.desc("risk_score"), F.asc("account_id")
+        F.desc("similarity_score"), F.desc("risk_score"), F.asc("account_id")
     )
 
     gold_df = (
@@ -290,7 +290,15 @@ def main() -> None:
     # Build gold_fraud_ring_communities — one row per Louvain community        #
     #                                                                           #
     # ROW_NUMBER (not RANK) with a deterministic tiebreak on account_id so    #
-    # ties on max_risk_score cannot produce duplicate top_account_id rows.     #
+    # ties cannot produce duplicate top_account_id rows.                       #
+    #                                                                           #
+    # top_account_id sorts by similarity_score DESC before risk_score DESC.    #
+    # Fraud ring members share anchor merchants → high NodeSimilarity score    #
+    # (~0.20 avg). "Whale" accounts have high PageRank (risk_score) but low    #
+    # similarity (~0.10 avg) because their merchant visits are not correlated  #
+    # with any specific community. Sorting on risk_score alone caused a whale  #
+    # that landed in the same Louvain community as ring 3 to be selected as    #
+    # top_account_id instead of an actual ring member.                         #
     # ----------------------------------------------------------------------- #
     GOLD_RING_COMMUNITIES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_fraud_ring_communities"
 
@@ -314,13 +322,13 @@ def main() -> None:
     )
 
     w_top = Window.partitionBy("community_id").orderBy(
-        F.desc("risk_score"), F.asc("account_id")
+        F.desc("similarity_score"), F.desc("risk_score"), F.asc("account_id")
     )
 
     top_accounts = (
         gold_df
         .filter(F.col("community_id").isNotNull())
-        .select("community_id", "account_id", "risk_score")
+        .select("community_id", "account_id", "risk_score", "similarity_score")
         .withColumn("_row", F.row_number().over(w_top))
         .filter(F.col("_row") == 1)
         .select(

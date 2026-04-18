@@ -15,7 +15,7 @@ COMMUNITY_AVG_RISK_MIN = 1.0
 # Values are referenced in gold_schema.sql's fraud_risk_tier COMMENT — update
 # both files if these change.
 HIGH_TIER_RISK_MIN = 0.5
-HIGH_TIER_SIM_MIN = 0.05
+HIGH_TIER_SIM_MIN = 0.12
 
 TIER_HIGH = "high"
 TIER_MEDIUM = "medium"

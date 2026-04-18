@@ -23,10 +23,10 @@ CREATE OR REPLACE TABLE `${catalog}`.`${schema}`.gold_accounts (
     similarity_score         DOUBLE   COMMENT 'Jaccard similarity score from the shared-merchant bipartite graph. Measures overlap in merchant visit patterns with other accounts in the same community. Null for accounts below the minimum degree threshold.',
     community_size           BIGINT   COMMENT 'Number of accounts sharing this community_id',
     community_avg_risk_score DOUBLE   COMMENT 'Mean risk_score across all accounts in the community',
-    community_risk_rank      INT      COMMENT 'Rank of this account by risk_score within its community. 1 = highest centrality in the community.',
+    community_risk_rank      INT      COMMENT 'Rank of this account within its community, ordered by similarity_score descending, then risk_score descending, then account_id ascending. Rank 1 = the account with the highest merchant-overlap similarity in the community.',
     inbound_transfer_events  BIGINT   COMMENT 'Count of account_links rows where this account is the transfer destination (dst_account_id)',
     is_ring_community        BOOLEAN  COMMENT 'True when the account community has between 50 and 200 members and a community_avg_risk_score above 1.0, indicating a tightly-knit transfer cluster of anomalous size and centrality',
-    fraud_risk_tier          STRING   COMMENT 'Pre-computed risk classification combining community membership, transfer network centrality, and merchant-visit similarity. Values: high (is_ring_community=true AND risk_score > 0.5 AND similarity_score > 0.05), medium (is_ring_community=true with weaker individual signals), low (all other accounts).'
+    fraud_risk_tier          STRING   COMMENT 'Pre-computed risk classification combining community membership, transfer network centrality, and merchant-visit similarity. Values: high (is_ring_community=true AND risk_score > 0.5 AND similarity_score > 0.12), medium (is_ring_community=true with weaker individual signals), low (all other accounts).'
 )
 USING DELTA
 COMMENT 'Account dimension enriched with graph analytics features derived from the transfer network';
@@ -48,7 +48,7 @@ CREATE OR REPLACE TABLE `${catalog}`.`${schema}`.gold_fraud_ring_communities (
     avg_similarity_score   DOUBLE   COMMENT 'Mean merchant-visit similarity score across community members',
     high_risk_member_count BIGINT   COMMENT 'Number of accounts in this community with risk_score above 1.0',
     is_ring_candidate      BOOLEAN  COMMENT 'True when member_count is between 50 and 200 and avg_risk_score is above 1.0. These communities show anomalous size and centrality consistent with tight transfer rings.',
-    top_account_id         BIGINT   COMMENT 'The account with the highest risk_score in this community, ties broken by lowest account_id. The most central account in the community.'
+    top_account_id         BIGINT   COMMENT 'The account with the highest similarity_score in this community, ties broken by risk_score descending then account_id ascending. Identifies the most structurally similar account rather than the most transfer-central one.'
 )
 USING DELTA
 COMMENT 'Louvain community summary — one row per community, pre-aggregated for ring-level analysis';
