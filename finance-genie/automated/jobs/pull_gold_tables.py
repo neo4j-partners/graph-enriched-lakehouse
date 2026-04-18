@@ -63,6 +63,8 @@ from pyspark.sql import functions as F  # noqa: E402
 from neo4j_secrets import load_neo4j_opts  # noqa: E402
 from gold_constants import (  # noqa: E402
     COMMUNITY_AVG_RISK_MIN,
+    HIGH_TIER_RISK_MIN,
+    HIGH_TIER_SIM_MIN,
     RING_SIZE_HIGH,
     RING_SIZE_LOW,
     TIER_HIGH,
@@ -104,9 +106,6 @@ def main() -> None:
     CATALOG = os.environ["CATALOG"]
     SCHEMA = os.environ["SCHEMA"]
     SECRET_SCOPE = os.environ["NEO4J_SECRET_SCOPE"]
-
-    HIGH_TIER_RISK_MIN = 0.5
-    HIGH_TIER_SIM_MIN = 0.05
 
     NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_OPTS = load_neo4j_opts(SECRET_SCOPE)
 

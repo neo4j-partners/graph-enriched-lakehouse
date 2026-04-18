@@ -1,4 +1,4 @@
-"""Helpers for the automated Genie test runner (agent_modules/genie_test.py).
+"""Helpers for the automated Genie test runner (jobs/genie_run.py).
 
 Trimmed copy of finance-genie/workshop/demo_utils.py, scoped to the three
 after-GDS checks that genie_test.py runs. The original also contains

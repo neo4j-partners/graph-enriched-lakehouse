@@ -46,7 +46,7 @@ if [[ -z "${DATABRICKS_WAREHOUSE_ID:-}" ]]; then
 fi
 
 DATA_DIR="${SCRIPT_DIR}/data"
-SCHEMA_FILE="${SCRIPT_DIR}/schema.sql"
+SCHEMA_FILE="${SCRIPT_DIR}/sql/schema.sql"
 CLI="databricks --profile ${PROFILE}"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -194,7 +194,7 @@ done
 GT_FILE="${DATA_DIR}/ground_truth.json"
 if [[ ! -f "$GT_FILE" ]]; then
   err "ground_truth.json not found: ${GT_FILE}"
-  err "Run 'uv run generate_data.py' to generate it first."
+  err "Run 'uv run setup/generate_data.py' to generate it first."
   exit 1
 fi
 $CLI fs cp "$GT_FILE" "dbfs:${VOLUME_PATH}/ground_truth.json" --overwrite

@@ -36,17 +36,20 @@ for per-phase tuning values.
 
 Usage:
     From the automated/ directory (which contains pyproject.toml):
-        uv run generate_data.py
-        uv run generate_data.py --output ./data/
+        uv run setup/generate_data.py
+        uv run setup/generate_data.py --output ./data/
 """
 
 import argparse
 import hashlib
 import json
 import random
+import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 

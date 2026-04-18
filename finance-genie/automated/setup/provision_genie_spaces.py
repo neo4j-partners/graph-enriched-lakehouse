@@ -5,7 +5,7 @@ then — for each space — replaces its table_identifiers, sample_questions, an
 text instructions with the contract declared at the top of this file.
 
 Usage (from finance-genie/automated/ with .env in place):
-    uv run provision_genie_spaces.py
+    uv run setup/provision_genie_spaces.py
 
 Exits 0 on success, 1 if any space fails the post-update assertion.
 
@@ -73,7 +73,7 @@ GOLD_TABLES = [
 BEFORE_TABLES = list(BASE_TABLES)
 AFTER_TABLES = BASE_TABLES + GOLD_TABLES
 
-# Sample questions — mirror the phrasings in agent_modules/genie_test*.py so
+# Sample questions — mirror the phrasings in jobs/genie_run.py so
 # the Space UI surfaces the same questions that CI tests run.
 BEFORE_QUESTIONS = [
     "Are there accounts that seem to be the hub of a money movement network "
@@ -89,7 +89,7 @@ AFTER_QUESTIONS = [
 ]
 
 INSTRUCTION_TITLE = "Workshop instructions"
-INSTRUCTIONS_FILE = Path(__file__).parent / "genie_instructions.md"
+INSTRUCTIONS_FILE = Path(__file__).parent.parent / "genie_instructions.md"
 
 
 # --------------------------------------------------------------------------- #
@@ -245,7 +245,7 @@ def provision(
 # Entry point                                                                  #
 # --------------------------------------------------------------------------- #
 def main() -> None:
-    env_path = Path(__file__).parent / ".env"
+    env_path = Path(__file__).parent.parent / ".env"
     if not env_path.is_file():
         print(f"FAIL  .env not found at {env_path}")
         sys.exit(1)

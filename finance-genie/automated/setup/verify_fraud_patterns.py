@@ -12,8 +12,8 @@ so the script is usable as a regression gate.
 
 Usage:
     From the automated/ directory (which contains pyproject.toml):
-        uv run verify_fraud_patterns.py
-        uv run verify_fraud_patterns.py --input ./data/
+        uv run setup/verify_fraud_patterns.py
+        uv run setup/verify_fraud_patterns.py --input ./data/
 """
 
 import argparse
@@ -34,7 +34,7 @@ SNAPSHOT_SCHEMA_VERSION = 1
 
 _console = Console()
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import (
     SEED,
@@ -70,7 +70,7 @@ def verify_ground_truth_matches(labels_df: pd.DataFrame, fraud_ids: set) -> None
         raise SystemExit(
             "Reconstructed fraud_ids do not match account_labels.csv is_fraud column. "
             "The data was generated with a different SEED or different constants. "
-            "Re-run generate_data.py before verifying."
+            "Re-run setup/generate_data.py before verifying."
         )
 
 

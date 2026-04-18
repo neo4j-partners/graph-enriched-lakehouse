@@ -265,15 +265,15 @@ wheels = [
 
 [[package]]
 name = "databricks-job-runner"
-version = "0.4.2"
+version = "0.4.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "databricks-sdk" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/15/f1/201fbe4419a4458bf349e455f1253b7816f776e2dc7abc356eed2b179fbe/databricks_job_runner-0.4.2.tar.gz", hash = "sha256:f8eaf6df892b2ca04ad232d086a55f1d72c7aa841e94bcc7cd5cb83dc8fd9353", size = 26209, upload-time = "2026-04-10T03:39:53.56Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/32/d7/e64f003f9bee463c6105b85fa0f88da0f1f6adb5ffa4a34ea12b250b0190/databricks_job_runner-0.4.3.tar.gz", hash = "sha256:ed054d1f7bbe27d051a5071e3a12d6a4142f2ddee7c6379e18f61edeaba777cc", size = 26881, upload-time = "2026-04-18T19:17:47.09Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/e3/af/8b1b2339f66b9c3e4995c4ae5da97076ea655281091b283c0f6af6d1a79d/databricks_job_runner-0.4.2-py3-none-any.whl", hash = "sha256:753b69dd248bd569ecafefcf2519af897f1db2891199eb24d893ad6452a5f91e", size = 32993, upload-time = "2026-04-10T03:39:52.331Z" },
+    { url = "https://files.pythonhosted.org/packages/a3/59/8b1d3a0c403a281b90ec5579e8dd142b77611fbc4260ba108deec7d70cf2/databricks_job_runner-0.4.3-py3-none-any.whl", hash = "sha256:7b29ff9a42efb19233465bb4aa0e5eeb91a3cd855fd9b364c3953d5a21270872", size = 33663, upload-time = "2026-04-18T19:17:45.847Z" },
 ]
 
 [[package]]
@@ -293,7 +293,7 @@ wheels = [
 [[package]]
 name = "databricks-tools-core"
 version = "0.1.0"
-source = { editable = "../../../ai-dev-kit/databricks-tools-core" }
+source = { git = "https://github.com/databricks-solutions/ai-dev-kit?subdirectory=databricks-tools-core#1f51d8eee39df9f9b1d26fb44698f76aa790d2a6" }
 dependencies = [
     { name = "databricks-sdk" },
     { name = "plutoprint" },
@@ -303,22 +303,6 @@ dependencies = [
     { name = "sqlfluff" },
     { name = "sqlglot" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "black", marker = "extra == 'dev'", specifier = ">=23.0.0" },
-    { name = "databricks-sdk", specifier = ">=0.81.0" },
-    { name = "plutoprint", specifier = "==0.19.0" },
-    { name = "pydantic", specifier = ">=2.0.0" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pytest-timeout", marker = "extra == 'dev'", specifier = ">=2.0.0" },
-    { name = "pyyaml", specifier = ">=6.0" },
-    { name = "requests", specifier = ">=2.31.0" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
-    { name = "sqlfluff", specifier = ">=3.0.0" },
-    { name = "sqlglot", specifier = ">=20.0.0" },
-]
-provides-extras = ["dev"]
 
 [[package]]
 name = "diff-cover"
@@ -351,9 +335,9 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "databricks-job-runner" },
+    { name = "databricks-job-runner", specifier = ">=0.4.3" },
     { name = "databricks-sdk", specifier = ">=0.40" },
-    { name = "databricks-tools-core", editable = "../../../ai-dev-kit/databricks-tools-core" },
+    { name = "databricks-tools-core", git = "https://github.com/databricks-solutions/ai-dev-kit?subdirectory=databricks-tools-core" },
     { name = "neo4j" },
     { name = "pandas" },
     { name = "python-dotenv" },

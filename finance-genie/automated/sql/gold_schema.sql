@@ -11,7 +11,7 @@
 -- description) must be reflected in both this file and pull_gold_tables.py.
 
 CREATE OR REPLACE TABLE `${catalog}`.`${schema}`.gold_accounts (
-    account_id               BIGINT   COMMENT 'Account identifier (joins to accounts.account_id)',
+    account_id               BIGINT   NOT NULL COMMENT 'Account identifier (joins to accounts.account_id)',
     account_hash             STRING   COMMENT 'Anonymized account identifier',
     account_type             STRING   COMMENT 'Account category: checking, savings, or business',
     region                   STRING   COMMENT 'Geographic region where the account was opened',

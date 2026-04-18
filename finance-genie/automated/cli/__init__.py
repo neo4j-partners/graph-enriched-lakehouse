@@ -4,5 +4,6 @@ from databricks_job_runner import Runner
 
 runner = Runner(
     run_name_prefix="neo4j_ingest",
-    scripts_dir="agent_modules",
+    scripts_dir="jobs",
+    extra_files=["sql/gold_schema.sql"],
 )

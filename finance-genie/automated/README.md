@@ -8,16 +8,16 @@ The notebooks under `workshop/` push Delta Lake tables into Neo4j and pull enric
 ┌─────────────────────────────────────────────────────────────────┐
 │  Local machine — one-time setup                                 │
 │                                                                 │
-│  1. uv run generate_data.py                                     │
+│  1. uv run setup/generate_data.py                               │
 │       → data/  (5 CSVs + ground_truth.json)                     │
-│  2. uv run verify_fraud_patterns.py                             │
+│  2. uv run setup/verify_fraud_patterns.py                       │
 │       → validates 4 structural fraud properties                 │
 │  3. ./upload_and_create_tables.sh                               │
 │       → Unity Catalog: 5 managed Delta tables                   │
 │  4. ./setup_secrets.sh                                          │
 │       → Databricks secret scope: uri, username, password,       │
 │         genie_space_id                                          │
-│  5. uv run provision_genie_spaces.py                            │
+│  5. uv run setup/provision_genie_spaces.py                      │
 │       → Genie Spaces: before-GDS + after-GDS                    │
 └──────────────────────────┬──────────────────────────────────────┘
                            │  python -m cli submit
@@ -86,7 +86,7 @@ Edit `.env` and fill in all placeholder values. `.env.sample` documents every ke
 ### 2. Generate synthetic data
 
 ```bash
-uv run generate_data.py
+uv run setup/generate_data.py
 ```
 
 Generates the synthetic fraud dataset and writes six files to `automated/data/`:
@@ -95,7 +95,7 @@ Generates the synthetic fraud dataset and writes six files to `automated/data/`:
 ### 3. Verify fraud patterns
 
 ```bash
-uv run verify_fraud_patterns.py
+uv run setup/verify_fraud_patterns.py
 ```
 
 Checks four structural properties the demo depends on: within-ring density ratio, anchor-merchant visit rate, PageRank separation, and Node Similarity ratio. All four must pass before loading data to Databricks.
@@ -106,14 +106,14 @@ Checks four structural properties the demo depends on: within-ring density ratio
 ./upload_and_create_tables.sh
 ```
 
-Uploads the five CSVs and `ground_truth.json` to the Unity Catalog Volume, applies `schema.sql` to create all five base tables with Unity Catalog column-level comments, then loads data via `INSERT OVERWRITE`. Requires `DATABRICKS_WAREHOUSE_ID` in `automated/.env`.
+Uploads the five CSVs and `ground_truth.json` to the Unity Catalog Volume, applies `sql/schema.sql` to create all five base tables with Unity Catalog column-level comments, then loads data via `INSERT OVERWRITE`. Requires `DATABRICKS_WAREHOUSE_ID` in `automated/.env`.
 
 Schema and data are separate by design:
-- `schema.sql` defines column types and Unity Catalog column descriptions (the contract Genie reads)
+- `sql/schema.sql` defines column types and Unity Catalog column descriptions (the contract Genie reads)
 - `INSERT OVERWRITE` loads data without touching the schema — column comments survive every re-run
-- `CREATE OR REPLACE TABLE` in `schema.sql` is idempotent; no manual drop steps needed
+- `CREATE OR REPLACE TABLE` in `sql/schema.sql` is idempotent; no manual drop steps needed
 
-The three gold tables (`gold_accounts`, `gold_account_similarity_pairs`, `gold_fraud_ring_communities`) are created by `pull_gold_tables.py` on the cluster using `agent_modules/gold_schema.sql`, following the same DDL-first pattern.
+The three gold tables (`gold_accounts`, `gold_account_similarity_pairs`, `gold_fraud_ring_communities`) are created by `pull_gold_tables.py` on the cluster using `sql/gold_schema.sql` (uploaded alongside the job scripts), following the same DDL-first pattern.
 
 ### 5. Store credentials as Databricks secrets
 
@@ -126,7 +126,7 @@ Reads `automated/.env` and writes four secrets into the `neo4j-graph-engineering
 ### 6. Provision Genie Spaces
 
 ```bash
-uv run provision_genie_spaces.py
+uv run setup/provision_genie_spaces.py
 ```
 
 Idempotently configures both Genie Spaces defined in `automated/.env` (`GENIE_SPACE_ID_BEFORE` and `GENIE_SPACE_ID_AFTER`). For each space it replaces table identifiers, sample questions, and text instructions with the contract declared at the top of the script. Exits 1 if any space fails the post-update assertion.
@@ -136,7 +136,7 @@ Idempotently configures both Genie Spaces defined in `automated/.env` (`GENIE_SP
 All CLI commands are run from inside `automated/`:
 
 ```bash
-# Upload all agent_modules scripts to your Databricks workspace
+# Upload all jobs/ scripts (and sql/gold_schema.sql) to your Databricks workspace
 uv run python -m cli upload --all
 
 # Submit a script and stream its result state and run URL
@@ -178,7 +178,7 @@ uv run python -m cli submit pull_gold_tables.py
 
 ### `validate_gold_tables.py`
 
-Data-correctness gate. Run after `pull_gold_tables.py` and before `genie_test.py` to confirm the gold tables align with ground truth before running Genie tests.
+Data-correctness gate. Run after `pull_gold_tables.py` and before `genie_run_before.py` to confirm the gold tables align with ground truth before running Genie tests.
 
 ```bash
 uv run python -m cli submit validate_gold_tables.py
@@ -244,7 +244,7 @@ Writes a JSON artifact to `RESULTS_VOLUME_DIR`. Exits non-zero on any failure.
 
 ## Automated Genie testing
 
-`agent_modules/genie_run.py` runs three analyst-phrased questions against any Genie Space, records the SQL Genie generated and the rows it returned, and writes a JSON artifact to `RESULTS_VOLUME_DIR`. By default it exits 0 as long as Genie responds — no pass/fail gating. Use `GATE=true` to reproduce the legacy CI-gate behavior.
+`jobs/genie_run.py` runs three analyst-phrased questions against any Genie Space, records the SQL Genie generated and the rows it returned, and writes a JSON artifact to `RESULTS_VOLUME_DIR`. By default it exits 0 as long as Genie responds — no pass/fail gating. Use `GATE=true` to reproduce the legacy CI-gate behavior.
 
 ### Questions (same for both spaces)
 
@@ -305,21 +305,24 @@ All validation scripts read credentials from `automated/.env`.
 automated/
 ├── pyproject.toml              # uv project; all dependencies
 ├── .env.sample                 # config template — copy to .env, never commit .env
-├── config.py                   # loads .env, exposes CONFIG dict
-├── generate_data.py            # generates synthetic fraud dataset to data/
-├── verify_fraud_patterns.py    # checks structural properties of generated data
-├── schema.sql                  # base table DDL with UC column comments (source of truth)
-├── upload_and_create_tables.sh # applies schema.sql, uploads CSVs, loads Delta tables
-├── setup_secrets.sh            # stores Neo4j credentials in Databricks secrets
-├── provision_genie_spaces.py   # idempotently configures before/after Genie Spaces
+├── config.py                   # loads .env, exposes all tuning constants
 ├── compare_genie_runs.py       # compares before/after artifacts, emits markdown report
+├── upload_and_create_tables.sh # applies sql/schema.sql, uploads CSVs, loads Delta tables
+├── setup_secrets.sh            # stores Neo4j credentials in Databricks secrets
 ├── genie_instructions.md       # instructions text embedded in Genie Spaces
 ├── data/                       # generated CSVs + ground_truth.json
 ├── logs/                       # local mirror of UC Volume artifacts + compare reports
+├── setup/                      # one-time local admin scripts (run before a demo)
+│   ├── generate_data.py        # generates synthetic fraud dataset to data/
+│   ├── verify_fraud_patterns.py # checks structural properties of generated data
+│   └── provision_genie_spaces.py # idempotently configures before/after Genie Spaces
+├── sql/                        # all DDL in one place
+│   ├── schema.sql              # base table DDL with UC column comments
+│   └── gold_schema.sql         # gold table DDL with UC column comments
 ├── cli/
-│   ├── __init__.py             # Runner instantiation
+│   ├── __init__.py             # Runner instantiation (scripts_dir="jobs")
 │   └── __main__.py             # python -m cli entry point
-├── agent_modules/              # scripts submitted to Databricks (name is fixed)
+├── jobs/                       # scripts submitted to Databricks via python -m cli submit
 │   ├── neo4j_ingest.py         # push Delta tables into Neo4j as a property graph
 │   ├── pull_gold_tables.py     # pull GDS features back to Delta gold tables
 │   ├── validate_gold_tables.py # data-correctness gate for the three gold tables
@@ -328,12 +331,11 @@ automated/
 │   ├── genie_run_after.py      # submit wrapper — targets GENIE_SPACE_ID_AFTER
 │   ├── demo_utils.py           # Genie API + check helpers
 │   ├── gold_constants.py       # shared thresholds used by pull and validate
-│   ├── gold_schema.sql         # gold table DDL with UC column comments (source of truth)
 │   └── neo4j_secrets.py        # loads Neo4j credentials from Databricks secret scope
-└── validation/
-    ├── validate_neo4j.py        # connection check
-    ├── validate_cluster.py      # cluster state and required library check
-    ├── validate_neo4j_graph.py  # node/edge count and structure checks
-    ├── run_and_verify_gds.py    # runs GDS pipeline and verifies outputs
-    └── diagnose_similarity.py   # Jaccard ratio diagnostics
+└── validation/                 # local preflight and diagnostic scripts
+    ├── validate_neo4j.py       # connection check
+    ├── validate_cluster.py     # cluster state and required library check
+    ├── validate_neo4j_graph.py # node/edge count and structure checks
+    ├── run_and_verify_gds.py   # runs GDS pipeline and verifies outputs
+    └── diagnose_similarity.py  # Jaccard ratio diagnostics
 ```

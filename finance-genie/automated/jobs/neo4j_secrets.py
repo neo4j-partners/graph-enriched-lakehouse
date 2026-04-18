@@ -10,7 +10,7 @@ Usage (from an agent module running on the cluster):
     from neo4j_secrets import load_neo4j_opts
     NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_OPTS = load_neo4j_opts(SECRET_SCOPE)
 
-Callers must have already put the agent_modules directory on sys.path; see
+Callers must have already put the jobs/ directory on sys.path; see
 the sibling-import preamble in neo4j_ingest.py / pull_gold_tables.py.
 """
 

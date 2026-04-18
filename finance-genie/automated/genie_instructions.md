@@ -5,8 +5,8 @@ Genie Space as its general-instruction (text) block. It holds two sections,
 demarcated by HTML-comment anchors so the provisioning script can extract
 each block by name without ambiguity.
 
-Column-level descriptions live in Unity Catalog (defined in `schema.sql` for
-base tables and `agent_modules/gold_schema.sql` for gold tables). Genie reads
+Column-level descriptions live in Unity Catalog (defined in `sql/schema.sql` for
+base tables and `sql/gold_schema.sql` for gold tables). Genie reads
 those automatically. These text blocks provide only domain context and table
 relationships — not column documentation, not query recipes.
 
