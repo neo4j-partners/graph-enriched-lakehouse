@@ -10,6 +10,11 @@ Writes three tables into `graph-enriched-lakehouse.graph-enriched-schema`:
   gold_account_similarity_pairs   pair-level similarity + same_community flag
   gold_fraud_ring_communities     per-community summary for ring-level queries
 
+Schema contract: gold_schema.sql (uploaded alongside this script) defines all
+three tables with Unity Catalog column-level comments. This script applies that
+schema first, then writes data with overwriteSchema=false so column comments
+survive every pipeline run. Any schema change must be reflected in both files.
+
 Usage (from finance-genie/automated/ with .env in place):
     python -m cli upload --all
     python -m cli submit pull_gold_tables.py
@@ -65,258 +70,292 @@ from gold_constants import (  # noqa: E402
     TIER_MEDIUM,
 )
 
-# --------------------------------------------------------------------------- #
-# 2. Config + Neo4j credentials                                                #
-# --------------------------------------------------------------------------- #
-CATALOG = os.environ["CATALOG"]
-SCHEMA = os.environ["SCHEMA"]
-SECRET_SCOPE = os.environ["NEO4J_SECRET_SCOPE"]
-
-HIGH_TIER_RISK_MIN = 0.5
-HIGH_TIER_SIM_MIN = 0.05
-
-NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_OPTS = load_neo4j_opts(SECRET_SCOPE)
 
 # --------------------------------------------------------------------------- #
-# 3. Spark session                                                             #
+# 2. Schema helper                                                             #
 # --------------------------------------------------------------------------- #
-spark = SparkSession.builder.getOrCreate()
+
+def _apply_schema(spark: "SparkSession", catalog: str, schema: str) -> None:
+    """Apply gold_schema.sql — creates all three gold tables with column comments.
+
+    gold_schema.sql defines the table structure before data is written so that
+    Unity Catalog column descriptions survive every pipeline run. Column comments
+    live in the CREATE OR REPLACE TABLE DDL and are not wiped by saveAsTable().
+    """
+    sql_file = _HERE / "gold_schema.sql"
+    text = sql_file.read_text(encoding="utf-8")
+    text = text.replace("${catalog}", catalog).replace("${schema}", schema)
+    for raw in text.split(";"):
+        lines = [ln for ln in raw.split("\n") if not ln.strip().startswith("--")]
+        stmt = "\n".join(lines).strip()
+        if stmt:
+            spark.sql(stmt)
+    print("Schema applied: gold_accounts, gold_account_similarity_pairs, gold_fraud_ring_communities")
+
 
 # --------------------------------------------------------------------------- #
-# 4. Read GDS features from Neo4j Account nodes                               #
-#    Cache so the DataFrame is only read from Neo4j once — it is reused in   #
-#    the gold_accounts join and would otherwise trigger a second full read.   #
+# 3. Main                                                                      #
 # --------------------------------------------------------------------------- #
-graph_features_df = (
-    spark.read
-    .format("org.neo4j.spark.DataSource")
-    .options(**NEO4J_OPTS)
-    .option("labels", "Account")
-    .load()
-    .select(
-        F.col("account_id").cast("long"),
-        F.col("risk_score").cast("double"),
-        F.col("community_id").cast("long"),
-        F.col("similarity_score").cast("double"),
-    )
-    .cache()
-)
-print(f"Read {graph_features_df.count():,} Account nodes with GDS features")
 
-# --------------------------------------------------------------------------- #
-# 5. Build gold_accounts with community aggregates + fraud_risk_tier          #
-#                                                                              #
-# Targeted fillna on inbound_transfer_events only — leaving community_id,     #
-# risk_score, and similarity_score null for unscored accounts is intentional:  #
-# a blanket fillna(0) would bucket every unscored account into a synthetic    #
-# community_id=0 and poison the window aggregates.                            #
-#                                                                              #
-# gold_df is cached and reused in Sections 7 and 8; no write-then-read cycle. #
-# --------------------------------------------------------------------------- #
-GOLD_ACCOUNTS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_accounts"
+def main() -> None:
+    # ----------------------------------------------------------------------- #
+    # Config + Neo4j credentials                                               #
+    # ----------------------------------------------------------------------- #
+    CATALOG = os.environ["CATALOG"]
+    SCHEMA = os.environ["SCHEMA"]
+    SECRET_SCOPE = os.environ["NEO4J_SECRET_SCOPE"]
 
-inbound_counts = (
-    spark.table(f"`{CATALOG}`.`{SCHEMA}`.account_links")
-    .groupBy(F.col("dst_account_id").alias("account_id"))
-    .agg(F.count("*").alias("inbound_transfer_events"))
-)
+    HIGH_TIER_RISK_MIN = 0.5
+    HIGH_TIER_SIM_MIN = 0.05
 
-# Unscored accounts land in a single null-community partition; their
-# community_size/avg/rank aggregate together, and they fall to
-# fraud_risk_tier='low' via the is_ring_community guard below.
-w_community = Window.partitionBy("community_id")
-# row_number (not rank) with an account_id tiebreak so community_risk_rank=1
-# identifies exactly one account per community — same row that
-# gold_fraud_ring_communities.top_account_id points at.
-w_community_rank = Window.partitionBy("community_id").orderBy(
-    F.desc("risk_score"), F.asc("account_id")
-)
+    NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, NEO4J_OPTS = load_neo4j_opts(SECRET_SCOPE)
 
-gold_df = (
-    spark.table(f"`{CATALOG}`.`{SCHEMA}`.accounts")
-    .join(graph_features_df, "account_id", "left")
-    .join(inbound_counts, "account_id", "left")
-    .fillna({"inbound_transfer_events": 0})
-    .withColumn("community_size", F.count("*").over(w_community))
-    .withColumn("community_avg_risk_score", F.avg("risk_score").over(w_community))
-    .withColumn("community_risk_rank", F.row_number().over(w_community_rank))
-    .withColumn(
-        "is_ring_community",
-        (F.col("community_size").between(RING_SIZE_LOW, RING_SIZE_HIGH))
-        & (F.col("community_avg_risk_score") > COMMUNITY_AVG_RISK_MIN),
-    )
-    .withColumn(
-        "fraud_risk_tier",
-        F.when(
-            F.col("is_ring_community")
-            & (F.col("risk_score") > HIGH_TIER_RISK_MIN)
-            & (F.col("similarity_score") > HIGH_TIER_SIM_MIN),
-            TIER_HIGH,
+    # ----------------------------------------------------------------------- #
+    # Spark session                                                             #
+    # ----------------------------------------------------------------------- #
+    spark = SparkSession.builder.getOrCreate()
+
+    _apply_schema(spark, CATALOG, SCHEMA)
+
+    # ----------------------------------------------------------------------- #
+    # Read GDS features from Neo4j Account nodes                               #
+    #    Cache so the DataFrame is only read from Neo4j once — it is reused in #
+    #    the gold_accounts join and would otherwise trigger a second full read. #
+    # ----------------------------------------------------------------------- #
+    graph_features_df = (
+        spark.read
+        .format("org.neo4j.spark.DataSource")
+        .options(**NEO4J_OPTS)
+        .option("labels", "Account")
+        .load()
+        .select(
+            F.col("account_id").cast("long"),
+            F.col("risk_score").cast("double"),
+            F.col("community_id").cast("long"),
+            F.col("similarity_score").cast("double"),
         )
-        .when(F.col("is_ring_community"), TIER_MEDIUM)
-        .otherwise(TIER_LOW),
+        .cache()
     )
-    .select(
-        "account_id",
-        "account_hash",
-        "account_type",
-        "region",
-        "balance",
-        "opened_date",
-        "holder_age",
-        "risk_score",
-        "community_id",
-        "similarity_score",
-        "community_size",
-        "community_avg_risk_score",
-        "community_risk_rank",
-        "inbound_transfer_events",
-        "is_ring_community",
-        "fraud_risk_tier",
+    print(f"Read {graph_features_df.count():,} Account nodes with GDS features")
+
+    # ----------------------------------------------------------------------- #
+    # Build gold_accounts with community aggregates + fraud_risk_tier          #
+    #                                                                           #
+    # Targeted fillna on inbound_transfer_events only — leaving community_id,  #
+    # risk_score, and similarity_score null for unscored accounts is            #
+    # intentional: a blanket fillna(0) would bucket every unscored account     #
+    # into a synthetic community_id=0 and poison the window aggregates.        #
+    #                                                                           #
+    # gold_df is cached and reused in later sections; no write-then-read cycle. #
+    # ----------------------------------------------------------------------- #
+    GOLD_ACCOUNTS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_accounts"
+
+    inbound_counts = (
+        spark.table(f"`{CATALOG}`.`{SCHEMA}`.account_links")
+        .groupBy(F.col("dst_account_id").alias("account_id"))
+        .agg(F.count("*").alias("inbound_transfer_events"))
     )
-    .cache()
-)
 
-n_gold = gold_df.count()  # materializes the cache; subsequent reads are free.
-
-(
-    gold_df
-    .write.format("delta").mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(GOLD_ACCOUNTS_TABLE)
-)
-print(f"Written {GOLD_ACCOUNTS_TABLE} ({n_gold:,} rows, 16 columns)")
-
-# --------------------------------------------------------------------------- #
-# 6. Build gold_account_similarity_pairs with same_community flag             #
-#                                                                              #
-# Both sides are guarded non-null before equality so pairs involving an        #
-# unscored account come out as false, not null.                                #
-# --------------------------------------------------------------------------- #
-GOLD_PAIRS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_account_similarity_pairs"
-
-community_lookup = gold_df.select("account_id", "community_id")
-
-similarity_pairs_df = (
-    spark.read
-    .format("org.neo4j.spark.DataSource")
-    .options(**NEO4J_OPTS)
-    .option("relationship", "SIMILAR_TO")
-    .option("relationship.source.labels", ":Account")
-    .option("relationship.target.labels", ":Account")
-    .load()
-    .select(
-        F.least(
-            F.col("`source.account_id`"), F.col("`target.account_id`")
-        ).cast("long").alias("account_id_a"),
-        F.greatest(
-            F.col("`source.account_id`"), F.col("`target.account_id`")
-        ).cast("long").alias("account_id_b"),
-        F.col("`rel.similarity_score`").cast("double").alias("similarity_score"),
+    # Unscored accounts land in a single null-community partition; their
+    # community_size/avg/rank aggregate together, and they fall to
+    # fraud_risk_tier='low' via the is_ring_community guard below.
+    w_community = Window.partitionBy("community_id")
+    # row_number (not rank) with an account_id tiebreak so community_risk_rank=1
+    # identifies exactly one account per community — same row that
+    # gold_fraud_ring_communities.top_account_id points at.
+    w_community_rank = Window.partitionBy("community_id").orderBy(
+        F.desc("risk_score"), F.asc("account_id")
     )
-    .dropDuplicates(["account_id_a", "account_id_b"])
-)
 
-similarity_pairs_df = (
-    similarity_pairs_df
-    .join(
-        community_lookup.withColumnRenamed("account_id", "account_id_a")
-                        .withColumnRenamed("community_id", "community_id_a"),
-        "account_id_a",
-        "left",
+    gold_df = (
+        spark.table(f"`{CATALOG}`.`{SCHEMA}`.accounts")
+        .join(graph_features_df, "account_id", "left")
+        .join(inbound_counts, "account_id", "left")
+        .fillna({"inbound_transfer_events": 0})
+        .withColumn("community_size", F.count("*").over(w_community))
+        .withColumn("community_avg_risk_score", F.avg("risk_score").over(w_community))
+        .withColumn("community_risk_rank", F.row_number().over(w_community_rank))
+        .withColumn(
+            "is_ring_community",
+            (F.col("community_size").between(RING_SIZE_LOW, RING_SIZE_HIGH))
+            & (F.col("community_avg_risk_score") > COMMUNITY_AVG_RISK_MIN),
+        )
+        .withColumn(
+            "fraud_risk_tier",
+            F.when(
+                F.col("is_ring_community")
+                & (F.col("risk_score") > HIGH_TIER_RISK_MIN)
+                & (F.col("similarity_score") > HIGH_TIER_SIM_MIN),
+                TIER_HIGH,
+            )
+            .when(F.col("is_ring_community"), TIER_MEDIUM)
+            .otherwise(TIER_LOW),
+        )
+        .select(
+            "account_id",
+            "account_hash",
+            "account_type",
+            "region",
+            "balance",
+            "opened_date",
+            "holder_age",
+            "risk_score",
+            "community_id",
+            "similarity_score",
+            "community_size",
+            "community_avg_risk_score",
+            "community_risk_rank",
+            "inbound_transfer_events",
+            "is_ring_community",
+            "fraud_risk_tier",
+        )
+        .cache()
     )
-    .join(
-        community_lookup.withColumnRenamed("account_id", "account_id_b")
-                        .withColumnRenamed("community_id", "community_id_b"),
-        "account_id_b",
-        "left",
+
+    n_gold = gold_df.count()  # materializes the cache; subsequent reads are free.
+
+    (
+        gold_df
+        .write.format("delta").mode("overwrite")
+        .option("overwriteSchema", "false")
+        .saveAsTable(GOLD_ACCOUNTS_TABLE)
     )
-    .withColumn(
-        "same_community",
-        F.col("community_id_a").isNotNull()
-        & F.col("community_id_b").isNotNull()
-        & (F.col("community_id_a") == F.col("community_id_b")),
+    print(f"Written {GOLD_ACCOUNTS_TABLE} ({n_gold:,} rows, 16 columns)")
+
+    # ----------------------------------------------------------------------- #
+    # Build gold_account_similarity_pairs with same_community flag             #
+    #                                                                           #
+    # Both sides are guarded non-null before equality so pairs involving an    #
+    # unscored account come out as false, not null.                            #
+    # ----------------------------------------------------------------------- #
+    GOLD_PAIRS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_account_similarity_pairs"
+
+    community_lookup = gold_df.select("account_id", "community_id")
+
+    similarity_pairs_df = (
+        spark.read
+        .format("org.neo4j.spark.DataSource")
+        .options(**NEO4J_OPTS)
+        .option("relationship", "SIMILAR_TO")
+        .option("relationship.source.labels", ":Account")
+        .option("relationship.target.labels", ":Account")
+        .load()
+        .select(
+            F.least(
+                F.col("`source.account_id`"), F.col("`target.account_id`")
+            ).cast("long").alias("account_id_a"),
+            F.greatest(
+                F.col("`source.account_id`"), F.col("`target.account_id`")
+            ).cast("long").alias("account_id_b"),
+            F.col("`rel.similarity_score`").cast("double").alias("similarity_score"),
+        )
+        .dropDuplicates(["account_id_a", "account_id_b"])
     )
-    .drop("community_id_a", "community_id_b")
-)
 
-similarity_pairs_df = similarity_pairs_df.cache()
-n_pairs = similarity_pairs_df.count()
-
-(
-    similarity_pairs_df
-    .write.format("delta").mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(GOLD_PAIRS_TABLE)
-)
-print(f"Written {GOLD_PAIRS_TABLE} ({n_pairs:,} rows)")
-similarity_pairs_df.unpersist()
-
-# --------------------------------------------------------------------------- #
-# 7. Build gold_fraud_ring_communities — one row per Louvain community         #
-#                                                                              #
-# ROW_NUMBER (not RANK) with a deterministic tiebreak on account_id so ties   #
-# on max_risk_score cannot produce duplicate top_account_id rows.             #
-# --------------------------------------------------------------------------- #
-GOLD_RING_COMMUNITIES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_fraud_ring_communities"
-
-ring_aggregates = (
-    gold_df
-    .filter(F.col("community_id").isNotNull())
-    .groupBy("community_id")
-    .agg(
-        F.count("*").alias("member_count"),
-        F.round(F.avg("risk_score"), 6).alias("avg_risk_score"),
-        F.round(F.max("risk_score"), 6).alias("max_risk_score"),
-        F.round(F.avg("similarity_score"), 5).alias("avg_similarity_score"),
-        F.sum(F.when(F.col("risk_score") > 1.0, 1).otherwise(0))
-            .alias("high_risk_member_count"),
+    similarity_pairs_df = (
+        similarity_pairs_df
+        .join(
+            community_lookup.withColumnRenamed("account_id", "account_id_a")
+                            .withColumnRenamed("community_id", "community_id_a"),
+            "account_id_a",
+            "left",
+        )
+        .join(
+            community_lookup.withColumnRenamed("account_id", "account_id_b")
+                            .withColumnRenamed("community_id", "community_id_b"),
+            "account_id_b",
+            "left",
+        )
+        .withColumn(
+            "same_community",
+            F.col("community_id_a").isNotNull()
+            & F.col("community_id_b").isNotNull()
+            & (F.col("community_id_a") == F.col("community_id_b")),
+        )
+        .drop("community_id_a", "community_id_b")
     )
-    .withColumn(
-        "is_ring_candidate",
-        F.col("member_count").between(RING_SIZE_LOW, RING_SIZE_HIGH)
-        & (F.col("avg_risk_score") > COMMUNITY_AVG_RISK_MIN),
+
+    similarity_pairs_df = similarity_pairs_df.cache()
+    n_pairs = similarity_pairs_df.count()
+
+    (
+        similarity_pairs_df
+        .write.format("delta").mode("overwrite")
+        .option("overwriteSchema", "false")
+        .saveAsTable(GOLD_PAIRS_TABLE)
     )
-)
+    print(f"Written {GOLD_PAIRS_TABLE} ({n_pairs:,} rows)")
+    similarity_pairs_df.unpersist()
 
-w_top = Window.partitionBy("community_id").orderBy(
-    F.desc("risk_score"), F.asc("account_id")
-)
+    # ----------------------------------------------------------------------- #
+    # Build gold_fraud_ring_communities — one row per Louvain community        #
+    #                                                                           #
+    # ROW_NUMBER (not RANK) with a deterministic tiebreak on account_id so    #
+    # ties on max_risk_score cannot produce duplicate top_account_id rows.     #
+    # ----------------------------------------------------------------------- #
+    GOLD_RING_COMMUNITIES_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_fraud_ring_communities"
 
-top_accounts = (
-    gold_df
-    .filter(F.col("community_id").isNotNull())
-    .select("community_id", "account_id", "risk_score")
-    .withColumn("_row", F.row_number().over(w_top))
-    .filter(F.col("_row") == 1)
-    .select(
-        F.col("community_id"),
-        F.col("account_id").alias("top_account_id"),
+    ring_aggregates = (
+        gold_df
+        .filter(F.col("community_id").isNotNull())
+        .groupBy("community_id")
+        .agg(
+            F.count("*").alias("member_count"),
+            F.round(F.avg("risk_score"), 6).alias("avg_risk_score"),
+            F.round(F.max("risk_score"), 6).alias("max_risk_score"),
+            F.round(F.avg("similarity_score"), 5).alias("avg_similarity_score"),
+            F.sum(F.when(F.col("risk_score") > 1.0, 1).otherwise(0))
+                .alias("high_risk_member_count"),
+        )
+        .withColumn(
+            "is_ring_candidate",
+            F.col("member_count").between(RING_SIZE_LOW, RING_SIZE_HIGH)
+            & (F.col("avg_risk_score") > COMMUNITY_AVG_RISK_MIN),
+        )
     )
-)
 
-ring_communities_df = ring_aggregates.join(top_accounts, "community_id", "left").cache()
+    w_top = Window.partitionBy("community_id").orderBy(
+        F.desc("risk_score"), F.asc("account_id")
+    )
 
-ring_counts = ring_communities_df.agg(
-    F.count("*").alias("total"),
-    F.sum(F.col("is_ring_candidate").cast("int")).alias("candidates"),
-).collect()[0]
-n_ring = int(ring_counts["total"])
-n_ring_candidates = int(ring_counts["candidates"] or 0)
+    top_accounts = (
+        gold_df
+        .filter(F.col("community_id").isNotNull())
+        .select("community_id", "account_id", "risk_score")
+        .withColumn("_row", F.row_number().over(w_top))
+        .filter(F.col("_row") == 1)
+        .select(
+            F.col("community_id"),
+            F.col("account_id").alias("top_account_id"),
+        )
+    )
 
-(
-    ring_communities_df
-    .write.format("delta").mode("overwrite")
-    .option("overwriteSchema", "true")
-    .saveAsTable(GOLD_RING_COMMUNITIES_TABLE)
-)
-print(
-    f"Written {GOLD_RING_COMMUNITIES_TABLE} "
-    f"({n_ring:,} rows, {n_ring_candidates} ring candidates)"
-)
+    ring_communities_df = ring_aggregates.join(top_accounts, "community_id", "left").cache()
 
-ring_communities_df.unpersist()
-gold_df.unpersist()
-graph_features_df.unpersist()
+    ring_counts = ring_communities_df.agg(
+        F.count("*").alias("total"),
+        F.sum(F.col("is_ring_candidate").cast("int")).alias("candidates"),
+    ).collect()[0]
+    n_ring = int(ring_counts["total"])
+    n_ring_candidates = int(ring_counts["candidates"] or 0)
 
-print("Done.")
+    (
+        ring_communities_df
+        .write.format("delta").mode("overwrite")
+        .option("overwriteSchema", "false")
+        .saveAsTable(GOLD_RING_COMMUNITIES_TABLE)
+    )
+    print(
+        f"Written {GOLD_RING_COMMUNITIES_TABLE} "
+        f"({n_ring:,} rows, {n_ring_candidates} ring candidates)"
+    )
+
+    ring_communities_df.unpersist()
+    gold_df.unpersist()
+    graph_features_df.unpersist()
+
+    print("Done.")
+
+
+if __name__ == "__main__":
+    main()

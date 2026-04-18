@@ -5,9 +5,9 @@ Finance Genie — Synthetic Fraud Dataset Generator (v2)
 the three gaps described in genie-demo.md:
 
   accounts.csv        25,000 rows  Bank accounts with KYC attributes
-  merchants.csv        2,500 rows  Merchants with category and risk tier
+  merchants.csv        7,500 rows  Merchants with category and risk tier
   transactions.csv   250,000 rows  Account -> Merchant transactions
-  account_links.csv   40,000 rows  Peer-to-peer account transfers
+  account_links.csv  300,000 rows  Peer-to-peer account transfers
 
 Fraud design principles:
   TABULAR signals are deliberately weak so Genie cannot separate fraud
@@ -25,7 +25,7 @@ Fraud design principles:
                stay low (1-3), so Genie's pair-grouping misses the ring.
                Louvain assigns every ring member a shared community_id.
 
-  NodeSim   — Each ring has 5 shared "anchor" high-risk merchants.  Ring
+  NodeSim   — Each ring has 4 shared "anchor" high-risk merchants.  Ring
                members share those specific merchants → high intra-ring
                Jaccard.  Overall high-risk fraction is nearly the same for
                fraud and normal, so a column filter cannot find them.

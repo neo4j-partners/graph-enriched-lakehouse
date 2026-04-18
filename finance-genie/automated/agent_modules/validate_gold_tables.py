@@ -70,13 +70,8 @@ from gold_constants import (  # noqa: E402
 )
 
 # --------------------------------------------------------------------------- #
-# 2. Config                                                                   #
+# 2. Check thresholds (not env-var reads — safe at module level)             #
 # --------------------------------------------------------------------------- #
-CATALOG = os.environ["CATALOG"]
-SCHEMA = os.environ["SCHEMA"]
-GROUND_TRUTH_PATH = os.environ["GROUND_TRUTH_PATH"]
-RESULTS_VOLUME_DIR = os.environ["RESULTS_VOLUME_DIR"].rstrip("/")
-
 RING_CANDIDATE_COUNT_EXPECTED = 10
 RING_DOMINANCE_MIN = 0.80
 # RING_EXCLUSION_MAX=0.20 in run_and_verify_gds.py caps the fraction of ring
@@ -86,33 +81,38 @@ RING_DOMINANCE_MIN = 0.80
 HIGH_TIER_FRAC_MIN = 0.75
 SAME_COMMUNITY_FRAC_MIN = 0.95
 
-GOLD_ACCOUNTS = f"`{CATALOG}`.`{SCHEMA}`.gold_accounts"
-GOLD_PAIRS = f"`{CATALOG}`.`{SCHEMA}`.gold_account_similarity_pairs"
-GOLD_RINGS = f"`{CATALOG}`.`{SCHEMA}`.gold_fraud_ring_communities"
-
 
 def header(label: str) -> None:
     print(f"\n── {label} " + "─" * max(0, 60 - len(label)))
 
 
-def load_ground_truth() -> dict:
+def load_ground_truth(path: str) -> dict:
     # UC Volumes are POSIX-accessible from Databricks Python tasks, so we can
     # open /Volumes/... directly instead of going through the Files API.
     try:
-        with open(GROUND_TRUTH_PATH, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"FAIL  ground_truth not found at {GROUND_TRUTH_PATH}")
+        print(f"FAIL  ground_truth not found at {path}")
         sys.exit(1)
     except json.JSONDecodeError as e:
-        print(f"FAIL  ground_truth at {GROUND_TRUTH_PATH} is not valid JSON: {e}")
+        print(f"FAIL  ground_truth at {path} is not valid JSON: {e}")
         sys.exit(1)
 
 
 def main() -> None:
+    CATALOG = os.environ["CATALOG"]
+    SCHEMA = os.environ["SCHEMA"]
+    GROUND_TRUTH_PATH = os.environ["GROUND_TRUTH_PATH"]
+    RESULTS_VOLUME_DIR = os.environ["RESULTS_VOLUME_DIR"].rstrip("/")
+
+    GOLD_ACCOUNTS = f"`{CATALOG}`.`{SCHEMA}`.gold_accounts"
+    GOLD_PAIRS = f"`{CATALOG}`.`{SCHEMA}`.gold_account_similarity_pairs"
+    GOLD_RINGS = f"`{CATALOG}`.`{SCHEMA}`.gold_fraud_ring_communities"
+
     spark = SparkSession.builder.getOrCreate()
 
-    gt = load_ground_truth()
+    gt = load_ground_truth(GROUND_TRUTH_PATH)
     rings = gt["rings"]
     ring_id_to_members: dict[int, set[int]] = {
         int(r["ring_id"]): {int(a) for a in r["account_ids"]} for r in rings
@@ -146,7 +146,7 @@ def main() -> None:
     results: dict[str, dict] = {}
     try:
         problems += _run_checks(
-            spark, ga_df, rc_df, ring_df, ring_id_to_members, results
+            spark, ga_df, rc_df, ring_df, ring_id_to_members, results, GOLD_PAIRS
         )
     finally:
         rc_df.unpersist()
@@ -187,6 +187,7 @@ def _run_checks(
     ring_df,
     ring_id_to_members: dict[int, set[int]],
     results: dict[str, dict],
+    gold_pairs_table: str,
 ) -> list[str]:
     problems: list[str] = []
 
@@ -331,7 +332,7 @@ def _run_checks(
     # ------------------------------------------------------------------- #
     header("[6/6] same_community=true holds for same-ring similarity pairs")
     pairs_with_rings = (
-        spark.table(GOLD_PAIRS)
+        spark.table(gold_pairs_table)
         .select("account_id_a", "account_id_b", "same_community")
         .join(
             ring_df.withColumnRenamed("account_id", "account_id_a")

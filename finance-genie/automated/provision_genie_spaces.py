@@ -82,11 +82,10 @@ BEFORE_QUESTIONS = [
     "Which pairs of accounts have visited the most merchants in common?",
 ]
 AFTER_QUESTIONS = [
-    "Which accounts have the highest fraud risk based on their transfer "
-    "network position?",
-    "Find groups of accounts that form suspicious transaction communities "
-    "based on their transfer patterns.",
-    "Which pairs of accounts share the most similar merchant visit patterns?",
+    "Are there accounts that seem to be the hub of a money movement network "
+    "that are potentially fraudulent?",
+    "Find groups of accounts transferring money heavily among themselves.",
+    "Which pairs of accounts have visited the most merchants in common?",
 ]
 
 INSTRUCTION_TITLE = "Workshop instructions"
@@ -284,7 +283,7 @@ def main() -> None:
         print(f"FAIL  missing dependency: {e}")
         print(
             "      run `uv sync` in automated/ — databricks-tools-core is a "
-            "local editable dep (see pyproject.toml [tool.uv.sources])."
+            "git dependency (see pyproject.toml [tool.uv.sources])."
         )
         sys.exit(1)
 

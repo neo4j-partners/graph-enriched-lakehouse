@@ -18,7 +18,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, NoReturn
 
 from dotenv import load_dotenv
 
@@ -26,7 +26,7 @@ _AUTOMATED_DIR = Path(__file__).resolve().parent.parent
 _ENV_PATH = _AUTOMATED_DIR / ".env"
 
 
-def fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
+def fail(msg: str) -> NoReturn:
     print(f"FAIL  {msg}")
     sys.exit(1)
 

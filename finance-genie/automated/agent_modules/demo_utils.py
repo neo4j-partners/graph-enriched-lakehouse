@@ -190,7 +190,6 @@ def check_community_purity(
       passed             – True when max_ring_coverage > 0.80
     """
     ring_sets = [set(int(a) for a in ring) for ring in rings]
-    ring_size = len(ring_sets[0]) if ring_sets else 0
 
     group_col = next(
         (c for c in df.columns if any(k in c.lower() for k in ("cluster", "community", "group"))),
@@ -207,7 +206,7 @@ def check_community_purity(
         for _, group_df in df.groupby(group_col):
             accounts_in_group = {int(a) for a in group_df[account_col]}
             for ring_set in ring_sets:
-                coverage = len(accounts_in_group & ring_set) / ring_size if ring_size > 0 else 0.0
+                coverage = len(accounts_in_group & ring_set) / len(ring_set) if ring_set else 0.0
                 if coverage > max_coverage:
                     max_coverage = coverage
     else:

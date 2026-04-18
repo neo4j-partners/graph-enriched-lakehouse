@@ -106,7 +106,14 @@ Checks four structural properties the demo depends on: within-ring density ratio
 ./upload_and_create_tables.sh
 ```
 
-Uploads the five CSVs and `ground_truth.json` to the Unity Catalog Volume, then creates five managed Delta tables in `graph-enriched-lakehouse.graph-enriched-schema`. Requires `DATABRICKS_WAREHOUSE_ID` in `automated/.env`. The script is idempotent: it drops and recreates base tables on each run without touching gold tables.
+Uploads the five CSVs and `ground_truth.json` to the Unity Catalog Volume, applies `schema.sql` to create all five base tables with Unity Catalog column-level comments, then loads data via `INSERT OVERWRITE`. Requires `DATABRICKS_WAREHOUSE_ID` in `automated/.env`.
+
+Schema and data are separate by design:
+- `schema.sql` defines column types and Unity Catalog column descriptions (the contract Genie reads)
+- `INSERT OVERWRITE` loads data without touching the schema — column comments survive every re-run
+- `CREATE OR REPLACE TABLE` in `schema.sql` is idempotent; no manual drop steps needed
+
+The three gold tables (`gold_accounts`, `gold_account_similarity_pairs`, `gold_fraud_ring_communities`) are created by `pull_gold_tables.py` on the cluster using `agent_modules/gold_schema.sql`, following the same DDL-first pattern.
 
 ### 5. Store credentials as Databricks secrets
 
@@ -301,7 +308,8 @@ automated/
 ├── config.py                   # loads .env, exposes CONFIG dict
 ├── generate_data.py            # generates synthetic fraud dataset to data/
 ├── verify_fraud_patterns.py    # checks structural properties of generated data
-├── upload_and_create_tables.sh # uploads CSVs and creates Delta tables
+├── schema.sql                  # base table DDL with UC column comments (source of truth)
+├── upload_and_create_tables.sh # applies schema.sql, uploads CSVs, loads Delta tables
 ├── setup_secrets.sh            # stores Neo4j credentials in Databricks secrets
 ├── provision_genie_spaces.py   # idempotently configures before/after Genie Spaces
 ├── compare_genie_runs.py       # compares before/after artifacts, emits markdown report
@@ -320,6 +328,7 @@ automated/
 │   ├── genie_run_after.py      # submit wrapper — targets GENIE_SPACE_ID_AFTER
 │   ├── demo_utils.py           # Genie API + check helpers
 │   ├── gold_constants.py       # shared thresholds used by pull and validate
+│   ├── gold_schema.sql         # gold table DDL with UC column comments (source of truth)
 │   └── neo4j_secrets.py        # loads Neo4j credentials from Databricks secret scope
 └── validation/
     ├── validate_neo4j.py        # connection check

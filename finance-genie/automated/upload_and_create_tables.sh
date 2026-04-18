@@ -1,8 +1,15 @@
 #!/usr/bin/env bash
 # upload_and_create_tables.sh
 #
-# 1. Uploads CSVs from automated/data/ to a Unity Catalog Volume via the Databricks CLI
-# 2. Creates managed Delta tables in the same catalog/schema from those CSVs
+# 1. Applies schema.sql — creates all five base tables with column-level
+#    Unity Catalog comments (DDL only, no data).
+# 2. Uploads CSVs from automated/data/ to the Unity Catalog Volume.
+# 3. Inserts data into each table from the uploaded CSVs.
+#
+# Schema and data are intentionally separate:
+#   - schema.sql defines column types and descriptions (the contract)
+#   - INSERT OVERWRITE loads data without touching the schema
+#   - Column comments survive every re-run because they live in the schema DDL
 #
 # Usage:
 #   export DATABRICKS_WAREHOUSE_ID=<sql-warehouse-id>
@@ -39,6 +46,7 @@ if [[ -z "${DATABRICKS_WAREHOUSE_ID:-}" ]]; then
 fi
 
 DATA_DIR="${SCRIPT_DIR}/data"
+SCHEMA_FILE="${SCRIPT_DIR}/schema.sql"
 CLI="databricks --profile ${PROFILE}"
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -46,8 +54,7 @@ log()  { echo "[$(date '+%H:%M:%S')] $*"; }
 ok()   { echo "[$(date '+%H:%M:%S')]   ✓ $*"; }
 err()  { echo "[$(date '+%H:%M:%S')]   ✗ $*" >&2; }
 
-# Execute a SQL statement via the Databricks SQL Statements REST API.
-# Uses a temp file to safely handle multi-line SQL and special characters.
+# Execute a single SQL statement via the Databricks SQL Statements REST API.
 run_sql() {
   local label="$1"
   local sql="$2"
@@ -57,13 +64,12 @@ run_sql() {
   tmpfile=$(mktemp /tmp/dbr_sql_XXXXX)
   trap 'rm -f "$tmpfile"' RETURN
 
-  # Build the JSON payload with Python to handle all escaping correctly
   python3 - "$DATABRICKS_WAREHOUSE_ID" "$sql" <<'PYEOF' > "$tmpfile"
 import json, sys
 print(json.dumps({
-    "warehouse_id":   sys.argv[1],
-    "statement":      sys.argv[2],
-    "wait_timeout":   "50s",
+    "warehouse_id":    sys.argv[1],
+    "statement":       sys.argv[2],
+    "wait_timeout":    "50s",
     "on_wait_timeout": "CANCEL"
 }))
 PYEOF
@@ -83,8 +89,68 @@ PYEOF
   ok "${label}"
 }
 
+# Read schema.sql, substitute ${catalog} and ${schema}, split on semicolons,
+# and execute each statement. Column comments in CREATE TABLE DDL survive every
+# re-run because they are part of the schema definition, not post-hoc ALTERs.
+apply_schema_file() {
+  local sql_file="$1"
+  log "Applying schema: $(basename "${sql_file}")"
+
+  python3 - "$DATABRICKS_WAREHOUSE_ID" "$sql_file" "$CATALOG" "$SCHEMA" "$PROFILE" <<'PYEOF'
+import json, os, subprocess, sys, tempfile
+
+warehouse_id, sql_file, catalog, schema_name, profile = sys.argv[1:]
+
+with open(sql_file) as f:
+    text = f.read()
+text = text.replace("${catalog}", catalog).replace("${schema}", schema_name)
+
+# Split on semicolons; skip blank or comment-only blocks
+statements = []
+for raw in text.split(";"):
+    lines = [l for l in raw.split("\n") if not l.strip().startswith("--")]
+    stmt = "\n".join(lines).strip()
+    if stmt:
+        statements.append(stmt)
+
+cli = ["databricks", "--profile", profile, "api", "post", "/api/2.0/sql/statements"]
+
+for stmt in statements:
+    label = next((l.strip() for l in stmt.split("\n") if l.strip()), stmt[:60])
+    payload = {
+        "warehouse_id":    warehouse_id,
+        "statement":       stmt,
+        "wait_timeout":    "50s",
+        "on_wait_timeout": "CANCEL",
+    }
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as f:
+        json.dump(payload, f)
+        tmpname = f.name
+    try:
+        result = subprocess.run(
+            cli + ["--json", f"@{tmpname}"],
+            capture_output=True, text=True, check=False,
+        )
+    finally:
+        os.unlink(tmpname)
+
+    if result.returncode != 0:
+        print(f"  ✗ CLI error: {result.stderr}", file=sys.stderr)
+        sys.exit(1)
+
+    resp = json.loads(result.stdout)
+    state = resp.get("status", {}).get("state", "UNKNOWN")
+    if state != "SUCCEEDED":
+        error = resp.get("status", {}).get("error", {})
+        print(f"  ✗ {label}: {error}", file=sys.stderr)
+        sys.exit(1)
+
+    print(f"  ✓ {label}")
+PYEOF
+  ok "Schema applied"
+}
+
 # ── Step 1: Bootstrap schema / volume ────────────────────────────────────────
-# Catalog 'graph-enriched-lakehouse' is pre-existing; only create schema/volume.
 log "=== Step 1: Bootstrapping schema / volume ==="
 
 run_sql "CREATE SCHEMA IF NOT EXISTS" \
@@ -93,18 +159,24 @@ run_sql "CREATE SCHEMA IF NOT EXISTS" \
 run_sql "CREATE VOLUME IF NOT EXISTS" \
   "CREATE VOLUME IF NOT EXISTS \`${CATALOG}\`.\`${SCHEMA}\`.\`${VOLUME}\`"
 
-# ── Step 2: Drop existing tables ─────────────────────────────────────────────
+# ── Step 2: Apply base table schema (DDL with column comments) ────────────────
+#
+# CREATE OR REPLACE TABLE defines column types and descriptions in Unity Catalog.
+# Column comments are part of the schema DDL — they survive every re-run without
+# needing post-hoc ALTER statements.
 log ""
-log "=== Step 2: Dropping existing tables (clean reset) ==="
+log "=== Step 2: Applying base table schema (schema.sql) ==="
 
-for tbl in accounts merchants transactions account_links account_labels; do
-  run_sql "DROP TABLE IF EXISTS ${tbl}" \
-    "DROP TABLE IF EXISTS \`${CATALOG}\`.\`${SCHEMA}\`.\`${tbl}\`"
-done
+if [[ ! -f "$SCHEMA_FILE" ]]; then
+  err "schema.sql not found at: ${SCHEMA_FILE}"
+  exit 1
+fi
 
-# ── Step 3: Upload CSVs to Volume ─────────────────────────────────────────────
+apply_schema_file "$SCHEMA_FILE"
+
+# ── Step 3: Upload CSVs and ground_truth.json to Volume ──────────────────────
 log ""
-log "=== Step 3: Uploading CSVs → ${VOLUME_PATH} ==="
+log "=== Step 3: Uploading data files → ${VOLUME_PATH} ==="
 
 if [[ ! -d "$DATA_DIR" ]]; then
   err "Data directory not found: ${DATA_DIR}"
@@ -119,30 +191,23 @@ for csv_file in "${DATA_DIR}"/*.csv; do
   ok "${filename} → ${VOLUME_PATH}/${filename}"
 done
 
-# ── Step 3b: Upload ground_truth.json to Volume ──────────────────────────────
-log ""
-log "=== Step 3b: Uploading ground_truth.json → ${VOLUME_PATH} ==="
-
 GT_FILE="${DATA_DIR}/ground_truth.json"
 if [[ ! -f "$GT_FILE" ]]; then
   err "ground_truth.json not found: ${GT_FILE}"
   err "Run 'uv run generate_data.py' to generate it first."
   exit 1
 fi
-
 $CLI fs cp "$GT_FILE" "dbfs:${VOLUME_PATH}/ground_truth.json" --overwrite
 ok "ground_truth.json → ${VOLUME_PATH}/ground_truth.json"
 
-# ── Step 4: Create Delta tables from Volume CSVs ──────────────────────────────
+# ── Step 4: Load data into tables ─────────────────────────────────────────────
+#
+# INSERT OVERWRITE replaces all rows without touching the schema or column comments.
 log ""
-log "=== Step 4: Creating Delta tables in \`${CATALOG}\`.\`${SCHEMA}\` ==="
+log "=== Step 4: Loading data into tables ==="
 
-# accounts — one row per account holder
-run_sql "CREATE TABLE accounts" \
-  "CREATE OR REPLACE TABLE \`${CATALOG}\`.\`${SCHEMA}\`.accounts
-   USING DELTA
-   COMMENT 'Account dimension — one row per account holder'
-   AS
+run_sql "INSERT INTO accounts" \
+  "INSERT OVERWRITE \`${CATALOG}\`.\`${SCHEMA}\`.accounts
    SELECT
      CAST(account_id   AS BIGINT)  AS account_id,
      account_hash,
@@ -159,12 +224,8 @@ run_sql "CREATE TABLE accounts" \
      schema      => 'account_id STRING, account_hash STRING, account_type STRING, region STRING, balance STRING, opened_date STRING, holder_age STRING'
    )"
 
-# merchants — merchant dimension with risk tier
-run_sql "CREATE TABLE merchants" \
-  "CREATE OR REPLACE TABLE \`${CATALOG}\`.\`${SCHEMA}\`.merchants
-   USING DELTA
-   COMMENT 'Merchant dimension with risk tier classification'
-   AS
+run_sql "INSERT INTO merchants" \
+  "INSERT OVERWRITE \`${CATALOG}\`.\`${SCHEMA}\`.merchants
    SELECT
      CAST(merchant_id AS BIGINT) AS merchant_id,
      merchant_name,
@@ -179,12 +240,8 @@ run_sql "CREATE TABLE merchants" \
      schema      => 'merchant_id STRING, merchant_name STRING, category STRING, risk_tier STRING, region STRING'
    )"
 
-# transactions — fact table of payments
-run_sql "CREATE TABLE transactions" \
-  "CREATE OR REPLACE TABLE \`${CATALOG}\`.\`${SCHEMA}\`.transactions
-   USING DELTA
-   COMMENT 'Transaction fact table — one row per payment event'
-   AS
+run_sql "INSERT INTO transactions" \
+  "INSERT OVERWRITE \`${CATALOG}\`.\`${SCHEMA}\`.transactions
    SELECT
      CAST(txn_id        AS BIGINT)    AS txn_id,
      CAST(account_id    AS BIGINT)    AS account_id,
@@ -200,12 +257,8 @@ run_sql "CREATE TABLE transactions" \
      schema      => 'txn_id STRING, account_id STRING, merchant_id STRING, amount STRING, txn_timestamp STRING, txn_hour STRING'
    )"
 
-# account_links — directed graph edges (account-to-account transfers)
-run_sql "CREATE TABLE account_links" \
-  "CREATE OR REPLACE TABLE \`${CATALOG}\`.\`${SCHEMA}\`.account_links
-   USING DELTA
-   COMMENT 'Account-to-account transfer graph edges'
-   AS
+run_sql "INSERT INTO account_links" \
+  "INSERT OVERWRITE \`${CATALOG}\`.\`${SCHEMA}\`.account_links
    SELECT
      CAST(link_id            AS BIGINT)    AS link_id,
      CAST(src_account_id     AS BIGINT)    AS src_account_id,
@@ -220,12 +273,8 @@ run_sql "CREATE TABLE account_links" \
      schema      => 'link_id STRING, src_account_id STRING, dst_account_id STRING, amount STRING, transfer_timestamp STRING'
    )"
 
-# account_labels — fraud ground-truth labels
-run_sql "CREATE TABLE account_labels" \
-  "CREATE OR REPLACE TABLE \`${CATALOG}\`.\`${SCHEMA}\`.account_labels
-   USING DELTA
-   COMMENT 'Fraud ground-truth labels — one row per account'
-   AS
+run_sql "INSERT INTO account_labels" \
+  "INSERT OVERWRITE \`${CATALOG}\`.\`${SCHEMA}\`.account_labels
    SELECT
      CAST(account_id AS BIGINT)  AS account_id,
      CAST(
@@ -244,7 +293,7 @@ run_sql "CREATE TABLE account_labels" \
 log ""
 log "=== All done! ==="
 log "Volume:  ${VOLUME_PATH}"
-log "Tables:"
+log "Tables (schema defined in schema.sql, column comments visible in Catalog Explorer):"
 log "  \`${CATALOG}\`.\`${SCHEMA}\`.accounts"
 log "  \`${CATALOG}\`.\`${SCHEMA}\`.merchants"
 log "  \`${CATALOG}\`.\`${SCHEMA}\`.transactions"

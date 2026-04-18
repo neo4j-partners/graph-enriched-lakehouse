@@ -21,6 +21,7 @@ import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NoReturn
 
 from dotenv import load_dotenv
 
@@ -197,7 +198,7 @@ def build_report(before: dict, after: dict, compare_ts: str) -> str:
 # Helpers                                                                      #
 # --------------------------------------------------------------------------- #
 
-def _die(msg: str) -> "NoReturn":  # type: ignore[name-defined]
+def _die(msg: str) -> NoReturn:
     print(f"FAIL  {msg}", file=sys.stderr)
     sys.exit(1)
 
@@ -258,7 +259,7 @@ def main() -> None:
     total_questions = b_total + a_total
 
     if total_responded == total_questions:
-        print(f"E2E PASS — 8/8 steps green, {total_responded}/{total_questions} Genie questions returned data")
+        print(f"E2E PASS — {total_responded}/{total_questions} Genie questions returned data")
     else:
         missing = total_questions - total_responded
         print(

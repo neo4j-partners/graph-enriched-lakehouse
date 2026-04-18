@@ -20,6 +20,5 @@ package = false
 # databricks-tools-core ships the AgentBricksManager used by
 # provision_genie_spaces.py for Genie Space / Data Room REST calls that the
 # public Databricks SDK does not expose (table_identifiers, sample_questions,
-# instructions). Not on PyPI — editable install from the local ai-dev-kit
-# checkout.
-databricks-tools-core = { path = "/Users/ryanknight/projects/databricks/ai-dev-kit/databricks-tools-core", editable = true }
+# instructions). Not on PyPI — installed from the ai-dev-kit GitHub repo.
+databricks-tools-core = { git = "https://github.com/databricks-solutions/ai-dev-kit", subdirectory = "databricks-tools-core" }

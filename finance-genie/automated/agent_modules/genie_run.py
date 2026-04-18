@@ -176,8 +176,7 @@ def _run_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
         if df is None:
             attempts.append({
                 "attempt": attempt_idx,
-                "error": "Genie returned no data (status=%s, text=%s)"
-                         % (response["status"], (response["text"] or "")[:200]),
+                "error": f"Genie returned no data (status={response['status']}, text={(response['text'] or '')[:200]})",
                 "genie_sql": response["sql"],
                 "genie_response_text": response["text"],
                 "row_count": 0,

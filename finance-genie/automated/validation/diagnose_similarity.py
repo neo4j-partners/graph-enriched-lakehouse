@@ -19,12 +19,14 @@ Run from this directory:
 
     uv run diagnose_similarity.py
 
-Exits 0 always — this is diagnostic-only, no pass/fail thresholds.
+Exits 0 unless the Neo4j connection fails — this is diagnostic-only,
+no pass/fail thresholds.
 """
 
 from __future__ import annotations
 
 import os
+import sys
 
 from graphdatascience import GraphDataScience
 
