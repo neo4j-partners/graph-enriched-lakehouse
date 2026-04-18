@@ -11,16 +11,16 @@ The app demonstrates that standard SQL analytics on flat lakehouse tables surfac
 | Page | What It Shows |
 |------|---------------|
 | **Home** | Overview of the before/after narrative |
-| **Before Enrichment** | Volume ranking, bilateral pairs, and transaction amount distributions — all misleading |
+| **Before Enrichment** | Volume ranking, bilateral pairs, and transaction amount distributions. All are misleading. |
 | **After Enrichment** | PageRank risk scores, Louvain communities, Node Similarity pairs, and enriched account table |
 
 ### Graph Algorithms Used
 
 | Algorithm | Feature | Signal |
 |-----------|---------|--------|
-| **PageRank** | `risk_score` | Recursive centrality — ranks accounts by structural importance, not raw volume |
-| **Louvain** | `community_id` | Community detection — reveals 10 fraud rings invisible to bilateral pair queries |
-| **Node Similarity** | `similarity_score` | Jaccard similarity on merchant visits — exposes shared anchor merchant patterns |
+| **PageRank** | `risk_score` | Recursive centrality: ranks accounts by structural importance, not raw volume |
+| **Louvain** | `community_id` | Community detection: reveals 10 fraud rings invisible to bilateral pair queries |
+| **Node Similarity** | `similarity_score` | Jaccard similarity on merchant visits: exposes shared anchor merchant patterns |
 
 ## Data
 
@@ -57,7 +57,7 @@ streamlit run app.py
 
 ### 1. Configure the app
 
-Edit `app.yaml` if needed — the default config uses a SQL Warehouse resource:
+Edit `app.yaml` if needed. The default config uses a SQL Warehouse resource:
 
 ```yaml
 command:

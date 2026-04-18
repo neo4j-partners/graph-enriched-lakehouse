@@ -1,8 +1,10 @@
 # Workshop Guide
 
+This directory contains the interactive notebook sequence for the graph enrichment pipeline. The pipeline reads Delta tables from Unity Catalog, ingests them into Neo4j, runs GDS algorithms (PageRank, Louvain, Node Similarity), and writes enriched Gold tables back to Databricks, giving Genie access to fraud signals derived from the transfer network structure. See the top-level [README](../README.md) for the full architecture overview.
+
 **Audience:** Workshop participants running the demo interactively on Databricks.
 
-**Prerequisite state:** The demo owner has already run the `automated/` setup steps — data generated, tables loaded into Unity Catalog, and Neo4j credentials stored in the `neo4j-graph-engineering` secret scope.
+**Prerequisite state:** The demo owner has already run the `automated/` setup steps: data generated, tables loaded into Unity Catalog, and Neo4j credentials stored in the `neo4j-graph-engineering` secret scope.
 
 ---
 
@@ -15,9 +17,9 @@ Three things must be in place before the first notebook:
    org.neo4j:neo4j-connector-apache-spark_2.12:5.3.1_for_spark_3
    ```
 
-2. **Secret scope populated** — the `neo4j-graph-engineering` scope must contain keys `uri`, `username`, `password`, and `genie_space_id`. The demo owner populates these by running `automated/setup_secrets.sh`. Participants can also store their own credentials interactively by running `00_required_setup.ipynb`.
+2. **Secret scope populated:** the `neo4j-graph-engineering` scope must contain keys `uri`, `username`, `password`, and `genie_space_id`. The demo owner populates these by running `automated/setup_secrets.sh`. Participants can also store their own credentials interactively by running `00_required_setup.ipynb`.
 
-3. **Tables loaded** — `accounts`, `merchants`, `transactions`, `account_links`, and `account_labels` must exist in `graph-enriched-lakehouse.graph-enriched-schema`. The demo owner loads them with `automated/upload_and_create_tables.sh`.
+3. **Tables loaded:** `accounts`, `merchants`, `transactions`, `account_links`, and `account_labels` must exist in `graph-enriched-lakehouse.graph-enriched-schema`. The demo owner loads them with `automated/upload_and_create_tables.sh`.
 
 ---
 
@@ -35,17 +37,17 @@ Reads the five Delta tables and writes them to Neo4j as a property graph. Create
 
 Run in the **Neo4j Aura Workspace → Query tab** (not on Databricks). Walks through three GDS algorithms on the projected graph:
 
-- **PageRank** — writes `risk_score` to each Account node
-- **Louvain** — writes `community_id` to each Account node
-- **Node Similarity** — writes `similarity_score` to each Account node
+- **PageRank:** writes `risk_score` to each Account node
+- **Louvain:** writes `community_id` to each Account node
+- **Node Similarity:** writes `similarity_score` to each Account node
 
 ### 03_pull_gold_tables.ipynb
 
 Reads the enriched Account nodes and similarity relationships back from Neo4j via the Spark Connector and writes three gold tables to Unity Catalog:
 
-- `gold_accounts` — account metadata + `risk_score`, `community_id`, `similarity_score`
-- `gold_account_similarity_pairs` — pairwise similarity scores
-- `gold_fraud_ring_communities` — ring-level community aggregates
+- `gold_accounts`: account metadata + `risk_score`, `community_id`, `similarity_score`
+- `gold_account_similarity_pairs`: pairwise similarity scores
+- `gold_fraud_ring_communities`: ring-level community aggregates
 
 ### 04_train_model.ipynb _(optional)_
 
@@ -67,13 +69,13 @@ These notebooks use **serverless compute** (no Neo4j Spark Connector required). 
 
 ### After GDS
 
-`gds_enrichment_closes_gaps.ipynb` — runs all three checks against the after-GDS Genie Space and confirms each question resolves: top-20 precision > 70%, max ring coverage > 80%, same-ring fraction > 60%.
+`gds_enrichment_closes_gaps.ipynb`: runs all three checks against the after-GDS Genie Space and confirms each question resolves: top-20 precision > 70%, max ring coverage > 80%, same-ring fraction > 60%.
 
 ---
 
 ## Reference Material
 
-- `GENIE_SETUP.md` — Genie Space instructions to paste into the Space, and column definitions for `fraud_risk_tier`, `risk_score`, `community_id`, and `similarity_score`.
-- `aura_gds_guide.md` — step-by-step GDS algorithm guide for running in the Neo4j Aura Query tab.
-- `GOLD_TABLE_ENRICHMENT.md` — description of the three gold tables and their columns.
-- `diagrams/` — architecture diagrams for the workshop.
+- `GENIE_SETUP.md`: Genie Space instructions to paste into the Space, and column definitions for `fraud_risk_tier`, `risk_score`, `community_id`, and `similarity_score`.
+- `aura_gds_guide.md`: step-by-step GDS algorithm guide for running in the Neo4j Aura Query tab.
+- `GOLD_TABLE_ENRICHMENT.md`: description of the three gold tables and their columns.
+- `diagrams/`: architecture diagrams for the workshop.

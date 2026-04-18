@@ -113,3 +113,4 @@ worklog/
 
 # Generated data files
 finance-genie/automated/data/
+finance-genie/automated/logs/
