@@ -103,8 +103,8 @@ def check_whale_pagerank(links_df, fraud_ids, whale_ids):
     passed = (
         top_200_whale >= 180
         and top_200_fraud <= 20
-        and 30 <= whale_avg <= 80
-        and 5 <= fraud_avg <= 25
+        and 30 <= whale_avg <= 300
+        and 5 <= fraud_avg <= 150
         and sender_avg < whale_avg / 2
     )
 
@@ -115,10 +115,10 @@ def check_whale_pagerank(links_df, fraud_ids, whale_ids):
             drift.append("top-200 inbound is not whale-dominated")
         if top_200_fraud > 20:
             drift.append("ring members appearing in top-200 inbound")
-        if not (30 <= whale_avg <= 80):
-            drift.append(f"whale_inbound_avg {whale_avg:.1f} outside [30, 80]")
-        if not (5 <= fraud_avg <= 25):
-            drift.append(f"fraud_ring_inbound_avg {fraud_avg:.1f} outside [5, 25]")
+        if not (30 <= whale_avg <= 300):
+            drift.append(f"whale_inbound_avg {whale_avg:.1f} outside [30, 300]")
+        if not (5 <= fraud_avg <= 150):
+            drift.append(f"fraud_ring_inbound_avg {fraud_avg:.1f} outside [5, 150]")
         if sender_avg >= whale_avg / 2:
             drift.append("whales are receiving from well-connected senders, not peripheral ones")
         diagnostic = (

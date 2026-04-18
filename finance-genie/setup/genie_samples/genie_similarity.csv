@@ -1,5 +1,0 @@
-# Genie check: after Node Similarity — "which account pairs have the highest similarity_score?"
-# Columns: account_id_a, account_id_b, similarity_score
-# Replace the rows below with the pairs Genie returned after GDS enrichment.
-# Validator expects: same_ring_fraction >= 0.70 (both accounts in each pair share a ring).
-account_id_a,account_id_b,similarity_score

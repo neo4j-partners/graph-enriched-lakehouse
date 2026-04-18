@@ -32,10 +32,10 @@ Neo4j Password <from Aura credentials file>
 
 Enter the credentials provided by the admin, then run all cells. The notebook will:
 
-1. Create a personal Unity Catalog (`graph_finance_demo_<your_username>`), schema (`neo4j_webinar`), and volume
-2. Generate the synthetic fraud dataset and write it to five Delta tables: `accounts`, `account_labels`, `merchants`, `transactions`, `account_links`. Fraud labels are withheld from the operational tables. `account_labels` maps each account to its ground truth and is used only in notebook 03 for model training and evaluation.
-3. Store the Neo4j credentials in the Databricks secret scope `neo4j-graph-engineering` under keys `uri`, `username`, and `password`
-4. Verify the Aura connection
+1. Store the Neo4j credentials in the Databricks secret scope `neo4j-graph-engineering` under keys `uri`, `username`, and `password`
+2. Verify the Aura connection
+
+The Delta tables (`accounts`, `account_labels`, `merchants`, `transactions`, `account_links`) have been pre-loaded into the workspace by the workshop admin.
 
 When the final cell prints `SETUP COMPLETE`, the environment is ready.
 
@@ -106,7 +106,7 @@ When the guide is complete, return to Genie and re-run the three queries from st
 
 ### 6. Pull Features and Train Models
 
-Run `03_pull_and_model` to read the enriched Account nodes back into Databricks, register the three graph features in Unity Catalog Feature Store, and train a head-to-head comparison:
+Run `03_pull_gold_tables` to read the enriched Account nodes back into Databricks, register the three graph features in Unity Catalog Feature Store, and train a head-to-head comparison:
 
 - **Baseline:** balance, transaction aggregates, P2P counts, encoded categoricals
 - **Graph-augmented:** baseline features plus `risk_score`, `community_id`, `similarity_score`

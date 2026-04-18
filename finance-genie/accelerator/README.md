@@ -94,7 +94,8 @@ Each question runs up to `GENIE_TEST_RETRIES` times (default 2). The check funct
 ### Additional `.env` keys
 
 ```bash
-GENIE_SPACE_ID=<after-gds-genie-space-id>
+GENIE_SPACE_ID_BEFORE=<before-gds-genie-space-id>
+GENIE_SPACE_ID_AFTER=<after-gds-genie-space-id>
 GROUND_TRUTH_PATH=/Volumes/<catalog>/<schema>/<volume>/ground_truth.json
 RESULTS_VOLUME_DIR=/Volumes/<catalog>/<schema>/<volume>/genie_test_results
 GENIE_TEST_RETRIES=2

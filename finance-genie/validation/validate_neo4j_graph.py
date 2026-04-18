@@ -10,8 +10,8 @@
 Checks the graph against ground_truth.json (which records ring membership
 and anchor merchants for the data that was actually uploaded):
 
-  1. Node counts    :Account == 25,000, :Merchant == 2,500
-  2. Edge counts    TRANSACTED_WITH and TRANSFERRED_TO match CSV totals
+  1. Node counts    :Account == 25,000, :Merchant == 7,500
+  2. Edge counts    TRANSACTED_WITH ~250,000 and TRANSFERRED_TO ~300,000 (within 5%)
   3. Ring density   Within-ring TRANSFERRED_TO density >> background density
   4. Ring anchors   Ring members visit anchor merchants at elevated rate
 
@@ -36,9 +36,10 @@ from neo4j.exceptions import AuthError, ServiceUnavailable
 REQUIRED_VARS = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
 
 EXPECTED_ACCOUNTS = 25_000
-EXPECTED_MERCHANTS = 2_500
+EXPECTED_MERCHANTS = 7_500
 EXPECTED_TRANSACTED = 250_000
-EXPECTED_TRANSFERRED = 40_000
+EXPECTED_TRANSFERRED = 300_000
+EDGE_COUNT_TOLERANCE = 0.05  # allow ±5% for stochastic generation
 
 DENSITY_RATIO_MIN = 100.0
 ANCHOR_VISIT_RATIO_MIN = 2.0
@@ -110,18 +111,18 @@ def check_edge_counts(session) -> list[str]:
         "MATCH ()-[r:TRANSFERRED_TO]->() RETURN count(r) AS n"
     ).single()["n"]
 
-    if n_tx == EXPECTED_TRANSACTED:
+    if abs(n_tx - EXPECTED_TRANSACTED) / EXPECTED_TRANSACTED <= EDGE_COUNT_TOLERANCE:
         ok(f":TRANSACTED_WITH count = {n_tx:,}")
     else:
         problems.append(
-            f":TRANSACTED_WITH count = {n_tx:,}, expected {EXPECTED_TRANSACTED:,}"
+            f":TRANSACTED_WITH count = {n_tx:,}, expected ~{EXPECTED_TRANSACTED:,} (±5%)"
         )
 
-    if n_p2p == EXPECTED_TRANSFERRED:
+    if abs(n_p2p - EXPECTED_TRANSFERRED) / EXPECTED_TRANSFERRED <= EDGE_COUNT_TOLERANCE:
         ok(f":TRANSFERRED_TO count = {n_p2p:,}")
     else:
         problems.append(
-            f":TRANSFERRED_TO count = {n_p2p:,}, expected {EXPECTED_TRANSFERRED:,}"
+            f":TRANSFERRED_TO count = {n_p2p:,}, expected ~{EXPECTED_TRANSFERRED:,} (±5%)"
         )
 
     return problems, n_p2p

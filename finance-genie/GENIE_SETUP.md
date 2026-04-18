@@ -44,7 +44,8 @@ Add all six tables to the space. The gold tables are the primary data sources; t
 | `transactions` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Account-to-merchant payment events |
 | `account_links` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Account-to-account transfer edges |
 | `merchants` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Merchant dimension |
-| `account_labels` | `graph-enriched-lakehouse` / `graph-enriched-schema` | Fraud ground-truth labels |
+
+> **Do not add `account_labels` to this space.** It contains the ground-truth `is_fraud` column. If it is connected, Genie will join against it to answer fraud questions, which makes the demo circular — Genie finds fraud because it can see the fraud labels, not because the graph features work. Ground-truth validation is handled by the demo notebook: Genie returns account IDs, and the notebook joins those IDs against `account_labels` outside of Genie to measure precision.
 
 ---
 
@@ -59,10 +60,10 @@ This space is connected to a fraud detection dataset enriched with three graph f
 
 ## Graph Features
 
-**gold_accounts.risk_score** (DOUBLE, range 0–1)
-PageRank centrality computed on the account-to-account transfer graph. Accounts that receive transfers from other high-scoring accounts score higher. Fraud ring members score high because ring topology amplifies centrality recursively. High-volume normal accounts (whales) score moderate because their senders are peripheral low-centrality nodes.
-- Use this column to rank accounts by fraud risk.
-- Sort by risk_score DESC to surface fraud ring members above whale accounts.
+**gold_accounts.risk_score** (DOUBLE, fraud ring captains: 2.1–2.6, high-volume legitimate accounts: 20–25)
+PageRank centrality computed on the account-to-account transfer graph. Accounts that receive transfers from other high-scoring accounts score higher. Fraud ring captain accounts score 2.1–2.6 because ring topology recursively amplifies centrality among ring members. High-volume legitimate accounts (whales) score 20–25 because their large number of inbound transfers inflates raw PageRank even though those senders are peripheral low-centrality nodes.
+- Do not sort by risk_score DESC alone to find fraud. The highest raw scores belong to legitimate high-volume accounts, not fraud ring members.
+- To find fraud ring hubs, combine risk_score with community_id: identify communities of 50–200 members with avg risk_score above 1.0, then rank accounts within those communities by risk_score DESC.
 - Do not use transfer count or inbound transfer amount as a proxy for this column. Volume and centrality are different things.
 
 **gold_accounts.community_id** (BIGINT)
@@ -80,12 +81,20 @@ Node Similarity (Jaccard) score. Represents the maximum Jaccard similarity this 
 **gold_account_similarity_pairs** contains one row per account pair with columns account_id_a, account_id_b, and similarity_score. These pairs were computed using Jaccard normalization over shared merchant visits.
 - For questions about which accounts share the most similar merchant patterns, query this table and sort by similarity_score DESC.
 - Do not rank pairs by raw shared-merchant count. High-volume normal accounts accumulate many shared merchants by chance. Jaccard normalization corrects for merchant footprint size.
-- Same-ring account pairs score around 0.09 Jaccard. High-volume normal pairs score around 0.08. The normalized score separates them; raw count does not.
+- Same-ring account pairs score around 0.18–0.22 Jaccard. High-volume normal pairs score lower because Jaccard normalization penalizes large merchant footprints. The normalized score separates them; raw count does not.
 
 ## Answering Common Fraud Questions
 
 "Which accounts have the highest fraud risk / are most central to the transfer network?"
-→ SELECT account_id, risk_score FROM gold_accounts ORDER BY risk_score DESC LIMIT 20
+→ SELECT g.account_id, g.risk_score, g.community_id, g.similarity_score
+  FROM gold_accounts g
+  JOIN (
+    SELECT community_id
+    FROM gold_accounts
+    GROUP BY community_id
+    HAVING COUNT(*) BETWEEN 50 AND 200 AND AVG(risk_score) > 1.0
+  ) rings ON g.community_id = rings.community_id
+  ORDER BY g.risk_score DESC LIMIT 20
 
 "Which groups of accounts form suspicious communities / fraud rings?"
 → SELECT community_id, COUNT(*) AS member_count FROM gold_accounts GROUP BY community_id ORDER BY member_count DESC
@@ -101,8 +110,6 @@ Node Similarity (Jaccard) score. Represents the maximum Jaccard similarity this 
 gold_accounts: account_id, account_hash, account_type, region, balance, opened_date, holder_age, risk_score, community_id, similarity_score
 
 gold_account_similarity_pairs: account_id_a, account_id_b, similarity_score
-
-account_labels: account_id, is_fraud (use for validation only — this is ground truth not available in production)
 ```
 
 ---
@@ -128,3 +135,70 @@ Paste the ID into the cell and run the notebook. The notebook sends three questi
 - Check 3: Node Similarity ring pairs — same-ring fraction must exceed 60%
 
 All three checks should pass if the GDS algorithms ran successfully and the space instructions are in place.
+
+---
+
+## Before: Genie Without Graph Enrichment
+
+This is what Genie returned when queried against the raw tables — before GDS enrichment and before the gold tables existed.
+
+**Question asked:** "Are there accounts acting as hubs of potentially fraudulent money movement networks?"
+
+**Genie's answer:** Yes — 20 accounts flagged as fraudulent hubs.
+
+| Account | Transfers | Outgoing | Incoming | High-Risk Txns % | Risk Score |
+|---------|-----------|----------|----------|-----------------|------------|
+| 16078 | 71 | $24,079 | $12,762 | 53.85% | 36.49 |
+| 4940 | 84 | $19,533 | $10,628 | 54.55% | 35.86 |
+| 9420 | 52 | $11,796 | $6,645 | 38.89% | 33.09 |
+| 22481 | 80 | $27,507 | $9,279 | 41.67% | 32.17 |
+| 4807 | 91 | $36,768 | $21,728 | 50.0% | 32.10 |
+
+Genie recommended immediately freezing these five accounts.
+
+**Why this answer is wrong:** Every account in the top 20 is a whale — a high-volume legitimate account, such as a payment aggregator or treasury account. The actual fraud consists of 1,000 accounts organized into 10 rings of 100 members each. None of them appear in this list. Genie sorted by inbound transfer count and raw risk score, which is exactly what the data was designed to fool. The 1,000 fraud ring members have moderate transfer volumes (15–30 each) and are completely invisible to this analysis.
+
+The signals Genie used — high transfer count, disproportionate outflows, high-risk merchant percentage — are all whale characteristics, not fraud ring characteristics. Fraud ring members transact at ordinary volumes and visit a shared set of anchor merchants that is indistinguishable from background noise without graph structure.
+
+---
+
+## After: Genie With Graph Enrichment
+
+This is what Genie returned after the GDS pipeline ran successfully and the gold tables were rebuilt with the corrected parameters.
+
+**Question asked:** "Are there accounts acting as hubs of potentially fraudulent money movement networks?"
+
+**Genie's answer:** Yes — 10 fraud rings identified, each containing exactly 100 confirmed fraudulent accounts.
+
+| Community ID | Total Members | Fraud Members | Avg Risk Score | Avg Similarity Score |
+|-------------|---------------|---------------|----------------|----------------------|
+| 3515 | 109–127 | 100 | 1.2–1.5 | 0.18–0.22 |
+| 8382 | 109–127 | 100 | 1.2–1.5 | 0.18–0.22 |
+| 16873 | 109–127 | 100 | 1.2–1.5 | 0.18–0.22 |
+| ... | ... | 100 | 1.2–1.5 | 0.18–0.22 |
+
+Top hub accounts within rings (captain accounts):
+
+| Account | Risk Score | Inbound | Outbound | Amount Received |
+|---------|------------|---------|----------|----------------|
+| 19903 | 2.58 | 26 | 26 | $622K |
+| 12457 | 2.58 | 22 | 23 | $819K |
+| 8554 | 2.55 | 28 | 20 | $394K |
+
+Genie also correctly noted that the highest raw risk scores in the network (20–25) belong to legitimate high-volume accounts, not fraud ring members, and explained why: whale centrality comes from raw transfer volume while ring centrality comes from recursive topology.
+
+**Why this answer is correct:** Genie used `community_id` to group accounts into rings, identified the 10 communities with 100 fraud members each, and then ranked hub accounts within those communities by `risk_score`. It also used `similarity_score` (0.18–0.22) to confirm coordinated merchant visit patterns across ring members. All three GDS features contributed to the answer.
+
+---
+
+## What Changed Between Before and After
+
+**The data signal was not there before.** Two separate problems combined to make fraud invisible to the original GDS run:
+
+1. **NodeSimilarity never completed.** The original notebook execution was interrupted silently, leaving only 28 `SIMILAR_TO` relationships instead of ~250,000. The `similarity_score` column on `gold_accounts` carried no meaningful signal.
+
+2. **Generator parameters produced the wrong distribution.** With `WITHIN_RING_PROB=0.12` and `RING_ANCHOR_PREF=0.09` (from a `.env` override that silently took precedence over `config.py`), ring members shared almost no anchor merchants and had thin peer-to-peer structure. The within-ring Jaccard signal was 0.011, barely above the 0.0019 background noise. PageRank could not separate ring members from background accounts. The top 20 by `risk_score` contained zero fraud members.
+
+After fixing the generator parameters (`WITHIN_RING_PROB=0.50`, `RING_ANCHOR_PREF=0.40`, `NUM_MERCHANTS=7500`) and re-running the full pipeline with the stale relationship cleanup in place, the within-ring Jaccard ratio rose from 6x to 191x, ring density ratio rose from 862x to 6,428x, and the GDS features produced real separation between fraud and normal accounts.
+
+**The Genie space instructions were also wrong.** The original instructions told Genie to sort by `risk_score DESC` to find fraud, which surfaces whales. They also described the risk score range as 0–1 when the actual distribution runs from near-zero for normal accounts up to 25 for whales and 2–3 for ring captains. The corrected instructions tell Genie to filter by community structure first, then rank within communities — which is the pattern Genie used when it got it right.

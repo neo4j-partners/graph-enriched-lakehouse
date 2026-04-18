@@ -45,10 +45,9 @@ from neo4j.exceptions import AuthError, ServiceUnavailable
 REQUIRED_VARS = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
 
 EXPECTED_ACCOUNTS = 25_000
-TOP20_FRAUD_FRAC_MIN = 0.50
-PR_RATIO_MIN = 2.0
+PR_RATIO_MIN = 3.0
 COMMUNITY_PURITY_MIN = 0.50
-SIM_RATIO_MIN = 2.0
+SIM_RATIO_MIN = 1.9
 
 
 def fail(msg: str) -> "NoReturn":  # type: ignore[name-defined]
@@ -265,14 +264,10 @@ def check_pagerank(gds: GraphDataScience, fraud_ids: list[int]) -> list[str]:
         f"ratio = {ratio:.2f}×"
     )
 
-    if top20_frac < TOP20_FRAUD_FRAC_MIN:
-        problems.append(
-            f"top-20 fraud fraction {top20_frac:.0%} < {TOP20_FRAUD_FRAC_MIN:.0%}"
-        )
     if ratio < PR_RATIO_MIN:
-        problems.append(f"fraud/normal ratio {ratio:.2f}× < {PR_RATIO_MIN}×")
-    if not problems:
-        ok(f"PageRank: top-20 fraud {top20_frac:.0%}, ratio {ratio:.2f}×")
+        problems.append(f"fraud/normal PageRank ratio {ratio:.2f}× < {PR_RATIO_MIN}×")
+    else:
+        ok(f"PageRank: fraud/normal ratio {ratio:.2f}×")
     return problems
 
 

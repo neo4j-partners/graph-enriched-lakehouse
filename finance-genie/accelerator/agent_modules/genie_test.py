@@ -67,7 +67,7 @@ from databricks.sdk import WorkspaceClient  # noqa: E402
 # --------------------------------------------------------------------------- #
 # 3. Config                                                                   #
 # --------------------------------------------------------------------------- #
-SPACE_ID = os.environ["GENIE_SPACE_ID"]
+SPACE_ID = os.environ["GENIE_SPACE_ID_AFTER"]
 GROUND_TRUTH_PATH = os.environ["GROUND_TRUTH_PATH"]
 RESULTS_VOLUME_DIR = os.environ["RESULTS_VOLUME_DIR"].rstrip("/")
 RETRIES = int(os.environ.get("GENIE_TEST_RETRIES", "2"))

@@ -45,7 +45,7 @@ SEED = _int("SEED", 42)
 NUM_ACCOUNTS  = _int("NUM_ACCOUNTS",  25_000)
 NUM_MERCHANTS = _int("NUM_MERCHANTS",  7_500)
 NUM_TXN       = _int("NUM_TXN",      250_000)
-NUM_P2P       = _int("NUM_P2P",       40_000)
+NUM_P2P       = _int("NUM_P2P",      300_000)
 FRAUD_RATE    = _float("FRAUD_RATE",    0.04)
 N_RINGS       = _int("N_RINGS",            10)
 WHALE_RATE    = _float("WHALE_RATE",   0.008)
@@ -56,14 +56,19 @@ WHALE_RATE    = _float("WHALE_RATE",   0.008)
 
 # Fraction of P2P links that stay within a ring.
 # Primary driver of the density ratio (within-ring vs background).
-# Raised to 0.50 (from 0.30) to strengthen ring PageRank signal.
-# Lower this to weaken Louvain and PageRank signal.
-WITHIN_RING_PROB = _float("WITHIN_RING_PROB", 0.50)
+# Set to 0.10 so density ratio ≈ 700x and each ring member's neighborhood is
+# ~73% internal — the minimum for Louvain to form clean ring communities.
+# At 0.023 (Tier 1) the internal ratio drops to 23%, Louvain merges rings into
+# giant background communities (avg purity 19%), and all four GDS checks fail.
+# See validation/REALISM.md for the Demo Minimum derivation and Tier 2 targets.
+WITHIN_RING_PROB = _float("WITHIN_RING_PROB", 0.10)
 
 # Fraction of P2P links directed to whale accounts.
-# Controls how strongly raw inbound count misdirects Genie.
-# Reduced to 0.10 (from 0.20) to make whale edge dominance less extreme.
-WHALE_INBOUND = _float("WHALE_INBOUND", 0.10)
+# Set to 0.05 so whale_inbound_avg ≈ 75 at NUM_P2P=300k.
+# (0.05 × 300k / 200 whales = 75 per whale)
+# Must stay above ring captain inbound (~70 at WITHIN_RING_PROB=0.10) to preserve
+# the whale-hiding property: naive inbound-sort finds whales, not ring captains.
+WHALE_INBOUND = _float("WHALE_INBOUND", 0.05)
 
 # Fraction of P2P links originating from whale accounts.
 # Gives whales bidirectional P2P volume so they resemble payment aggregators
@@ -71,7 +76,7 @@ WHALE_INBOUND = _float("WHALE_INBOUND", 0.10)
 # random accounts — not ring members — to preserve the sender-peripherality
 # property that PageRank uses to separate whales from ring members.
 # Should be set equal to WHALE_INBOUND so inbound and outbound volumes match.
-WHALE_OUTBOUND = _float("WHALE_OUTBOUND", 0.10)
+WHALE_OUTBOUND = _float("WHALE_OUTBOUND", 0.05)
 
 # When True, each whale sends only to a pre-assigned fixed pool of recurring
 # plain-normal-account recipients, matching the consistent-counterparty pattern
@@ -86,11 +91,11 @@ WHALE_RECIPIENT_POOL_SIZE = _int("WHALE_RECIPIENT_POOL_SIZE", 30)
 
 # Probability a fraud account visits a ring-anchor merchant per transaction.
 # Primary driver of within-ring Jaccard similarity.
-# Raised to 0.40 (from 0.18) to boost ring signal above the noise floor.
-# At 0.40, ring members visit ~2.8 of 5 anchors on average; combined with
-# NUM_MERCHANTS=7500 (noise floor ~0.10-0.12), expected ratio ~1.5-2.0x.
-# Lower this to weaken Node Similarity signal.
-RING_ANCHOR_PREF = _float("RING_ANCHOR_PREF", 0.40)
+# Reduced to 0.12 (from 0.40) for realism — ring members direct 12% of
+# transactions to anchor merchants (down from 40%). At 0.12 with NUM_MERCHANTS=7500,
+# expected within-ring Jaccard ~0.026, cross-ring ~0.00059, ratio ~44x.
+# See validation/REALISM.md for the Tier 2 target of 0.05 (ratio ~10x).
+RING_ANCHOR_PREF = _float("RING_ANCHOR_PREF", 0.12)
 
 # Number of shared anchor merchants assigned per ring.
 # Sets the Jaccard ceiling. Fewer anchors narrows the shared merchant pool.
@@ -102,8 +107,10 @@ RING_ANCHOR_CNT = _int("RING_ANCHOR_CNT", 5)
 CAPTAIN_COUNT = _int("CAPTAIN_COUNT", 5)
 
 # Fraction of within-ring transfers that route to a captain as receiver.
-# At 0.50, half of intra-ring transfers target captains, concentrating
-# inbound PageRank on 5 high-degree nodes per ring.
+# Restored to 0.10 — needed for captain PageRank visibility now that
+# WITHIN_RING_PROB=0.023 produces sparser ring topology at NUM_P2P=300k.
+# At 0.10 with 6,900 within-ring transfers: ~13.8 captain-routed inbound
+# per captain, well below whale avg of ~40. See REALISM.md.
 CAPTAIN_TRANSFER_PROB = _float("CAPTAIN_TRANSFER_PROB", 0.10)
 
 # ── Transaction amount distributions ─────────────────────────────────
