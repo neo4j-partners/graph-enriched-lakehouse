@@ -15,7 +15,7 @@ Six checks:
   2. Each ring-candidate community is dominated by a single ground-truth ring:
      the dominant ring's members cover ≥80% of their home ring
   3. All ring-candidate communities have member_count BETWEEN 50 AND 200
-  4. fraud_risk_tier='high' covers ≥ 60% of the 1,000 ring-member accounts
+  4. fraud_risk_tier='high' covers ≥ 75% of the 1,000 ring-member accounts
   5. For each ring-candidate community, top_account_id is a member of the
      dominant ring per ground_truth.json
   6. In gold_account_similarity_pairs, same_community=true holds for ≥ 95% of
@@ -31,11 +31,11 @@ Usage (from finance-genie/automated/ with .env in place):
 
 from __future__ import annotations
 
-import io
 import json
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 # --------------------------------------------------------------------------- #
 # 1. Load .env extras forwarded by the runner as KEY=VALUE argv               #
@@ -49,9 +49,25 @@ for _arg in sys.argv[1:]:
         remaining.append(_arg)
 sys.argv[1:] = remaining
 
+# __file__ is not set when the cluster runs this via exec(compile(...));
+# fall back to the frame's co_filename to find our sibling modules.
+try:
+    _HERE = Path(__file__).resolve().parent
+except NameError:
+    import inspect as _inspect
+    _HERE = Path(_inspect.currentframe().f_code.co_filename).resolve().parent
+    del _inspect
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
+
 from pyspark.sql import SparkSession  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
-from databricks.sdk import WorkspaceClient  # noqa: E402
+
+from gold_constants import (  # noqa: E402
+    RING_SIZE_HIGH,
+    RING_SIZE_LOW,
+    TIER_HIGH,
+)
 
 # --------------------------------------------------------------------------- #
 # 2. Config                                                                   #
@@ -61,13 +77,13 @@ SCHEMA = os.environ["SCHEMA"]
 GROUND_TRUTH_PATH = os.environ["GROUND_TRUTH_PATH"]
 RESULTS_VOLUME_DIR = os.environ["RESULTS_VOLUME_DIR"].rstrip("/")
 
-TIER_HIGH = "high"
-
 RING_CANDIDATE_COUNT_EXPECTED = 10
 RING_DOMINANCE_MIN = 0.80
-MEMBER_COUNT_LOW = 50
-MEMBER_COUNT_HIGH = 200
-HIGH_TIER_FRAC_MIN = 0.60
+# RING_EXCLUSION_MAX=0.20 in run_and_verify_gds.py caps the fraction of ring
+# members that the NodeSim bipartite projection excludes. Excluded members
+# fall to fraud_risk_tier='medium' — so worst-case 'high' coverage is ~80%.
+# 0.75 leaves 5% headroom over that cap while still catching real regressions.
+HIGH_TIER_FRAC_MIN = 0.75
 SAME_COMMUNITY_FRAC_MIN = 0.95
 
 GOLD_ACCOUNTS = f"`{CATALOG}`.`{SCHEMA}`.gold_accounts"
@@ -79,15 +95,15 @@ def header(label: str) -> None:
     print(f"\n── {label} " + "─" * max(0, 60 - len(label)))
 
 
-def load_ground_truth(ws: WorkspaceClient) -> dict:
+def load_ground_truth() -> dict:
+    # UC Volumes are POSIX-accessible from Databricks Python tasks, so we can
+    # open /Volumes/... directly instead of going through the Files API.
     try:
-        download = ws.files.download(GROUND_TRUTH_PATH)
-        raw = download.contents.read()
-    except Exception as e:
-        print(f"FAIL  cannot read ground_truth at {GROUND_TRUTH_PATH}: {e}")
+        with open(GROUND_TRUTH_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        print(f"FAIL  ground_truth not found at {GROUND_TRUTH_PATH}")
         sys.exit(1)
-    try:
-        return json.loads(raw.decode("utf-8"))
     except json.JSONDecodeError as e:
         print(f"FAIL  ground_truth at {GROUND_TRUTH_PATH} is not valid JSON: {e}")
         sys.exit(1)
@@ -95,9 +111,8 @@ def load_ground_truth(ws: WorkspaceClient) -> dict:
 
 def main() -> None:
     spark = SparkSession.builder.getOrCreate()
-    ws = WorkspaceClient()
 
-    gt = load_ground_truth(ws)
+    gt = load_ground_truth()
     rings = gt["rings"]
     ring_id_to_members: dict[int, set[int]] = {
         int(r["ring_id"]): {int(a) for a in r["account_ids"]} for r in rings
@@ -147,12 +162,11 @@ def main() -> None:
         "problems": problems,
         "results": results,
     }
-    artifact_bytes = json.dumps(artifact, indent=2).encode("utf-8")
     try:
-        with io.BytesIO(artifact_bytes) as buf:
-            ws.files.upload(artifact_path, buf, overwrite=True)
+        with open(artifact_path, "w", encoding="utf-8") as f:
+            json.dump(artifact, f, indent=2)
         print(f"\nArtifact: {artifact_path}")
-    except Exception as e:
+    except OSError as e:
         print(f"\nWARN  failed to write artifact to {artifact_path}: {e}")
 
     print()
@@ -212,7 +226,7 @@ def _run_checks(
         F.max("member_count").alias("max_size"),
         F.sum(
             F.when(
-                ~F.col("member_count").between(MEMBER_COUNT_LOW, MEMBER_COUNT_HIGH),
+                ~F.col("member_count").between(RING_SIZE_LOW, RING_SIZE_HIGH),
                 1,
             ).otherwise(0)
         ).alias("out_of_range"),
@@ -225,8 +239,8 @@ def _run_checks(
         f"out_of_range: {out_of_range}"
     )
     results["ring_size_range"] = {
-        "low": MEMBER_COUNT_LOW,
-        "high": MEMBER_COUNT_HIGH,
+        "low": RING_SIZE_LOW,
+        "high": RING_SIZE_HIGH,
         "min": min_size,
         "max": max_size,
         "out_of_range": out_of_range,
@@ -234,13 +248,13 @@ def _run_checks(
     if out_of_range:
         problems.append(
             f"{out_of_range} ring-candidate communities have member_count "
-            f"outside [{MEMBER_COUNT_LOW}, {MEMBER_COUNT_HIGH}]"
+            f"outside [{RING_SIZE_LOW}, {RING_SIZE_HIGH}]"
         )
     else:
         print("OK    all ring candidates in range")
 
     # ------------------------------------------------------------------- #
-    # Check 4 — fraud_risk_tier='high' covers ≥ 60% of ring members       #
+    # Check 4 — fraud_risk_tier='high' covers ≥ 75% of ring members       #
     # ------------------------------------------------------------------- #
     header("[4/6] fraud_risk_tier='high' coverage of ring members")
     fraud_df = ring_df.select("account_id").distinct()
@@ -388,6 +402,7 @@ def _check_ring_dominance(
     ).collect()
 
     community_to_ring: dict[int, int] = {}
+    ring_to_community: dict[int, int] = {}
     dominance_records = []
 
     for r in per_community:
@@ -407,6 +422,15 @@ def _check_ring_dominance(
         ring_size = len(ring_id_to_members[dominant_ring])
         dominance = dominant_count / ring_size
         community_to_ring[cid] = dominant_ring
+        # Injectivity guard: two ring-candidate communities both dominated by
+        # the same ring means Louvain split the ring — surface it cleanly.
+        if dominant_ring in ring_to_community:
+            problems.append(
+                f"ring split: communities {ring_to_community[dominant_ring]} "
+                f"and {cid} are both dominated by ring {dominant_ring}"
+            )
+        else:
+            ring_to_community[dominant_ring] = cid
         dominance_records.append(
             {
                 "community_id": cid,

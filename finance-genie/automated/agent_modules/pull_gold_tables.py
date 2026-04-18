@@ -56,6 +56,14 @@ from pyspark.sql import SparkSession, Window  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
 
 from neo4j_secrets import load_neo4j_opts  # noqa: E402
+from gold_constants import (  # noqa: E402
+    COMMUNITY_AVG_RISK_MIN,
+    RING_SIZE_HIGH,
+    RING_SIZE_LOW,
+    TIER_HIGH,
+    TIER_LOW,
+    TIER_MEDIUM,
+)
 
 # --------------------------------------------------------------------------- #
 # 2. Config + Neo4j credentials                                                #
@@ -64,13 +72,6 @@ CATALOG = os.environ["CATALOG"]
 SCHEMA = os.environ["SCHEMA"]
 SECRET_SCOPE = os.environ["NEO4J_SECRET_SCOPE"]
 
-TIER_HIGH = "high"
-TIER_MEDIUM = "medium"
-TIER_LOW = "low"
-
-RING_SIZE_LOW = 50
-RING_SIZE_HIGH = 200
-COMMUNITY_AVG_RISK_MIN = 1.0
 HIGH_TIER_RISK_MIN = 0.5
 HIGH_TIER_SIM_MIN = 0.05
 
@@ -120,8 +121,16 @@ inbound_counts = (
     .agg(F.count("*").alias("inbound_transfer_events"))
 )
 
+# Unscored accounts land in a single null-community partition; their
+# community_size/avg/rank aggregate together, and they fall to
+# fraud_risk_tier='low' via the is_ring_community guard below.
 w_community = Window.partitionBy("community_id")
-w_community_rank = Window.partitionBy("community_id").orderBy(F.desc("risk_score"))
+# row_number (not rank) with an account_id tiebreak so community_risk_rank=1
+# identifies exactly one account per community — same row that
+# gold_fraud_ring_communities.top_account_id points at.
+w_community_rank = Window.partitionBy("community_id").orderBy(
+    F.desc("risk_score"), F.asc("account_id")
+)
 
 gold_df = (
     spark.table(f"`{CATALOG}`.`{SCHEMA}`.accounts")
@@ -130,7 +139,7 @@ gold_df = (
     .fillna({"inbound_transfer_events": 0})
     .withColumn("community_size", F.count("*").over(w_community))
     .withColumn("community_avg_risk_score", F.avg("risk_score").over(w_community))
-    .withColumn("community_risk_rank", F.rank().over(w_community_rank))
+    .withColumn("community_risk_rank", F.row_number().over(w_community_rank))
     .withColumn(
         "is_ring_community",
         (F.col("community_size").between(RING_SIZE_LOW, RING_SIZE_HIGH))

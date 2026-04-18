@@ -95,7 +95,7 @@ def check_node_counts(session) -> list[str]:
     return problems
 
 
-def check_edge_counts(session) -> list[str]:
+def check_edge_counts(session) -> tuple[list[str], int]:
     problems: list[str] = []
 
     n_tx = session.run(

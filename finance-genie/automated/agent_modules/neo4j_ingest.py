@@ -69,7 +69,13 @@ spark.sql(f"USE SCHEMA `{SCHEMA}`")
 # 4. Clear Neo4j (idempotent re-runs)                                          #
 # --------------------------------------------------------------------------- #
 gds = GraphDataScience(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
-gds.run_cypher("MATCH (n) DETACH DELETE n")
+# Batch the wipe so it fits in memory on small Aura tiers. A single
+# unbatched DETACH DELETE of ~32k nodes + ~470k rels can trip
+# TransactionOutOfMemoryError. CALL ... IN TRANSACTIONS is auto-commit only,
+# which is what gds.run_cypher's session.run provides.
+gds.run_cypher(
+    "MATCH (n) CALL { WITH n DETACH DELETE n } IN TRANSACTIONS OF 10000 ROWS"
+)
 print("Neo4j cleared.")
 
 # --------------------------------------------------------------------------- #

@@ -5,6 +5,8 @@ description = "Synthetic fraud dataset generator, verifier, and Databricks job r
 requires-python = ">=3.12"
 dependencies = [
     "databricks-job-runner",
+    "databricks-sdk>=0.40",
+    "databricks-tools-core",
     "neo4j",
     "pandas",
     "python-dotenv",
@@ -13,3 +15,11 @@ dependencies = [
 
 [tool.uv]
 package = false
+
+[tool.uv.sources]
+# databricks-tools-core ships the AgentBricksManager used by
+# provision_genie_spaces.py for Genie Space / Data Room REST calls that the
+# public Databricks SDK does not expose (table_identifiers, sample_questions,
+# instructions). Not on PyPI — editable install from the local ai-dev-kit
+# checkout.
+databricks-tools-core = { path = "/Users/ryanknight/projects/databricks/ai-dev-kit/databricks-tools-core", editable = true }
