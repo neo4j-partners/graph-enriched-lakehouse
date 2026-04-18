@@ -82,7 +82,11 @@ Identity / dimension columns (same as `accounts`):
 GDS features (null for unscored accounts — degree below Node Similarity's
 `degreeCutoff=5`):
 - `risk_score` (DOUBLE) — Neo4j PageRank on the TRANSFERRED_TO graph.
-- `community_id` (BIGINT) — Louvain community assignment.
+- `community_id` (BIGINT) — Louvain community label assigned to each account
+  individually. Present on every row in `gold_accounts`. For questions about
+  which accounts belong to the same group or community, select `account_id` and
+  `community_id` together — do not aggregate. Use `is_ring_community = true` to
+  restrict to fraud-ring-sized communities.
 - `similarity_score` (DOUBLE) — mean Node Similarity score to other accounts
   on the shared-merchants bipartite projection.
 
@@ -96,18 +100,19 @@ Behavioural counts and derived labels:
 - `inbound_transfer_events` (INT) — count of incoming rows in `account_links`
   for this `account_id`. Counts raw transfer events, not unique
   counterparties.
-- `is_ring_community` (BOOLEAN) — true when `community_size BETWEEN 50 AND 200`
-  and `community_avg_risk_score > 1.0`.
-- `fraud_risk_tier` (STRING: `'high'` / `'medium'` / `'low'`) — the primary
-  fraud filter:
-  - `'high'`: `is_ring_community` AND `risk_score > 0.5` AND
-    `similarity_score > 0.05`.
-  - `'medium'`: `is_ring_community` but below the individual-signal
-    thresholds (typically an excluded-from-NodeSim ring member).
-  - `'low'`: everything else.
-
-Use `WHERE fraud_risk_tier = 'high'` as the default fraud filter. Do **not**
-sort by `risk_score DESC` alone — it returns whales, not ring members.
+- `is_ring_community` (BOOLEAN) — true when the account belongs to a tight-knit
+  transfer community (50–200 members, high average PageRank). This is the
+  graph-derived answer to "which accounts transfer heavily among themselves in a
+  group" — filter on `is_ring_community = true` rather than computing transfer
+  volumes manually.
+- `fraud_risk_tier` (STRING: `'high'` / `'medium'` / `'low'`) — **the primary
+  fraud answer column for this dataset.** Use `WHERE fraud_risk_tier = 'high'`
+  for any question about fraud risk, suspicious accounts, hub accounts, or money
+  movement networks. This column already encodes the combined graph signal
+  (community membership + PageRank + Node Similarity) — you do not need to
+  recompute it from `risk_score` or `community_id`. Raw `risk_score` alone does
+  not identify fraud: the highest PageRank accounts are high-volume legitimate
+  accounts (whales), not ring members.
 
 **gold_account_similarity_pairs** — one row per unique account pair with a
 Node Similarity edge between them.
@@ -129,48 +134,4 @@ Node Similarity edge between them.
   highest `risk_score` (ties broken by lowest `account_id`). Treat as the
   ring captain.
 
-## Answering common fraud questions
-
-"Which accounts are the highest fraud risk?"
-```sql
-SELECT account_id, risk_score, community_id, community_risk_rank, inbound_transfer_events
-FROM gold_accounts
-WHERE fraud_risk_tier = 'high'
-ORDER BY risk_score DESC
-LIMIT 20
-```
-
-"Who leads each fraud ring?"
-```sql
-SELECT account_id, community_id, risk_score, inbound_transfer_events
-FROM gold_accounts
-WHERE fraud_risk_tier IN ('high', 'medium')
-  AND community_risk_rank = 1
-ORDER BY risk_score DESC
-```
-
-"How many fraud rings did GDS find?"
-```sql
-SELECT COUNT(*) AS ring_count
-FROM gold_fraud_ring_communities
-WHERE is_ring_candidate = true
-```
-
-"Show me all suspected fraud rings."
-```sql
-SELECT community_id, member_count, avg_risk_score, high_risk_member_count, top_account_id
-FROM gold_fraud_ring_communities
-WHERE is_ring_candidate = true
-ORDER BY avg_risk_score DESC
-```
-
-"Which high-similarity account pairs are inside the same ring?"
-```sql
-SELECT account_id_a, account_id_b, similarity_score
-FROM gold_account_similarity_pairs
-WHERE same_community = true
-  AND similarity_score > 0.10
-ORDER BY similarity_score DESC
-LIMIT 20
-```
 <!-- END: AFTER -->
