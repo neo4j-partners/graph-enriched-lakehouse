@@ -110,3 +110,6 @@ $RECYCLE.BIN/
 worklog/
 .claude/
 .mcp.json
+
+# Generated data files
+finance-genie/automated/data/
