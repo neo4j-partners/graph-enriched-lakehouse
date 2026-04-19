@@ -27,7 +27,6 @@ import json
 import os
 import random
 import sys
-import textwrap
 import traceback
 from datetime import datetime, timezone
 
@@ -40,10 +39,8 @@ if str(_HERE) not in sys.path:
 
 from demo_utils import ask_genie  # noqa: E402
 from databricks.sdk import WorkspaceClient  # noqa: E402
+from genie_run_artifact import sql_preview, wrap_text  # noqa: E402
 
-# --------------------------------------------------------------------------- #
-# Config                                                                       #
-# --------------------------------------------------------------------------- #
 SPACE_ID = os.environ["GENIE_SPACE_ID_AFTER"]
 LABEL = "after"
 RESULTS_VOLUME_DIR = os.environ["RESULTS_VOLUME_DIR"].rstrip("/")
@@ -66,9 +63,7 @@ _SAMPLER_LABELS = {
     "cat5_merchant": "Merchant-side",
 }
 
-# --------------------------------------------------------------------------- #
-# Sampler loading                                                              #
-# --------------------------------------------------------------------------- #
+
 def _resolve_samplers() -> list[str]:
     raw = os.environ.get("SAMPLERS", "").strip()
     if not raw:
@@ -81,14 +76,10 @@ def _resolve_samplers() -> list[str]:
 
 
 def _pick_question(sampler_name: str) -> dict:
-    """Import a category module and randomly pick one question from its QUESTIONS list."""
     module = importlib.import_module(sampler_name)
     return random.choice(module.QUESTIONS)
 
 
-# --------------------------------------------------------------------------- #
-# Per-question runner (capture only, no grading)                              #
-# --------------------------------------------------------------------------- #
 def _run_case(w: WorkspaceClient, question_def: dict) -> dict:
     attempts: list[dict] = []
 
@@ -141,25 +132,6 @@ def _run_case(w: WorkspaceClient, question_def: dict) -> dict:
     }
 
 
-# --------------------------------------------------------------------------- #
-# Report printer                                                               #
-# --------------------------------------------------------------------------- #
-def _sql_preview(result: dict, max_chars: int = 220) -> str:
-    if not result["attempts"]:
-        return "(no SQL)"
-    sql = (result["attempts"][-1].get("genie_sql") or "").strip()
-    if not sql:
-        return "(no SQL)"
-    single_line = " ".join(sql.split())
-    return single_line[:max_chars] + "…" if len(single_line) > max_chars else single_line
-
-
-def _wrap(text: str, indent: int = 14, width: int = 78) -> str:
-    pad = " " * indent
-    wrapped = textwrap.wrap(text, width=max(width - indent, 20)) or [text]
-    return ("\n" + pad).join(wrapped)
-
-
 def _status(result: dict) -> str:
     if not result["attempts"]:
         return "ERROR"
@@ -180,17 +152,16 @@ def _print_report(results: list[dict], sampler_names: list[str], run_meta: dict)
     for idx, r in enumerate(results, start=1):
         last = r["attempts"][-1] if r["attempts"] else {}
         rows = int(last.get("row_count") or 0)
-        status = _status(r)
 
         print()
-        print(f"[{idx}] {r['name']} — {status}")
-        print(f"    Question: {_wrap(r['question'])}")
+        print(f"[{idx}] {r['name']} — {_status(r)}")
+        print(f"    Question: {wrap_text(r['question'])}")
         print(f"    Rows:     {rows}")
-        print(f"    SQL:      {_sql_preview(r)}")
+        print(f"    SQL:      {sql_preview(r)}")
 
         text = (last.get("genie_response_text") or "").strip()
         if text:
-            print(f"    Summary:  {_wrap(text[:200])}")
+            print(f"    Summary:  {wrap_text(text[:200])}")
 
         if not r["responded"] and last.get("error"):
             print(f"    Error:    {(last['error'] or '')[:200]}")
@@ -205,13 +176,9 @@ def _print_report(results: list[dict], sampler_names: list[str], run_meta: dict)
     )
 
 
-# --------------------------------------------------------------------------- #
-# Artifact writer                                                              #
-# --------------------------------------------------------------------------- #
 def _write_artifact(w: WorkspaceClient, results: list[dict], run_meta: dict) -> str:
     ts_safe = run_meta["timestamp_utc"].replace(":", "-").replace(".", "-")
-    filename = f"genie_run_after_{ts_safe}.json"
-    remote_path = f"{RESULTS_VOLUME_DIR}/{filename}"
+    remote_path = f"{RESULTS_VOLUME_DIR}/genie_run_after_{ts_safe}.json"
 
     payload = {
         "space_id": run_meta["space_id"],
@@ -231,9 +198,6 @@ def _write_artifact(w: WorkspaceClient, results: list[dict], run_meta: dict) -> 
     return remote_path
 
 
-# --------------------------------------------------------------------------- #
-# Main                                                                         #
-# --------------------------------------------------------------------------- #
 def main() -> int:
     sampler_names = _resolve_samplers()
     w = WorkspaceClient()
@@ -250,12 +214,10 @@ def main() -> int:
         print(f"Selected from {sampler_name}: {q['name']}")
 
     results = [_run_case(w, q) for q in questions]
-
     _print_report(results, sampler_names, run_meta)
 
     artifact_path = _write_artifact(w, results, run_meta)
     print(f"\nArtifact: {artifact_path}")
-
     return 0
 
 

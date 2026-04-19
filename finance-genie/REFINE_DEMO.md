@@ -60,7 +60,7 @@ This section is the single authoritative source for the demo's positioning. Phas
 
 **GDS fits naturally as a silver-to-gold enrichment stage.** The Databricks audience already owns medallion architecture, feature stores, and silver-to-gold transforms as vocabulary. Neo4j GDS is another transform in that sequence. Its input is relationships from Delta, its output is three scalar columns (`risk_score`, `community_id`, `similarity_score`), and its place in the DAG sits between the existing silver tables and the gold tables Genie reads. The fraud use case is one instance; the same pattern applies to supply-chain traceability, entity resolution, recommendation structure, and compliance network analysis.
 
-**GDS and Genie play complementary roles.** Genie's job is translating analyst questions into SQL. GDS's job is translating relationship topology into scalar features. Each system operates inside its designed envelope and hands its output to the other. Genie is a flexible natural-language surface over Delta tables; placing mathematically stable graph features upstream of it means Genie has strong scalar columns to generate SQL against, which directly improves answer quality on structural questions.
+**GDS and Genie play complementary roles.** Genie's job is translating analyst questions into SQL. GDS's job is translating relationship topology into scalar features. Each system operates inside its designed envelope and hands its output to the other. Genie is a flexible natural-language surface over Delta tables; placing mathematically stable graph features upstream of it means Genie has strong scalar columns to generate SQL against, which directly expands the class of questions the analyst can bring to Genie — from row-level aggregates to portfolio, cohort, community, operational, and merchant-side queries that depend on structural membership as a dimension.
 
 **The deterministic handoff strengthens Genie's answers.** GDS algorithms have published convergence properties. PageRank converges to eigenvector centrality. Louvain converges to a modularity-optimal community partition. Node Similarity computes exact Jaccard overlap above a degree cutoff. These outputs are reproducible given a fixed projection, which means the gold columns Genie reads carry stable signal. Placing deterministic compute upstream of a natural-language translation layer is the architectural pattern that produces consistent analyst-facing answers.
 
@@ -86,24 +86,27 @@ Keep the remainder of the existing Overview (the workshop/automated split, the n
 
 **Completion check.** Phase 0 is complete when the `README.md` Overview opens with the target prose above, `automated/README.md` leads with the non-determinism paragraph immediately after the purpose statement, and `ARCHITECTURE.md` contains the new guarantees section.
 
-## Phase 1: Output vocabulary (half day, string edits only)
+## Phase 1: Output vocabulary — shipped
 
-`jobs/genie_run.py` emits per-question verdict labels and a closing summary. Set them to feature-framed vocabulary so the sample output the demo prints matches the story the narrative tells.
+`jobs/genie_run_before.py` and `jobs/genie_run_after.py` each emit per-question verdict labels and a closing summary. The vocabulary frames each result as evidence of what the catalog can and cannot do, not as pass/fail.
 
-Target labels:
+**BEFORE labels (shipped):**
 
-- `HUB CANDIDATES SURFACED` for the hub-detection question.
-- `COMMUNITY STRUCTURE SURFACED` for the community-structure question.
-- `MERCHANT-OVERLAP CLUSTERS SURFACED` for the merchant-overlap question.
-- Closing summary line: `Summary: Structural signal surfaced in N/3 tests. Candidates returned for investigator review.`
+- Structural questions: `STRUCTURAL GAP CONFIRMED` when Genie's response does not meet the after-GDS criterion (the expected outcome), `UNEXPECTED SIGNAL FOUND` when it does.
+- Teaser question: `NOT AVAILABLE ON THIS CATALOG — answered in AFTER run`
+- Closing line: `Structural gap confirmed in N/3 questions.`
+- Summary: "BEFORE catalog cannot resolve structural questions from row-level SQL. Enrichment unlocks portfolio, cohort, community, operational, and merchant-composition queries in the AFTER run."
+- Footer: Synthetic dataset disclaimer with pointer to `SCOPING_GUIDE.md` printed at the bottom of every BEFORE run.
 
-Add a one-line footer to every run on both BEFORE and AFTER spaces:
+**AFTER labels (shipped):**
 
-> Synthetic dataset. Structural-signal ratios are theoretically scale-invariant; absolute precision numbers reflect the teaching dataset. See `SCOPING_GUIDE.md` for production-scale guidance.
+- Per-question status: `RESPONDED` when Genie returned rows, `NO DATA` when the response was empty, `ERROR` for failures.
+- No grading labels. AFTER is an ask-and-capture run; grading lands in Phase 5.
+- Summary: "AFTER catalog answered the above analyst questions using community, risk-tier, and similarity dimensions unlocked by GDS enrichment."
 
-`jobs/compare_report.py` uses the same vocabulary so the BEFORE/AFTER markdown comparison reads consistently.
+`compare_report.py` was removed. Each runner writes its own independent JSON artifact to the results volume.
 
-**Completion check.** Phase 1 is complete when a sample run against either Genie Space prints the new per-question labels on all three questions, the closing line reads `Summary:`, and the footer appears on every output artifact written to `RESULTS_VOLUME_DIR`.
+**Completion check.** Phase 1 is complete. BEFORE prints `STRUCTURAL GAP CONFIRMED` on structural questions and `NOT AVAILABLE ON THIS CATALOG` on the teaser. AFTER prints `RESPONDED`, `NO DATA`, or `ERROR` with no grading.
 
 ## Phase 2: Use case scoping guide (one hour, new file)
 
@@ -146,7 +149,7 @@ Produce `finance-genie/TALK_TRACK.md`, a short script that a Databricks account 
 Recommended sequence:
 
 1. **Open** with **GDS fits naturally as a silver-to-gold enrichment stage** so the audience knows where the work lands in the architecture they already run.
-2. **Pivot** on **The deterministic handoff strengthens Genie's answers** to explain why the order of compute matters, then show the BEFORE and AFTER Genie runs as evidence.
+2. **Pivot** on **The deterministic handoff strengthens Genie's answers** using a three-step contrast: show the BEFORE Genie run attempting structural-discovery questions (hub detection, ring structure, merchant overlap) and explain that the miss is a framing problem, not a Genie failure — we are asking Genie to answer questions whose answers live in network topology, not in any row or column the base tables carry. Then show the graph enrichment step running the three GDS algorithms and writing `risk_score`, `community_id`, and `similarity_score` back into the gold layer. Then show the AFTER Genie run answering a different class of question — portfolio composition, cohort comparisons, community rollups, operational workload, merchant-side analysis — because those structural dimensions now exist as scalar columns Genie can group by, filter on, and rank. The contrast is not "same question, better answer." It is "wrong questions on base tables, right questions on enriched tables."
 3. **Close** on **The lakehouse gains a relationship-aware primitive** to land capability expansion, and end on the headline sentence: `Same Databricks spend. Strictly more answers.`
 
 Handle scale questions by referencing `SCOPING_GUIDE.md` directly rather than carrying scale material on the slide.

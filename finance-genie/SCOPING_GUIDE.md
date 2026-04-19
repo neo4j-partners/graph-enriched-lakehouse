@@ -2,6 +2,12 @@
 
 This guide is written for Databricks account teams and partner SEs to forward to customers ahead of a scoping conversation. Its purpose is to set calibrated expectations about what the Finance Genie pipeline produces, where the pattern fits well, and what adjustments to plan for at production scale.
 
+## What the demo shows
+
+The automated demo runs two Genie Spaces against the same Databricks warehouse to make the before-and-after contrast observable. The BEFORE space queries the base Silver tables with three structural-discovery questions (transfer-network hubs, groups of accounts transferring heavily among themselves, accounts with common merchant histories). Genie cannot resolve any of them from row-level SQL; the responses confirm the structural gap. A teaser question previewing the AFTER category is asked against the same base catalog and reported as unavailable, giving the audience a preview of what enrichment will unlock.
+
+After the GDS enrichment stage writes `risk_score`, `community_id`, and `similarity_score` into the gold layer, the AFTER space is asked a different class of question entirely: portfolio composition broken out by community, cohort comparisons between the high-risk tier and the baseline population, rollup metrics across ring-candidate communities, operational workload questions (investigator queue size, regional concentration), and merchant-side analysis conditioned on risk tier or community membership. These are standard BI questions that become answerable only because structural dimensions now exist as scalar columns. The demo does not ask Genie to find fraud rings; it asks Genie to characterize a segment that GDS already labeled. Each system operates inside its designed envelope.
+
 ## What this pattern produces
 
 Neo4j GDS runs as a silver-to-gold enrichment stage inside the Databricks Lakehouse. It reads relationships from the existing silver tables, runs three deterministic graph algorithms against a projection in Neo4j Aura, and writes three scalar columns back into the gold layer:

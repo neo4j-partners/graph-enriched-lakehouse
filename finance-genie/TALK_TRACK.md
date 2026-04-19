@@ -8,11 +8,12 @@ One slide of bullet points. Account teams and partner SEs read this off the slid
 - Its input is relationships from the silver tables. Its output is three scalar columns (`risk_score`, `community_id`, `similarity_score`) in the gold layer.
 - The fraud use case is one instance. The same pattern covers entity resolution, supplier-network risk, recommendation structure, and compliance review.
 
-## Middle: the deterministic handoff strengthens Genie's answers
+## Middle: enrichment changes what questions make sense to ask
 
-- GDS algorithms have published convergence properties. PageRank converges to eigenvector centrality. Louvain converges to a modularity-optimal partition. Node Similarity computes exact Jaccard overlap.
-- Those outputs are reproducible given a fixed projection. Placing deterministic compute upstream of Genie's non-deterministic text-to-SQL layer means Genie generates SQL against mathematically stable scalar columns.
-- Show the BEFORE and AFTER Genie runs. Same question, same interface. The gold columns carry the signal.
+- BEFORE: the structural-discovery questions — find transfer hubs, find ring-like groups, find shared-merchant cohorts — return nothing useful on base tables. That is a framing problem, not a Genie failure. The answers live in network topology; no row-level SQL can surface them.
+- Enrichment: GDS runs PageRank, Louvain, and Node Similarity and writes `risk_score`, `community_id`, `similarity_score` back into the gold layer. Structural discovery happens here, before Genie is ever asked anything.
+- AFTER: the question class changes — portfolio composition by community, cohort comparisons across risk tiers, community rollups, operational workload by region, merchant-side analysis. Genie answers them because community and risk tier are now scalar dimensions it can group by, filter on, and rank. GDS discovered the structure; Genie characterizes it.
+- The contrast is not "same question, better answer." It is "wrong framing on base tables, right framing on enriched tables."
 
 ## Close: the lakehouse gains a relationship-aware primitive
 

@@ -4,7 +4,7 @@
 
 This document describes the automated pipeline in `finance-genie/automated/`. It covers each major stage, the configuration variables that control each stage, what those variables do and why they exist, and an honest assessment of what could be removed without losing the "before/after GDS enrichment" contrast at the center of the demo.
 
-The pipeline has one job: make Genie answer fraud-ring questions it cannot answer from raw tabular data alone. That goal determines which variables are load-bearing and which are belt-and-suspenders.
+The pipeline has one job: demonstrate what becomes answerable when GDS enriches the gold layer with structural dimensions that base tables cannot provide. That goal determines which variables are load-bearing and which are belt-and-suspenders.
 
 ---
 
@@ -14,7 +14,7 @@ The pipeline has one job: make Genie answer fraud-ring questions it cannot answe
 
 `setup/generate_data.py` produces five CSVs and a `ground_truth.json` file in `automated/data/`. These become the Silver-layer Delta tables that the rest of the pipeline reads. The generator creates 25,000 accounts, 7,500 merchants, 250,000 account-to-merchant transactions, and 300,000 peer-to-peer transfers. Within those records it embeds ten fraud rings, each connected by elevated transaction density and shared merchant preferences -- the structural signals that GDS algorithms will later surface.
 
-The key constraint is that the fraud rings must be invisible to tabular aggregation. Transaction amounts for fraud accounts are deliberately set within 3% of normal amounts. Genie operating on the Silver tables cannot distinguish ring members from regular accounts. After GDS writes `risk_score`, `community_id`, and `similarity_score` back into the Gold tables, it can.
+The key constraint is that the fraud rings must be invisible to tabular aggregation. Transaction amounts for fraud accounts are deliberately set within 3% of normal amounts. On base tables, the structural-discovery questions asked in the BEFORE demo have no column-level handle — the answers live in network topology, not in any row-level aggregate. After GDS writes `risk_score`, `community_id`, and `similarity_score` back into the Gold tables, a different class of question becomes answerable: portfolio composition by community, cohort comparisons across risk tiers, community rollups, operational workload by region, and merchant-side analysis conditioned on structural membership. GDS does the structural discovery; Genie characterizes the labeled segment.
 
 `diagnostics/verify_fraud_patterns.py` is an optional diagnostic. It reads the CSVs and checks four structural properties against fixed thresholds, which is useful when re-tuning parameters. It is not a required pipeline stage: the downstream GDS verification in `validation/verify_gds.py` covers the same structural ground, so a stable-parameter run does not need to invoke it.
 
@@ -71,7 +71,7 @@ These values are calibrated together with the primary knobs and fixed in `setup/
 
 ### Tabular signal constants (hardcoded)
 
-Six lognormal-distribution constants keep the fraud/normal tabular signal deliberately weak -- the gap between fraud and normal transaction medians is less than 3%. This is what makes Genie fail on the base tables and succeed after GDS enrichment. The values are fixed in `setup/generate_data.py` because the demo requires the distributions to stay indistinguishable and they do not need ongoing adjustment.
+Six lognormal-distribution constants keep the fraud/normal tabular signal deliberately weak -- the gap between fraud and normal transaction medians is less than 3%. This is what makes structural-discovery questions unanswerable from row-level SQL on the Silver tables and what makes the BEFORE Genie run's gap authentic. The enrichment step changes which questions the analyst can usefully bring to Genie; the transaction distributions are fixed to ensure that base-table analysis alone cannot shortcut that gap. The values are fixed in `setup/generate_data.py` and do not need ongoing adjustment.
 
 | Constant | Value | What it controls |
 |----------|-------|-----------------|
@@ -218,19 +218,21 @@ The validation job also uses two `.env` variables:
 
 ### Overview
 
-Two jobs run the same three natural language questions against both Genie Spaces and record the results as JSON artifacts in the UC Volume.
+Two jobs ask different classes of question against the two Genie Spaces and write independent JSON artifacts to the UC Volume.
 
-`jobs/genie_run_before.py` queries the BEFORE space (base Silver tables only). The three questions ask about transfer network hubs, groups of accounts transferring heavily among themselves, and accounts with common merchant histories. On the base tables, Genie cannot answer any of them correctly: fraud rings are invisible at the row level.
+`jobs/genie_run_before.py` queries the BEFORE space (base Silver tables only) with three structural-discovery questions and one teaser. The three structural questions ask about transfer-network hubs, groups of accounts transferring heavily among themselves, and accounts with common merchant histories. On base tables, Genie cannot resolve any of them from row-level SQL; each response is measured against `ground_truth.json` and reported as evidence of the structural gap rather than a test failure. The verdict label for a result that does not meet the post-GDS criterion is `STRUCTURAL GAP CONFIRMED` (the expected outcome); `UNEXPECTED SIGNAL FOUND` appears only when base-table SQL accidentally meets the threshold, which would indicate a calibration issue. The teaser question — what share of accounts sits in ring-candidate communities by region — is asked against the base catalog and reported as `NOT AVAILABLE ON THIS CATALOG — answered in AFTER run`. It previews the AFTER question class without requiring the columns that do not yet exist. The BEFORE summary closes with a statement of the structural gap and a pointer to the AFTER artifact.
 
-`jobs/genie_run_after.py` queries the AFTER space (Silver tables plus the three Gold tables). On the Gold tables, the same questions surface ring captains, Louvain communities, and high-similarity account pairs. The job can optionally gate: with `GATE=true` it exits with status 1 if any metric misses its threshold.
+`jobs/genie_run_after.py` queries the AFTER space (Silver tables plus the three Gold tables) with a different class of question: portfolio composition, cohort comparisons, community rollups, operational workload, and merchant-side analysis. Five sampler modules (`cat1_portfolio` through `cat5_merchant`) each hold a bank of questions in their `QUESTIONS` list; the runner picks one question per category and asks all five. Every question is asked in plain business language with no SQL hints. Responses — the SQL Genie generated, the rows returned, and any summary text — are captured as an artifact. No grading is performed in this job; that lands in Phase 5. Per-question status is `RESPONDED`, `NO DATA`, or `ERROR`. The closing summary names the five dimensions the AFTER catalog unlocked.
 
-`jobs/compare_report.py` reads both JSON artifacts and produces a side-by-side metric comparison showing the before/after delta for each question.
+Each runner writes its own JSON artifact to the results volume. There is no compare job.
 
-For each question, the job measures one metric:
+For each structural question, the BEFORE runner measures one metric against `ground_truth.json`:
 
-- Hub detection: precision of the top-20 returned accounts against ground-truth ring members (threshold for "after" gate: >0.70)
-- Community structure: maximum ring coverage fraction within any returned group (threshold: >0.80)
-- Merchant overlap: fraction of returned account pairs that belong to the same ring (threshold: >0.60)
+- Hub detection: precision of the top-20 returned accounts against ground-truth ring members
+- Community structure: maximum ring coverage fraction within any returned community group
+- Merchant overlap: fraction of returned account pairs that belong to the same ground-truth ring
+
+The AFTER runner records no metrics. Evaluation (response-shape checks and LLM-as-judge scoring) is Phase 5.
 
 ---
 
@@ -240,11 +242,11 @@ For each question, the job measures one metric:
 |----------|---------|-----------------|
 | `GENIE_SPACE_ID_BEFORE` | (required) | Space ID for the pre-GDS Genie Space. |
 | `GENIE_SPACE_ID_AFTER` | (required) | Space ID for the post-GDS Genie Space. |
-| `GENIE_TEST_RETRIES` | 2 | Number of times to retry a question if Genie returns an error or empty result before marking it as failed. |
-| `GENIE_TEST_TIMEOUT_SECONDS` | 120 | Per-attempt timeout. Genie query planning can be slow; 120 seconds covers typical warehouse startup latency. |
-| `GATE` | false | When set to `true` in `genie_run_after.py`, the job exits 1 if any metric misses its threshold. Use for CI validation; leave false for live demo observation. |
-| `GROUND_TRUTH_PATH` | (required) | UC Volume path to `ground_truth.json`. Required for metric computation in both jobs. |
-| `RESULTS_VOLUME_DIR` | (required) | UC Volume directory where Genie run artifacts are written. |
+| `GENIE_TEST_RETRIES` | 2 | Number of times to retry a question if Genie returns an error or empty result before marking it as failed. Applies to both runners. |
+| `GENIE_TEST_TIMEOUT_SECONDS` | 120 | Per-attempt timeout. Genie query planning can be slow; 120 seconds covers typical warehouse startup latency. Applies to both runners. |
+| `GROUND_TRUTH_PATH` | (required) | UC Volume path to `ground_truth.json`. Used by `genie_run_before.py` for metric computation against ground-truth ring labels. Not used by `genie_run_after.py`. |
+| `RESULTS_VOLUME_DIR` | (required) | UC Volume directory where Genie run artifacts are written by both runners. |
+| `SAMPLERS` | (all five) | Comma-separated category module names passed to `genie_run_after.py` (e.g. `cat1_portfolio,cat4_operational`). Defaults to all five categories. Useful for running a single-category demo when time is short. |
 
 ---
 
