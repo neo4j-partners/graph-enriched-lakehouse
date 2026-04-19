@@ -93,11 +93,21 @@ def load_ground_truth(path: str) -> dict:
         return json.load(f)
 
 
-def _build_ring_lookup(gt: dict) -> tuple[dict[int, int], set[int]]:
+def _ring_index_from_list(rings: list[list[int]]) -> dict[int, int]:
+    """Map each account_id to the position of its ring in a plain rings list.
+
+    Used when callers only have the raw list-of-lists form (e.g. Genie
+    similarity results). The ring_id is the enumerate index.
+    """
+    return {int(acct): ring_idx for ring_idx, ring in enumerate(rings) for acct in ring}
+
+
+def _ring_index_from_ground_truth(gt: dict) -> tuple[dict[int, int], set[int]]:
     """Return (ring_by_account, whale_ids) from a ground truth dict.
 
-    ring_by_account maps each fraud account ID to its ring_id.
-    whale_ids is the set of whale account IDs.
+    Distinct from _ring_index_from_list because the ground truth carries an
+    explicit ring_id on each ring, and also carries the whale set — both of
+    which callers on this path need.
     """
     ring_by_account: dict[int, int] = {
         int(a): r["ring_id"]
@@ -114,7 +124,7 @@ def _label_accounts(account_ids: list[int], gt: dict) -> pd.DataFrame:
     Returns a DataFrame with columns [account_id, label, ring_id].
     ring_id is populated for FRAUD accounts; None for others.
     """
-    ring_by_account, whale_ids = _build_ring_lookup(gt)
+    ring_by_account, whale_ids = _ring_index_from_ground_truth(gt)
     rows = []
     for acct_id in account_ids:
         acct_id = int(acct_id)
@@ -170,6 +180,60 @@ def check_risk_score_precision(
     }
 
 
+_PURITY_THRESHOLD = 0.80
+
+
+def _purity_result(
+    structure_type: str,
+    max_ring_coverage: float,
+    groups_returned: int,
+    total_rows: int,
+) -> dict:
+    return {
+        "structure_type": structure_type,
+        "max_ring_coverage": max_ring_coverage,
+        "groups_returned": groups_returned,
+        "total_rows": total_rows,
+        "passed": max_ring_coverage >= _PURITY_THRESHOLD,
+    }
+
+
+def _coverage_from_groups(df: pd.DataFrame, group_col: str, account_col: str, rings: list[list[int]]) -> dict:
+    ring_sets = [set(int(a) for a in ring) for ring in rings]
+    groups_returned = int(df[group_col].nunique())
+    max_coverage = 0.0
+    for _, group_df in df.groupby(group_col):
+        accounts_in_group = {int(a) for a in group_df[account_col]}
+        for ring_set in ring_sets:
+            coverage = len(accounts_in_group & ring_set) / len(ring_set) if ring_set else 0.0
+            if coverage > max_coverage:
+                max_coverage = coverage
+    return _purity_result("groups", max_coverage, groups_returned, len(df))
+
+
+def _coverage_from_community_map(df: pd.DataFrame, group_col: str, ring_community_map: dict[str, list[int]]) -> dict:
+    total_rows = len(df)
+    returned_cids = {int(x) for x in df[group_col] if x is not None}
+    rings_found = sum(
+        1 for cids in ring_community_map.values()
+        if any(int(cid) in returned_cids for cid in cids)
+    )
+    total_rings = len(ring_community_map)
+    ring_coverage = rings_found / total_rings if total_rings > 0 else 0.0
+    return _purity_result("aggregates_community_map", ring_coverage, rings_found, total_rows)
+
+
+def _coverage_from_ring_candidate_flag(df: pd.DataFrame) -> dict:
+    total_rows = len(df)
+    ring_candidate_count = int(df["is_ring_candidate"].astype(bool).sum())
+    coverage = ring_candidate_count / total_rows if total_rows > 0 else 0.0
+    return _purity_result("aggregates_ring_candidate", coverage, ring_candidate_count, total_rows)
+
+
+def _coverage_from_pairs(df: pd.DataFrame) -> dict:
+    return _purity_result("pairs", 0.0, 0, len(df))
+
+
 def check_community_purity(
     df: pd.DataFrame,
     rings: list[list[int]],
@@ -178,28 +242,17 @@ def check_community_purity(
     """Measure whether Genie returned pure fraud-ring community groups.
 
     Detects a grouping column (cluster_id / community_id / group) and an
-    account column, then computes the max fraction of any single ring that
-    falls inside one group. PASSes when that fraction > 0.80 — confirming
-    Louvain preserves ring structure instead of fragmenting into bilateral
-    pairs.
+    account column, then dispatches to one of four branches:
+      * groups: group_col + account_col — covers the Louvain case with account rows
+      * aggregates_community_map: group_col only, ring_community_map provided
+      * aggregates_ring_candidate: group_col only, is_ring_candidate column present
+      * aggregates_no_flag: group_col only, neither of the above (fails closed)
+      * pairs: no group_col — coverage is undefined, returns 0.0
 
-    When the result contains only aggregates (group_col present, no account
-    column), falls back through three sub-branches in order of reliability:
-      1. ring_community_map provided — ground-truth community IDs, structure_type
-         'aggregates_community_map', max_ring_coverage = rings_found / total_rings
-      2. is_ring_candidate column present — structure_type 'aggregates_ring_candidate',
-         max_ring_coverage = ring_candidate_fraction
-      3. neither — structure_type 'aggregates_no_flag', max_ring_coverage = 0.0
-
-    Returns a dict with:
-      structure_type     – see above
-      max_ring_coverage  – primary coverage metric
-      groups_returned    – rings covered (aggregate branches) or distinct groups (account branch)
-      total_rows         – total rows in the result
-      passed             – True when max_ring_coverage >= 0.80 (all branches)
+    Every branch returns the same shape: structure_type, max_ring_coverage,
+    groups_returned, total_rows, passed. passed is True when
+    max_ring_coverage >= 0.80.
     """
-    ring_sets = [set(int(a) for a in ring) for ring in rings]
-
     group_col = next(
         (c for c in df.columns if any(k in c.lower() for k in ("cluster", "community", "group"))),
         None,
@@ -207,65 +260,14 @@ def check_community_purity(
     account_cols = [c for c in df.columns if "account" in c.lower()]
 
     if group_col and account_cols:
-        structure_type = "groups"
-        account_col = account_cols[0]
-        groups_returned = int(df[group_col].nunique())
-        max_coverage = 0.0
-
-        for _, group_df in df.groupby(group_col):
-            accounts_in_group = {int(a) for a in group_df[account_col]}
-            for ring_set in ring_sets:
-                coverage = len(accounts_in_group & ring_set) / len(ring_set) if ring_set else 0.0
-                if coverage > max_coverage:
-                    max_coverage = coverage
-    elif group_col and not account_cols:
-        total_rows = len(df)
-        returned_cids = {int(x) for x in df[group_col] if x is not None}
-
+        return _coverage_from_groups(df, group_col, account_cols[0], rings)
+    if group_col:
         if ring_community_map is not None:
-            rings_found = sum(
-                1 for cids in ring_community_map.values()
-                if any(int(cid) in returned_cids for cid in cids)
-            )
-            total_rings = len(ring_community_map)
-            ring_coverage = rings_found / total_rings if total_rings > 0 else 0.0
-            return {
-                "structure_type": "aggregates_community_map",
-                "max_ring_coverage": ring_coverage,
-                "groups_returned": rings_found,
-                "total_rows": total_rows,
-                "passed": ring_coverage >= 0.80,
-            }
-        elif "is_ring_candidate" in df.columns:
-            ring_candidate_count = int(df["is_ring_candidate"].astype(bool).sum())
-            max_coverage = ring_candidate_count / total_rows if total_rows > 0 else 0.0
-            return {
-                "structure_type": "aggregates_ring_candidate",
-                "max_ring_coverage": max_coverage,
-                "groups_returned": ring_candidate_count,
-                "total_rows": total_rows,
-                "passed": max_coverage >= 0.80,
-            }
-        else:
-            return {
-                "structure_type": "aggregates_no_flag",
-                "max_ring_coverage": 0.0,
-                "groups_returned": 0,
-                "total_rows": total_rows,
-                "passed": False,
-            }
-    else:
-        structure_type = "pairs"
-        max_coverage = 0.0
-        groups_returned = 0
-
-    return {
-        "structure_type": structure_type,
-        "max_ring_coverage": max_coverage,
-        "groups_returned": groups_returned,
-        "total_rows": len(df),
-        "passed": max_coverage >= 0.80,
-    }
+            return _coverage_from_community_map(df, group_col, ring_community_map)
+        if "is_ring_candidate" in df.columns:
+            return _coverage_from_ring_candidate_flag(df)
+        return _purity_result("aggregates_no_flag", 0.0, 0, len(df))
+    return _coverage_from_pairs(df)
 
 
 def check_ring_pair_fraction(
@@ -289,11 +291,7 @@ def check_ring_pair_fraction(
       rings_touched       – distinct rings represented in same-ring pairs
       passed              – True when same_ring_fraction > 0.60 and total_pairs > 0
     """
-    ring_by_account: dict[int, int] = {
-        int(acct): ring_idx
-        for ring_idx, ring in enumerate(rings)
-        for acct in ring
-    }
+    ring_by_account = _ring_index_from_list(rings)
 
     total_pairs = len(pairs)
     same_ring = 0

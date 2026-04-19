@@ -53,7 +53,7 @@ from demo_utils import (  # noqa: E402
 from databricks.sdk import WorkspaceClient  # noqa: E402
 
 # --------------------------------------------------------------------------- #
-# 3. Config                                                                   #
+# 2. Config                                                                   #
 # --------------------------------------------------------------------------- #
 SPACE_ID = os.environ["GENIE_SPACE_ID"]
 LABEL = os.environ.get("LABEL") or SPACE_ID[:8]
@@ -64,7 +64,7 @@ RETRIES = int(os.environ.get("GENIE_TEST_RETRIES", "2"))
 TIMEOUT_SECONDS = int(os.environ.get("GENIE_TEST_TIMEOUT_SECONDS", "120"))
 
 # --------------------------------------------------------------------------- #
-# 4. Question set — analyst-phrased BEFORE set, run against both spaces       #
+# 3. Question set — analyst-phrased BEFORE set, run against both spaces       #
 #    so both receive a fair question and the metric delta is apples-to-apples.#
 # --------------------------------------------------------------------------- #
 
@@ -138,7 +138,7 @@ TEST_CASES = [
 ]
 
 # --------------------------------------------------------------------------- #
-# 5. Per-question runner                                                       #
+# 4. Per-question runner                                                       #
 # --------------------------------------------------------------------------- #
 
 def _run_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
@@ -222,7 +222,7 @@ def _run_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
 
 
 # --------------------------------------------------------------------------- #
-# 6. Report printer                                                            #
+# 5. Report printer                                                            #
 # --------------------------------------------------------------------------- #
 
 def _format_metric(metric: dict | None) -> str:
@@ -267,7 +267,7 @@ def _print_report(results: list[dict], run_meta: dict) -> None:
 
 
 # --------------------------------------------------------------------------- #
-# 7. Artifact writer                                                           #
+# 6. Artifact writer                                                           #
 # --------------------------------------------------------------------------- #
 
 def _write_artifact(w: WorkspaceClient, results: list[dict], run_meta: dict) -> str:
@@ -296,7 +296,7 @@ def _write_artifact(w: WorkspaceClient, results: list[dict], run_meta: dict) -> 
 
 
 # --------------------------------------------------------------------------- #
-# 8. Main                                                                     #
+# 7. Main                                                                     #
 # --------------------------------------------------------------------------- #
 
 def main() -> int:

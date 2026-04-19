@@ -15,6 +15,8 @@ Usage:
         uv run setup/verify_fraud_patterns.py --input ./data/
 """
 
+from __future__ import annotations
+
 import argparse
 import json
 import random
@@ -23,11 +25,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import SEED
-from generate_data import build_ground_truth
+from config import SEED  # noqa: E402
+from generate_data import build_ground_truth  # noqa: E402
 
-from checks_genie_csv import check_gds_output, check_genie_output, run_genie_csv_check
-from checks_structural import (
+from checks_genie_csv import check_gds_output, check_genie_output, run_genie_csv_check  # noqa: E402
+from checks_structural import (  # noqa: E402
     check_anchor_jaccard,
     check_column_signals,
     check_ring_density,
@@ -35,7 +37,7 @@ from checks_structural import (
     load_data,
     verify_ground_truth_matches,
 )
-from report import (
+from report import (  # noqa: E402
     build_snapshot,
     compare_snapshots,
     render_comparison_report_rich,

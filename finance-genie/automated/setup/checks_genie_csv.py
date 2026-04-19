@@ -7,6 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from checks_structural import build_ring_index
+
 
 def classify_pair(a: int, b: int, ring_by_account: dict) -> str:
     """Return 'same_ring', 'cross_ring', or 'unknown' for an account pair."""
@@ -156,11 +158,7 @@ def check_genie_louvain_csv(df: pd.DataFrame, rings: list) -> dict:
     accounts by that column. Each community in the result should be composed
     almost entirely of accounts from one ring.
     """
-    ring_by_account = {
-        acct: ring_idx
-        for ring_idx, ring in enumerate(rings)
-        for acct in ring
-    }
+    ring_by_account = build_ring_index(rings)
 
     community_purities = {}
     for cid, group in df.groupby("community_id"):
@@ -220,11 +218,7 @@ def check_genie_similarity_csv(df: pd.DataFrame, rings: list) -> dict:
     pairs with high similarity_score. Pairs from the same ring share anchor
     merchants; cross-ring pairs do not.
     """
-    ring_by_account = {
-        acct: ring_idx
-        for ring_idx, ring in enumerate(rings)
-        for acct in ring
-    }
+    ring_by_account = build_ring_index(rings)
 
     total_pairs = len(df)
     same_ring = 0
@@ -287,11 +281,7 @@ def check_genie_community_pairs_csv(df: pd.DataFrame, rings: list) -> dict:
     Pass criterion: largest_ring_footprint <= 20 (Genie surfaced at most 20
     accounts from any single ring across all returned pairs).
     """
-    ring_by_account = {
-        acct: ring_idx
-        for ring_idx, ring in enumerate(rings)
-        for acct in ring
-    }
+    ring_by_account = build_ring_index(rings)
 
     total_pairs = len(df)
     same_ring = 0
@@ -362,11 +352,7 @@ def check_genie_merchant_overlap_csv(df: pd.DataFrame, rings: list) -> dict:
 
     Pass criterion: same_ring_fraction < 0.30.
     """
-    ring_by_account = {
-        acct: ring_idx
-        for ring_idx, ring in enumerate(rings)
-        for acct in ring
-    }
+    ring_by_account = build_ring_index(rings)
 
     total_pairs = len(df)
     same_ring = 0
@@ -520,14 +506,14 @@ def _check_pagerank_dist(df: pd.DataFrame) -> dict:
 
 
 def _check_louvain_dist(df: pd.DataFrame) -> dict:
-    community_sizes = df.groupby("community_id").size().rename("size")
-    tight = community_sizes[community_sizes >= 80]
-    tight_count = int(len(tight))
+    grouped = df.groupby("community_id")
+    community_sizes = grouped.size().rename("size")
+    tight_count = int((community_sizes >= 80).sum())
 
-    top10_communities = community_sizes.nlargest(10).index.tolist()
+    top10_communities = community_sizes.nlargest(10).index
     purities = []
     for cid in top10_communities:
-        members = df[df["community_id"] == cid]
+        members = grouped.get_group(cid)
         purity = float(members["_is_fraud"].mean()) if len(members) else 0.0
         purities.append(purity)
     avg_purity = sum(purities) / len(purities) if purities else 0.0

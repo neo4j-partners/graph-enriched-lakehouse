@@ -112,6 +112,13 @@ In `verify_fraud_patterns.py` at line 665, `build_genie_expected` returns a hard
 
 ## Implementation Plan
 
+### Status summary
+
+- [x] **Phase 1** — jobs/ bootstrap and consistency (complete)
+- [x] **Phase 2** — verify_fraud_patterns.py split and cleanup (complete)
+- [ ] **Phase 3** — cross-module consolidation and long-method splits (pending)
+- [ ] **Phase 4** — artifact schema + remaining polish (pending)
+
 ### Phase 1 — jobs/ bootstrap and consistency
 
 - [x] Create `jobs/_cluster_bootstrap.py` with `inject_params()` and `resolve_here()` helpers
@@ -134,3 +141,32 @@ In `verify_fraud_patterns.py` at line 665, `build_genie_expected` returns a hard
 - [x] Add shared `classify_pair(a, b, ring_by_account)` helper to consolidate pair classification across `checks_genie_csv.py`
 - [x] Consolidate all `rich` imports to module level; remove inline `from rich.console import Group`
 - [x] Remove `build_genie_expected` (not called in the main code path; hardcoded IDs produce false failures when `SEED` changes)
+
+### Phase 3 — cross-module consolidation and long-method splits
+
+Ring-lookup consolidation (review §"Ring-by-account lookup rebuilt in every check function"):
+
+- [ ] Promote `_build_ring_by_account` from `setup/checks_genie_csv.py` into a shared location (e.g. `setup/ring_utils.py` or extend `jobs/demo_utils.py`'s `_build_ring_lookup`) with a single `build_ring_lookup(rings) -> dict[int, int]` signature
+- [ ] Update `setup/checks_genie_csv.py` call sites (lines 163, 223, 286, 357) to import the shared helper
+- [ ] Update `jobs/demo_utils.py` `_build_ring_lookup` (line 96) and all callers to use the same helper; retain the `whale_ids` return via a separate small helper or a tuple-returning wrapper so callers are not forced to recompute
+
+`check_community_purity` refactor (review §"Long methods" and §"return shape is inconsistent"):
+
+- [ ] Extract `_coverage_from_groups`, `_coverage_from_community_map`, `_coverage_from_ring_candidate_flag`, `_coverage_from_pairs` from `jobs/demo_utils.py:173` so the outer function becomes a dispatcher
+- [ ] Normalise the return shape so every branch produces the same keys (`structure_type`, `max_ring_coverage`, `groups_returned`, `total_rows`, `passed`, plus any branch-specific fields under a consistent name)
+
+`generate_account_links` branch helpers (review §"Long methods"):
+
+- [ ] Extract `_pick_within_ring_transfer`, `_pick_whale_inbound_transfer`, `_pick_whale_outbound_transfer` helpers from `setup/generate_data.py:285` so the 300k-iteration loop body reads as a four-way dispatch
+
+### Phase 4 — artifact schema + remaining polish
+
+`compare_genie_runs.py` shared schema (review §"compare_genie_runs.py duplicates artifact-reading logic"):
+
+- [ ] Define the run-artifact schema once in `jobs/genie_run.py` (either a `TypedDict`, a `dataclass`, or a `load_run_artifact(path) -> RunArtifact` loader with explicit key validation)
+- [ ] Update `automated/compare_genie_runs.py` to read artifacts through the shared loader so missing/renamed keys raise a clear error instead of silent `KeyError`
+
+Optional (review flagged as low-risk; defer unless touched):
+
+- [ ] `setup/report.py` — extract table-building helper from `render_comparison_report_rich` (review calls this "not a correctness or maintenance risk")
+- [ ] `jobs/validate_gold_tables.py` `_run_checks` — leave as-is per review; revisit only if checks 4 or 6 grow further

@@ -10,7 +10,16 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from config import NUM_ACCOUNTS
+from config import NUM_ACCOUNTS  # noqa: E402
+
+
+def build_ring_index(rings: list[list[int]]) -> dict[int, int]:
+    """Map each account_id to the index of the ring it belongs to.
+
+    Used by structural and Genie-CSV checks that need a fast account → ring
+    lookup. The ring_id is the position of the ring in the list.
+    """
+    return {int(acct): ring_idx for ring_idx, ring in enumerate(rings) for acct in ring}
 
 
 def load_data(input_dir: Path) -> dict:
@@ -104,7 +113,7 @@ def check_whale_pagerank(links_df, fraud_ids, whale_ids):
 
 
 def check_ring_density(links_df, rings):
-    acct_to_ring = {a: i for i, ring in enumerate(rings) for a in ring}
+    acct_to_ring = build_ring_index(rings)
 
     src_ring = links_df["src_account_id"].map(acct_to_ring)
     dst_ring = links_df["dst_account_id"].map(acct_to_ring)
