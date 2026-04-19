@@ -37,26 +37,13 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
-# --------------------------------------------------------------------------- #
-# 1. Load .env extras forwarded by the runner as KEY=VALUE argv               #
-# --------------------------------------------------------------------------- #
-remaining: list[str] = []
-for _arg in sys.argv[1:]:
-    if "=" in _arg and not _arg.startswith("-"):
-        _key, _, _val = _arg.partition("=")
-        os.environ.setdefault(_key, _val)
-    else:
-        remaining.append(_arg)
-sys.argv[1:] = remaining
+from _cluster_bootstrap import inject_params, resolve_here
 
-# __file__ is not set when the cluster runs this via exec(compile(...));
-# fall back to the frame's co_filename to find our sibling modules.
-try:
-    _HERE = Path(__file__).resolve().parent
-except NameError:
-    import inspect as _inspect
-    _HERE = Path(_inspect.currentframe().f_code.co_filename).resolve().parent
-    del _inspect
+# --------------------------------------------------------------------------- #
+# 1. Bootstrap: inject .env vars from KEY=VALUE argv, resolve script directory #
+# --------------------------------------------------------------------------- #
+inject_params()
+_HERE = resolve_here()
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 

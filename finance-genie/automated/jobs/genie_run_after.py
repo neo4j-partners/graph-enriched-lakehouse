@@ -12,12 +12,11 @@ from __future__ import annotations
 import os
 import sys
 
+from _cluster_bootstrap import inject_params
+
 # Resolve GENIE_SPACE_ID and LABEL before genie_run imports os.environ["GENIE_SPACE_ID"].
 # GENIE_SPACE_ID_AFTER is forwarded from .env by the CLI runner as a KEY=VALUE param.
-for _arg in sys.argv[1:]:
-    if "=" in _arg and not _arg.startswith("-"):
-        _key, _, _val = _arg.partition("=")
-        os.environ.setdefault(_key, _val)
+inject_params()
 
 os.environ["GENIE_SPACE_ID"] = os.environ["GENIE_SPACE_ID_AFTER"]
 os.environ.setdefault("LABEL", "after")

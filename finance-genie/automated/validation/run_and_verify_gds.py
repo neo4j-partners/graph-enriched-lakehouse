@@ -46,12 +46,20 @@ from neo4j.exceptions import AuthError, ServiceUnavailable
 
 from _common import fail, header, load_env, ok
 
+# Import GDS verification thresholds from jobs/gold_constants.py so that
+# changes to signal targets are tracked in one place and this script cannot
+# drift from the Gold-table definitions.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "jobs"))
+from gold_constants import (  # noqa: E402
+    GDS_COMMUNITY_PURITY_MIN as COMMUNITY_PURITY_MIN,
+    GDS_PR_RATIO_MIN as PR_RATIO_MIN,
+    GDS_RING_EXCLUSION_MAX as RING_EXCLUSION_MAX,
+    GDS_SIM_RATIO_MIN as SIM_RATIO_MIN,
+)
+
 REQUIRED_VARS = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
 
 EXPECTED_ACCOUNTS = 25_000
-PR_RATIO_MIN = 3.0
-COMMUNITY_PURITY_MIN = 0.50
-SIM_RATIO_MIN = 1.9
 MAX_COMMUNITIES_OK = 500
 
 # NodeSimilarity degreeCutoff used in the pipeline below. Ring members whose
@@ -60,11 +68,6 @@ MAX_COMMUNITIES_OK = 500
 # as 'medium' rather than 'high' in gold_accounts.fraud_risk_tier. Keep this
 # value synchronized with the writeRelationship call in run_pipeline below.
 NODESIM_DEGREE_CUTOFF = 5
-
-# Fail if more than this fraction of fraud ring members are excluded by
-# NODESIM_DEGREE_CUTOFF — at that point fraud_risk_tier='high' coverage on
-# ring members drops below demo-viable levels (<80%).
-RING_EXCLUSION_MAX = 0.20
 
 
 def load_ground_truth(script_dir: Path) -> dict:

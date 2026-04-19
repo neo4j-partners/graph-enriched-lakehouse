@@ -33,27 +33,13 @@ import traceback
 from datetime import datetime, timezone
 from pathlib import Path
 
-# --------------------------------------------------------------------------- #
-# 1. Load .env extras forwarded by the runner as KEY=VALUE argv               #
-# --------------------------------------------------------------------------- #
-remaining: list[str] = []
-for _arg in sys.argv[1:]:
-    if "=" in _arg and not _arg.startswith("-"):
-        _key, _, _val = _arg.partition("=")
-        os.environ.setdefault(_key, _val)
-    else:
-        remaining.append(_arg)
-sys.argv[1:] = remaining
+from _cluster_bootstrap import inject_params, resolve_here
 
 # --------------------------------------------------------------------------- #
-# 2. Import shared check helpers from sibling demo_utils.py                   #
+# 1. Bootstrap: inject .env vars from KEY=VALUE argv, resolve script directory #
 # --------------------------------------------------------------------------- #
-try:
-    _HERE = Path(__file__).resolve().parent
-except NameError:
-    import inspect as _inspect
-    _HERE = Path(_inspect.currentframe().f_code.co_filename).resolve().parent
-    del _inspect
+inject_params()
+_HERE = resolve_here()
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
@@ -86,9 +72,19 @@ def _hub_check(df, gt):
     return check_risk_score_precision(df, gt, topn=20)
 
 
+def _load_ring_community_map() -> "dict[str, list[int]] | None":
+    try:
+        map_path = str(Path(GROUND_TRUTH_PATH).parent / "ring_community_map.json")
+        with open(map_path) as f:
+            data = json.load(f)
+        return {k: [int(x) for x in v] for k, v in data["ring_community_map"].items()}
+    except (FileNotFoundError, KeyError):
+        return None
+
+
 def _community_check(df, gt):
     rings_as_lists = [r["account_ids"] for r in gt["rings"]]
-    return check_community_purity(df, rings_as_lists)
+    return check_community_purity(df, rings_as_lists, ring_community_map=_load_ring_community_map())
 
 
 def _merchant_check(df, gt):

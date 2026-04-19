@@ -29,31 +29,19 @@ Run `validation/validate_cluster.py` locally before submitting to confirm.
 
 from __future__ import annotations
 
+import json
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
-# --------------------------------------------------------------------------- #
-# 1. Load .env extras forwarded by the runner as KEY=VALUE argv               #
-#    (inlined from databricks_job_runner.inject — not installed on cluster)   #
-# --------------------------------------------------------------------------- #
-remaining: list[str] = []
-for _arg in sys.argv[1:]:
-    if "=" in _arg and not _arg.startswith("-"):
-        _key, _, _val = _arg.partition("=")
-        os.environ.setdefault(_key, _val)
-    else:
-        remaining.append(_arg)
-sys.argv[1:] = remaining
+from _cluster_bootstrap import inject_params, resolve_here
 
-# __file__ is not set when the cluster runs this via exec(compile(...));
-# fall back to the frame's co_filename to find our sibling modules.
-try:
-    _HERE = Path(__file__).resolve().parent
-except NameError:
-    import inspect as _inspect
-    _HERE = Path(_inspect.currentframe().f_code.co_filename).resolve().parent
-    del _inspect
+# --------------------------------------------------------------------------- #
+# 1. Bootstrap: inject .env vars from KEY=VALUE argv, resolve script directory #
+# --------------------------------------------------------------------------- #
+inject_params()
+_HERE = resolve_here()
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
@@ -356,6 +344,50 @@ def main() -> None:
         f"Written {GOLD_RING_COMMUNITIES_TABLE} "
         f"({n_ring:,} rows, {n_ring_candidates} ring candidates)"
     )
+
+    # ----------------------------------------------------------------------- #
+    # Build ring_community_map.json — written to the same volume directory as #
+    # ground_truth.json. Maps each synthetic ring_id to the set of Louvain    #
+    # community_ids that contain at least one of its members. Generated fresh  #
+    # on every gold table rebuild so it stays in sync with community_id        #
+    # assignments, which change whenever the GDS graph is re-projected.        #
+    # ----------------------------------------------------------------------- #
+    GROUND_TRUTH_PATH = os.environ.get("GROUND_TRUTH_PATH")
+    if GROUND_TRUTH_PATH:
+        with open(GROUND_TRUTH_PATH) as _f:
+            _gt = json.load(_f)
+
+        _ring_acct_rows = [
+            (str(ring["ring_id"]), int(acct_id))
+            for ring in _gt["rings"]
+            for acct_id in ring["account_ids"]
+        ]
+        _ring_acct_df = spark.createDataFrame(_ring_acct_rows, ["ring_id", "account_id"])
+
+        _ring_community_df = (
+            _ring_acct_df
+            .join(gold_df.select("account_id", "community_id"), "account_id", "left")
+            .filter(F.col("community_id").isNotNull())
+            .select("ring_id", "community_id")
+            .distinct()
+        )
+
+        _ring_community_map: dict[str, list[int]] = {}
+        for _row in _ring_community_df.collect():
+            _ring_community_map.setdefault(_row["ring_id"], []).append(int(_row["community_id"]))
+        _ring_community_map = {k: sorted(v) for k, v in _ring_community_map.items()}
+
+        _map_path = str(Path(GROUND_TRUTH_PATH).parent / "ring_community_map.json")
+        with open(_map_path, "w") as _f:
+            json.dump(
+                {
+                    "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "ring_community_map": _ring_community_map,
+                },
+                _f,
+                indent=2,
+            )
+        print(f"Written {_map_path} ({len(_ring_community_map)} rings)")
 
     ring_communities_df.unpersist()
     gold_df.unpersist()
