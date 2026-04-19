@@ -282,6 +282,76 @@ def build_ground_truth_json(
     }
 
 
+def _pick_within_ring_transfer(
+    rings: list,
+    ring_captain_lists: list[list[int]],
+) -> tuple[int, int]:
+    """Sample a (src, dst) within one randomly chosen ring.
+
+    With CAPTAIN_TRANSFER_PROB probability the destination is a captain, which
+    concentrates inbound PageRank on a small set of high-degree nodes.
+    Otherwise both endpoints are sampled uniformly from the ring. Pairs stay
+    low-count (1-3) so Genie's pair-grouping can surface suspicious pairs but
+    not reveal the full ring.
+    """
+    ring_idx  = random.randrange(len(rings))
+    ring_list = list(rings[ring_idx])
+    captains  = ring_captain_lists[ring_idx]
+
+    if captains and random.random() < CAPTAIN_TRANSFER_PROB:
+        dst = random.choice(captains)
+        src = random.choice([a for a in ring_list if a != dst])
+    else:
+        src, dst = random.sample(ring_list, 2)
+    return src, dst
+
+
+def _pick_whale_inbound_transfer(whale_list: list[int]) -> tuple[int, int]:
+    """Sample a transfer TO a whale from a random account.
+
+    Inflates whale raw inbound counts so Genie's "sort by inbound volume"
+    returns whales, not the fraud ring. PageRank demotes whales because they
+    receive from low-degree peripheral accounts.
+    """
+    dst = random.choice(whale_list)
+    src = random.randint(1, NUM_ACCOUNTS)
+    while src == dst:
+        src = random.randint(1, NUM_ACCOUNTS)
+    return src, dst
+
+
+def _pick_whale_outbound_transfer(
+    whale_list: list[int],
+    whale_recipient_pools: Optional[dict],
+) -> tuple[int, int]:
+    """Sample a transfer FROM a whale.
+
+    Gives whales bidirectional P2P volume so they resemble payment aggregators
+    (high in, high out) rather than pure collection accounts. When
+    whale_recipient_pools is provided, each whale sends only to its
+    pre-assigned pool of recurring recipients — the consistent-counterparty
+    pattern of a real aggregator. Either way, ring members are never targeted,
+    preserving the sender-peripherality property that PageRank uses to
+    separate whales from ring members.
+    """
+    src = random.choice(whale_list)
+    if whale_recipient_pools is not None:
+        dst = random.choice(whale_recipient_pools[src])
+    else:
+        dst = random.randint(1, NUM_ACCOUNTS)
+        while dst == src:
+            dst = random.randint(1, NUM_ACCOUNTS)
+    return src, dst
+
+
+def _pick_random_transfer() -> tuple[int, int]:
+    src = random.randint(1, NUM_ACCOUNTS)
+    dst = random.randint(1, NUM_ACCOUNTS)
+    while dst == src:
+        dst = random.randint(1, NUM_ACCOUNTS)
+    return src, dst
+
+
 def generate_account_links(
     rings: list,
     whale_ids: set,
@@ -313,57 +383,13 @@ def generate_account_links(
         r = random.random()
 
         if r < WITHIN_RING_PROB:
-            # Within-ring: builds the community structure Louvain detects.
-            # Pairs are sampled randomly within the ring so individual
-            # bilateral counts stay low (1-3) — Genie's pair-grouping
-            # can surface a few suspicious pairs but cannot reveal the
-            # full ring of ~100 accounts.
-            ring_idx  = random.randrange(len(rings))
-            ring_list = list(rings[ring_idx])
-            captains  = ring_captain_lists[ring_idx]
-
-            if captains and random.random() < CAPTAIN_TRANSFER_PROB:
-                # Route to a captain as receiver: concentrates inbound
-                # PageRank on captains, which then propagates to the ring.
-                dst = random.choice(captains)
-                src = random.choice([a for a in ring_list if a != dst])
-            else:
-                src, dst = random.sample(ring_list, 2)
-
+            src, dst = _pick_within_ring_transfer(rings, ring_captain_lists)
         elif r < WITHIN_RING_PROB + WHALE_INBOUND:
-            # Transfer TO a whale: inflates whale raw inbound counts so
-            # Genie's "sort by inbound volume" returns whales, not the
-            # fraud ring.  PageRank demotes whales because they receive
-            # from low-degree peripheral accounts.
-            dst = random.choice(whale_list)
-            src = random.randint(1, NUM_ACCOUNTS)
-            while src == dst:
-                src = random.randint(1, NUM_ACCOUNTS)
-
+            src, dst = _pick_whale_inbound_transfer(whale_list)
         elif r < WITHIN_RING_PROB + WHALE_INBOUND + WHALE_OUTBOUND:
-            # Transfer FROM a whale: gives whales bidirectional P2P volume
-            # so they resemble payment aggregators (high in, high out) rather
-            # than pure collection accounts.  When whale_recipient_pools is
-            # provided, each whale sends only to its pre-assigned pool of
-            # recurring plain-normal-account recipients — the consistent-
-            # counterparty pattern of a real aggregator.  Otherwise, destination
-            # is drawn randomly.  Either way, ring members are never targeted,
-            # preserving the sender-peripherality property that PageRank uses
-            # to separate whales from ring members.
-            src = random.choice(whale_list)
-            if whale_recipient_pools is not None:
-                dst = random.choice(whale_recipient_pools[src])
-            else:
-                dst = random.randint(1, NUM_ACCOUNTS)
-                while dst == src:
-                    dst = random.randint(1, NUM_ACCOUNTS)
-
+            src, dst = _pick_whale_outbound_transfer(whale_list, whale_recipient_pools)
         else:
-            # Fully random transfer — background noise.
-            src = random.randint(1, NUM_ACCOUNTS)
-            dst = random.randint(1, NUM_ACCOUNTS)
-            while dst == src:
-                dst = random.randint(1, NUM_ACCOUNTS)
+            src, dst = _pick_random_transfer()
 
         amount = round(random.lognormvariate(P2P_LOGNORM_MU, P2P_LOGNORM_SIGMA), 2)
         ts = base_date + timedelta(
