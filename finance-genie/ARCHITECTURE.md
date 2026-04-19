@@ -246,3 +246,46 @@ For each question, the job measures one metric:
 | `GROUND_TRUTH_PATH` | (required) | UC Volume path to `ground_truth.json`. Required for metric computation in both jobs. |
 | `RESULTS_VOLUME_DIR` | (required) | UC Volume directory where Genie run artifacts are written. |
 
+---
+
+## What each GDS algorithm guarantees
+
+Each of the three GDS algorithms carries a published mathematical guarantee. The output is a feature. A downstream consumer reads that feature and makes the call the algorithm does not.
+
+**PageRank guarantees eigenvector centrality.** The score `risk_score` converges to the principal eigenvector of the transfer network's transition matrix under the configured damping factor. Ring captains and whales score higher than background accounts because more probability mass flows toward them. A fraud investigator or supervised classifier consumes the ranked list and adjudicates which high-score accounts warrant review.
+
+**Louvain guarantees a modularity-optimal community partition.** The label `community_id` assigns every account to the community that maximizes the graph's modularity score given the projection. Rings surface as communities because their within-ring edge density is roughly three orders of magnitude above background. A Genie analyst reading `gold_fraud_ring_communities` queries the candidate communities, and a human or downstream model decides which are real rings.
+
+**Node Similarity guarantees Jaccard overlap.** The edges in `:SIMILAR_TO` and the column `similarity_score` carry exact Jaccard similarity of merchant-visit sets above the configured degree cutoff. Ring members cluster because anchor-merchant preferences drive overlap. A dashboard or analyst consumes the ranked pairs and investigates which high-similarity pairs represent collusion.
+
+Each feature is reproducible given a fixed projection. Each is a named mathematical object with a published definition. The Databricks-hosted workflow that reads the gold columns is where precision, recall, and business judgment get applied.
+
+---
+
+## Glossary
+
+Terms used throughout this document and in the pipeline code. Each entry defines the term generally and notes how it shows up in this specific demo.
+
+**Fraud ring.** A coordinated group of accounts that move money among themselves or transact with shared merchants to obscure the origin of funds or build reputation signal. In this demo, ten rings of 50-200 accounts each are embedded in the 25,000-account population. Ring membership is recorded in `ground_truth.json` and is the ground-truth label every verification check compares against.
+
+**Ring captain.** An account inside a ring that absorbs a disproportionate share of intra-ring inbound transfers. Captains exist to concentrate PageRank inside the ring so ring members surface near the top of risk-score rankings. In this demo, `CAPTAIN_COUNT=5` captains per ring each receive approximately 12 extra intra-ring inbound transfers at `CAPTAIN_TRANSFER_PROB=0.02`, for a total around 155 inbound per captain. That total is deliberately kept below whale inbound so that naive inbound-count sorting still returns whales, not captains, which is the evidence that tabular analysis alone cannot find ring leaders.
+
+**Whale.** A normal (non-ring) account that receives an elevated volume of peer-to-peer transfers, resembling a payment aggregator or a high-volume personal account. Whales exist to establish that tabular analysis fails: sorting accounts by inbound-transfer count returns whales, not fraud ring members. In this demo, `WHALE_RATE=0.008` creates 200 whales, each receiving roughly 210 inbound transfers under `WHALE_INBOUND=0.14`. Whales send matching outbound volume to a fixed pool of 30 recurring recipients (`WHALE_RECIPIENT_POOL_SIZE`), keeping them peripheral to the graph topology rather than structurally identical to ring captains.
+
+**Anchor merchant.** A merchant preferentially visited by members of a specific ring, producing shared merchant history across that ring's accounts. Anchor merchants are the mechanism that drives elevated Jaccard similarity between ring members. In this demo, `RING_ANCHOR_CNT=4` anchor merchants are assigned to each ring, and each ring account visits its anchors with probability `RING_ANCHOR_PREF=0.35` on any given transaction.
+
+**Background density.** The rate at which peer-to-peer edges exist between arbitrary pairs of accounts, measured across the full population. In this demo the background density is roughly three orders of magnitude below within-ring density. The ratio between the two is what Louvain uses to draw community boundaries.
+
+**Within-ring density.** The rate at which peer-to-peer edges exist between accounts that are both members of the same ring. At the demo's default parameters, within-ring density is approximately 3,400 times the background density, which is what makes rings detectable as communities rather than as noise.
+
+**Jaccard ratio.** The ratio of fraud-to-fraud Jaccard similarity (averaged over ring-member pairs) to fraud-to-normal Jaccard similarity (averaged over mixed pairs), measured on each account's shared-merchant set. In this demo the ratio sits near 1.98 at default parameters, and `validation/verify_gds.py` requires at least 1.9. Below that threshold, Node Similarity cannot cleanly separate rings from background.
+
+**PageRank separation.** The ratio of average PageRank score among ring members to average PageRank score among normals. This demo targets at least 3.0x, enforced by `validation/verify_gds.py` as `GDS_PR_RATIO_MIN`. It is the numeric form of the claim that ring members are structurally more central in the transfer network than random accounts.
+
+**Community dominance.** The fraction of a detected Louvain community that belongs to a single ground-truth ring. `jobs/validate_gold_tables.py` requires each ring-candidate community to be dominated at 80% or higher by one real ring. Dominance normalizes by community size and answers the question "is this community mostly one ring?".
+
+**Ring coverage.** The fraction of a ground-truth ring captured by a single Louvain community. Complementary to dominance: where dominance asks "is this community mostly one ring?", coverage asks "is this ring mostly in one community?". The Genie `community_structure` question measures maximum ring coverage across returned communities.
+
+**Confuser cohort.** A population of accounts deliberately injected into the synthetic dataset that looks structurally similar to a fraud ring but is not one. Examples include family units, commuter corridors, small-business payroll clusters, and university cohorts, each of which produces elevated within-group transfer rates and shared-merchant Jaccard similarity for benign reasons. Confuser cohorts force GDS and downstream filtering to rank real rings above lookalikes, converting "GDS found all rings perfectly" into the more production-realistic "GDS produced a ranked candidate list where real rings sit at the top and benign lookalikes sit below." Not currently present in this demo's generator; proposed as Phase 3 in `REFINE_DEMO.md`.
+
+**Ground truth.** The file `ground_truth.json` produced by the data generator, recording which accounts belong to which ring, which merchants are anchors for which rings, and which accounts are captains or whales. Every verification check joins against this file, keyed on `account_id` rather than `community_id` (which drifts across GDS runs), to compute precision and coverage metrics. Ground truth exists only because the data is synthetic, which is both the strength of the demo (verifiable metrics against a known-correct answer) and its limitation (not representative of production conditions where ground truth is partial, delayed, or absent).

@@ -2,11 +2,9 @@
 
 ## Overview
 
-Databricks Genie answers SQL-expressible questions against Delta tables: total transaction volume, merchant revenue, account activity over time. It cannot answer structural questions about which accounts form a fraud ring, which account sits at the center of money flow, or which accounts share the same behavioral fingerprint. Those answers are not properties of individual rows. They are properties of the network connecting them.
+The Finance Genie demo shows what becomes possible when Neo4j GDS runs as a silver-to-gold enrichment stage inside a Databricks Lakehouse. The pipeline reads relationships from the existing silver tables, runs three deterministic graph algorithms in Neo4j Aura, and writes three scalar columns (`risk_score`, `community_id`, `similarity_score`) back into the gold layer. Genie, SQL warehouses, dashboards, and downstream ML read those columns without any interface change. The fraud use case is one instance of a broader pattern that applies any time the answer lives in relationships rather than individual rows.
 
-This project implements a Tier 1 graph enrichment pipeline that bridges that gap. The pipeline reads account, merchant, and transaction records from Databricks Silver tables, loads them into Neo4j, runs three GDS algorithms (PageRank for centrality, Louvain for community detection, Node Similarity for structural fingerprinting), and writes the results back to Databricks Gold tables as plain numeric columns. Genie queries those columns: `risk_score`, `community_id`, and `similarity_score`. It treats them as ordinary features with no knowledge of the graph computation behind them.
-
-The demo shows the gap before GDS enrichment and closes it after: Genie cannot identify fraud rings or transfer-network hubs against the raw base tables, and can after the pipeline runs.
+For guidance on where this enrichment pattern fits in production and how to calibrate it for a customer dataset, see [SCOPING_GUIDE.md](./SCOPING_GUIDE.md).
 
 ## workshop/ vs automated/
 

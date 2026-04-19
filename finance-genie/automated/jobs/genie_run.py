@@ -230,10 +230,16 @@ def _run_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
 # --------------------------------------------------------------------------- #
 
 _VERDICT_LABELS = {
-    "hub_detection":        ("FRAUD DETECTED",       "NO FRAUD FOUND"),
-    "community_structure":  ("FRAUD RINGS DETECTED", "NO RINGS FOUND"),
-    "merchant_overlap":     ("COLLUSION DETECTED",   "NO COLLUSION FOUND"),
+    "hub_detection":        ("HUB CANDIDATES SURFACED",            "NO HUB CANDIDATES"),
+    "community_structure":  ("COMMUNITY STRUCTURE SURFACED",       "NO COMMUNITY STRUCTURE"),
+    "merchant_overlap":     ("MERCHANT-OVERLAP CLUSTERS SURFACED", "NO MERCHANT-OVERLAP CLUSTERS"),
 }
+
+_SCOPE_FOOTER = (
+    "Synthetic dataset. Structural-signal ratios are theoretically scale-invariant;\n"
+    "absolute precision numbers reflect the teaching dataset. See SCOPING_GUIDE.md\n"
+    "for production-scale guidance."
+)
 
 
 def _verdict(result: dict) -> str:
@@ -306,12 +312,12 @@ def _final_verdict(results: list[dict]) -> str:
         if r["responded"] and (r["metric"] or {}).get("meets_after_gate")
     )
     if detected == total:
-        return f"Fraud signal detected in {detected}/{total} tests — Genie surfaced hubs, rings, and collusion."
+        return f"Summary: Structural signal surfaced in {detected}/{total} tests. Candidates returned for investigator review."
     if detected == 0 and responded == total:
-        return f"No fraud signal detected — all {total} questions responded but none met the after-GDS criterion."
+        return f"Summary: Structural signal surfaced in 0/{total} tests. All {total} questions responded; none met the after-GDS criterion."
     if detected == 0:
-        return f"No fraud signal detected — only {responded}/{total} questions produced usable data."
-    return f"Partial fraud signal — detected {detected}/{total} patterns; {total - detected} question(s) missed criterion."
+        return f"Summary: Structural signal surfaced in 0/{total} tests. Only {responded}/{total} questions produced usable data."
+    return f"Summary: Structural signal surfaced in {detected}/{total} tests. Candidates returned for investigator review; {total - detected} question(s) did not meet the after-GDS criterion."
 
 
 def _print_report(results: list[dict], run_meta: dict) -> None:
@@ -353,7 +359,9 @@ def _print_report(results: list[dict], run_meta: dict) -> None:
     print()
     print("-" * 78)
     print(f"Responded: {responded}/{len(results)}")
-    print(f"Verdict:   {_final_verdict(results)}")
+    print(_final_verdict(results))
+    print()
+    print(_SCOPE_FOOTER)
 
 
 # --------------------------------------------------------------------------- #
