@@ -25,7 +25,6 @@ import io
 import json
 import os
 import sys
-import textwrap
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -45,10 +44,8 @@ from demo_utils import (  # noqa: E402
     load_ground_truth,
 )
 from databricks.sdk import WorkspaceClient  # noqa: E402
+from genie_run_artifact import sql_preview, wrap_text  # noqa: E402
 
-# --------------------------------------------------------------------------- #
-# Config                                                                       #
-# --------------------------------------------------------------------------- #
 SPACE_ID = os.environ["GENIE_SPACE_ID_BEFORE"]
 LABEL = "before"
 GROUND_TRUTH_PATH = os.environ["GROUND_TRUTH_PATH"]
@@ -56,9 +53,13 @@ RESULTS_VOLUME_DIR = os.environ["RESULTS_VOLUME_DIR"].rstrip("/")
 RETRIES = int(os.environ.get("GENIE_TEST_RETRIES", "2"))
 TIMEOUT_SECONDS = int(os.environ.get("GENIE_TEST_TIMEOUT_SECONDS", "120"))
 
-# --------------------------------------------------------------------------- #
-# Check functions (unchanged from original; grading still measures the gap)   #
-# --------------------------------------------------------------------------- #
+_SCOPE_FOOTER = (
+    "Synthetic dataset. Structural-signal ratios are theoretically scale-invariant;\n"
+    "absolute precision numbers reflect the teaching dataset. See SCOPING_GUIDE.md\n"
+    "for production-scale guidance."
+)
+
+
 def _hub_check(df, gt):
     return check_risk_score_precision(df, gt, topn=20)
 
@@ -73,9 +74,11 @@ def _load_ring_community_map() -> "dict[str, list[int]] | None":
         return None
 
 
-def _community_check(df, gt):
-    rings_as_lists = [r["account_ids"] for r in gt["rings"]]
-    return check_community_purity(df, rings_as_lists, ring_community_map=_load_ring_community_map())
+def _make_community_check(ring_community_map):
+    def _community_check(df, gt):
+        rings_as_lists = [r["account_ids"] for r in gt["rings"]]
+        return check_community_purity(df, rings_as_lists, ring_community_map=ring_community_map)
+    return _community_check
 
 
 def _merchant_check(df, gt):
@@ -97,50 +100,48 @@ def _merchant_check(df, gt):
     return check_ring_pair_fraction(pairs, rings_as_lists)
 
 
-# --------------------------------------------------------------------------- #
-# Question sets                                                                #
-# --------------------------------------------------------------------------- #
-STRUCTURAL_CASES = [
-    {
-        "name": "hub_detection",
-        "question": (
-            "Are there accounts that seem to be the hub of a money movement "
-            "network that are potentially fraudulent?"
-        ),
-        "check_fn": _hub_check,
-        "metric_key": "precision",
-        "after_gate_criterion": "> 0.70",
-    },
-    {
-        "name": "community_structure",
-        "question": "Find groups of accounts transferring money heavily among themselves.",
-        "check_fn": _community_check,
-        "metric_key": "max_ring_coverage",
-        "after_gate_criterion": "> 0.80",
-    },
-    {
-        "name": "merchant_overlap",
-        "question": "Which pairs of accounts have visited the most merchants in common?",
-        "check_fn": _merchant_check,
-        "metric_key": "same_ring_fraction",
-        "after_gate_criterion": "> 0.60 with >=5 pairs",
-    },
-]
+def _build_cases(ring_community_map) -> list[dict]:
+    return [
+        {
+            "name": "hub_detection",
+            "question": (
+                "Are there accounts that seem to be the hub of a money movement "
+                "network that are potentially fraudulent?"
+            ),
+            "check_fn": _hub_check,
+            "metric_key": "precision",
+            "after_gate_criterion": "> 0.70",
+        },
+        {
+            "name": "community_structure",
+            "question": "Find groups of accounts transferring money heavily among themselves.",
+            "check_fn": _make_community_check(ring_community_map),
+            "metric_key": "max_ring_coverage",
+            "after_gate_criterion": "> 0.80",
+        },
+        {
+            "name": "merchant_overlap",
+            "question": "Which pairs of accounts have visited the most merchants in common?",
+            "check_fn": _merchant_check,
+            "metric_key": "same_ring_fraction",
+            "after_gate_criterion": "> 0.60 with >=5 pairs",
+        },
+        {
+            "name": "teaser_portfolio",
+            "question": (
+                "What share of accounts sits in communities flagged as ring candidates, "
+                "broken out by region?"
+            ),
+        },
+    ]
 
-TEASER_CASE = {
-    "name": "teaser_portfolio",
-    "question": (
-        "What share of accounts sits in communities flagged as ring candidates, "
-        "broken out by region?"
-    ),
-}
 
-# --------------------------------------------------------------------------- #
-# Per-question runners                                                         #
-# --------------------------------------------------------------------------- #
-def _run_structural_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
+def _run_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
+    """Run one question. Skips grading when the case has no check_fn (teaser)."""
     attempts: list[dict] = []
     final_metric: dict | None = None
+    check_fn = case.get("check_fn")
+    is_teaser = check_fn is None
 
     for attempt_idx in range(1, RETRIES + 1):
         try:
@@ -161,7 +162,7 @@ def _run_structural_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
             continue
 
         df = response["df"]
-        if df is None:
+        if df is None and not is_teaser:
             attempts.append({
                 "attempt": attempt_idx,
                 "error": f"Genie returned no data (status={response['status']}, text={(response['text'] or '')[:200]})",
@@ -173,37 +174,44 @@ def _run_structural_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
             })
             continue
 
-        check_result = case["check_fn"](df, gt)
-        preview = json.loads(json.dumps(df.head(10).to_dict(orient="records"), default=str))
+        row_count = int(len(df)) if df is not None else 0
+        preview = (
+            json.loads(json.dumps(df.head(10).to_dict(orient="records"), default=str))
+            if df is not None else []
+        )
 
-        metric_val = check_result.get(case["metric_key"])
-        if metric_val is not None and hasattr(metric_val, "item"):
-            metric_val = metric_val.item()
-
-        detail = {k: (v.item() if hasattr(v, "item") else v) for k, v in check_result.items()}
-
-        metric = {
-            "key": case["metric_key"],
-            "value": float(metric_val) if metric_val is not None else None,
-            "after_gate_criterion": case["after_gate_criterion"],
-            "meets_after_gate": bool(check_result.get("passed", False)),
-            "detail": detail,
-        }
-        final_metric = metric
+        metric = None
+        if check_fn is not None and df is not None:
+            check_result = check_fn(df, gt)
+            metric_val = check_result.get(case["metric_key"])
+            if metric_val is not None and hasattr(metric_val, "item"):
+                metric_val = metric_val.item()
+            detail = {k: (v.item() if hasattr(v, "item") else v) for k, v in check_result.items()}
+            metric = {
+                "key": case["metric_key"],
+                "value": float(metric_val) if metric_val is not None else None,
+                "after_gate_criterion": case["after_gate_criterion"],
+                "meets_after_gate": bool(check_result.get("passed", False)),
+                "detail": detail,
+            }
+            final_metric = metric
 
         attempts.append({
             "attempt": attempt_idx,
             "error": None,
             "genie_sql": response["sql"],
             "genie_response_text": response["text"],
-            "row_count": int(len(df)),
+            "row_count": row_count,
             "result_preview_records": preview,
             "metric": metric,
         })
         break
 
     last = attempts[-1] if attempts else {}
-    responded = last.get("error") is None and last.get("row_count", 0) > 0
+    if is_teaser:
+        responded = last.get("error") is None
+    else:
+        responded = last.get("error") is None and last.get("row_count", 0) > 0
 
     return {
         "name": case["name"],
@@ -213,69 +221,6 @@ def _run_structural_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
         "attempts": attempts,
         "metric": final_metric,
     }
-
-
-def _run_teaser_case(w: WorkspaceClient) -> dict:
-    """Ask the teaser question and capture Genie's response without grading."""
-    attempts: list[dict] = []
-
-    for attempt_idx in range(1, RETRIES + 1):
-        try:
-            response = ask_genie(w, SPACE_ID, TEASER_CASE["question"], timeout_seconds=TIMEOUT_SECONDS)
-        except Exception as exc:
-            tb = traceback.format_exc()
-            print(tb, file=sys.stderr)
-            attempts.append({
-                "attempt": attempt_idx,
-                "error": f"{type(exc).__name__}: {exc}",
-                "traceback": tb,
-                "genie_sql": None,
-                "genie_response_text": None,
-                "row_count": 0,
-                "result_preview_records": [],
-                "metric": None,
-            })
-            continue
-
-        df = response["df"]
-        row_count = int(len(df)) if df is not None else 0
-        preview = (
-            json.loads(json.dumps(df.head(10).to_dict(orient="records"), default=str))
-            if df is not None else []
-        )
-
-        attempts.append({
-            "attempt": attempt_idx,
-            "error": None,
-            "genie_sql": response["sql"],
-            "genie_response_text": response["text"],
-            "row_count": row_count,
-            "result_preview_records": preview,
-            "metric": None,
-        })
-        break
-
-    last = attempts[-1] if attempts else {}
-    responded = last.get("error") is None
-
-    return {
-        "name": TEASER_CASE["name"],
-        "question": TEASER_CASE["question"],
-        "responded": responded,
-        "attempts_made": len(attempts),
-        "attempts": attempts,
-        "metric": None,
-    }
-
-
-# --------------------------------------------------------------------------- #
-# Report printer                                                               #
-# --------------------------------------------------------------------------- #
-_SCOPE_FOOTER = (
-    "Synthetic dataset. Structural-signal ratios are theoretically scale-invariant;\n"
-    "absolute precision numbers reflect the teaching dataset. See SCOPING_GUIDE.md\n"
-    "for production-scale guidance."
-)
 
 
 def _verdict(result: dict) -> str:
@@ -318,37 +263,24 @@ def _findings(name: str, detail: dict | None) -> list[str]:
     return []
 
 
-def _sql_preview(result: dict, max_chars: int = 220) -> str:
-    if not result["attempts"]:
-        return "(no SQL)"
-    sql = (result["attempts"][-1].get("genie_sql") or "").strip()
-    if not sql:
-        return "(no SQL)"
-    single_line = " ".join(sql.split())
-    return single_line[:max_chars] + "…" if len(single_line) > max_chars else single_line
+def _print_report(results: list[dict], run_meta: dict) -> None:
+    structural = [r for r in results if r["name"] != "teaser_portfolio"]
+    teaser = next((r for r in results if r["name"] == "teaser_portfolio"), None)
 
-
-def _wrap(text: str, indent: int = 14, width: int = 78) -> str:
-    pad = " " * indent
-    wrapped = textwrap.wrap(text, width=max(width - indent, 20)) or [text]
-    return ("\n" + pad).join(wrapped)
-
-
-def _print_report(structural_results: list[dict], teaser_result: dict, run_meta: dict) -> None:
     print("=" * 78)
     print(f"Genie BEFORE run — {run_meta['timestamp_utc']}")
     print(f"Space: {run_meta['space_id']}")
     print("Purpose: confirm structural gap on base tables (misses are expected evidence)")
     print("=" * 78)
 
-    for idx, r in enumerate(structural_results, start=1):
+    for idx, r in enumerate(structural, start=1):
         verdict = _verdict(r)
         m = r["metric"]
         rows = int(r["attempts"][-1].get("row_count") or 0) if r["attempts"] else 0
 
         print()
         print(f"[{idx}] {r['name']} — {verdict}")
-        print(f"    Question: {_wrap(r['question'])}")
+        print(f"    Question: {wrap_text(r['question'])}")
 
         if m and m.get("value") is not None:
             print(f"    Metric:   {m['key']}={float(m['value']):.2f}  (after-GDS criterion: {m['after_gate_criterion']})")
@@ -366,24 +298,24 @@ def _print_report(structural_results: list[dict], teaser_result: dict, run_meta:
                 print(f"    Error:    {err[:200]}")
 
         print(f"    Rows:     {rows}")
-        print(f"    SQL:      {_sql_preview(r)}")
+        print(f"    SQL:      {sql_preview(r)}")
 
-    print()
-    print(f"[T] {teaser_result['name']} — NOT AVAILABLE ON THIS CATALOG — answered in AFTER run")
-    print(f"    Question: {_wrap(teaser_result['question'])}")
-    print(f"    Note:     community_id and is_ring_community columns do not exist in base tables.")
-    rows = int(teaser_result["attempts"][-1].get("row_count") or 0) if teaser_result["attempts"] else 0
-    print(f"    Rows:     {rows}")
-    print(f"    SQL:      {_sql_preview(teaser_result)}")
+    if teaser:
+        rows = int(teaser["attempts"][-1].get("row_count") or 0) if teaser["attempts"] else 0
+        print()
+        print(f"[T] {teaser['name']} — NOT AVAILABLE ON THIS CATALOG — answered in AFTER run")
+        print(f"    Question: {wrap_text(teaser['question'])}")
+        print(f"    Note:     community_id and is_ring_community columns do not exist in base tables.")
+        print(f"    Rows:     {rows}")
+        print(f"    SQL:      {sql_preview(teaser)}")
 
     confirmed = sum(
-        1 for r in structural_results
+        1 for r in structural
         if r["responded"] and not (r["metric"] or {}).get("meets_after_gate")
     )
-    total = len(structural_results)
     print()
     print("-" * 78)
-    print(f"Structural gap confirmed in {confirmed}/{total} questions.")
+    print(f"Structural gap confirmed in {confirmed}/{len(structural)} questions.")
     print(
         "Summary: BEFORE catalog cannot resolve structural questions from row-level SQL. "
         "Enrichment unlocks portfolio, cohort, community, operational, and merchant-composition "
@@ -393,13 +325,9 @@ def _print_report(structural_results: list[dict], teaser_result: dict, run_meta:
     print(_SCOPE_FOOTER)
 
 
-# --------------------------------------------------------------------------- #
-# Artifact writer                                                              #
-# --------------------------------------------------------------------------- #
-def _write_artifact(w: WorkspaceClient, all_cases: list[dict], run_meta: dict) -> str:
+def _write_artifact(w: WorkspaceClient, results: list[dict], run_meta: dict) -> str:
     ts_safe = run_meta["timestamp_utc"].replace(":", "-").replace(".", "-")
-    filename = f"genie_run_before_{ts_safe}.json"
-    remote_path = f"{RESULTS_VOLUME_DIR}/{filename}"
+    remote_path = f"{RESULTS_VOLUME_DIR}/genie_run_before_{ts_safe}.json"
 
     payload = {
         "space_id": run_meta["space_id"],
@@ -408,24 +336,23 @@ def _write_artifact(w: WorkspaceClient, all_cases: list[dict], run_meta: dict) -
         "gate_enabled": False,
         "retries_configured": RETRIES,
         "summary": {
-            "responded": sum(1 for c in all_cases if c["responded"]),
-            "total": len(all_cases),
+            "responded": sum(1 for c in results if c["responded"]),
+            "total": len(results),
             "meets_after_gate": sum(
-                1 for c in all_cases if (c["metric"] or {}).get("meets_after_gate")
+                1 for c in results if (c["metric"] or {}).get("meets_after_gate")
             ),
         },
-        "cases": all_cases,
+        "cases": results,
     }
     body = json.dumps(payload, indent=2, default=str).encode("utf-8")
     w.files.upload(file_path=remote_path, contents=io.BytesIO(body), overwrite=True)
     return remote_path
 
 
-# --------------------------------------------------------------------------- #
-# Main                                                                         #
-# --------------------------------------------------------------------------- #
 def main() -> int:
     gt = load_ground_truth(GROUND_TRUTH_PATH)
+    ring_community_map = _load_ring_community_map()
+    cases = _build_cases(ring_community_map)
     w = WorkspaceClient()
 
     run_meta = {
@@ -433,15 +360,11 @@ def main() -> int:
         "space_id": SPACE_ID,
     }
 
-    structural_results = [_run_structural_case(w, case, gt) for case in STRUCTURAL_CASES]
-    teaser_result = _run_teaser_case(w)
+    results = [_run_case(w, case, gt) for case in cases]
+    _print_report(results, run_meta)
 
-    _print_report(structural_results, teaser_result, run_meta)
-
-    all_cases = structural_results + [teaser_result]
-    artifact_path = _write_artifact(w, all_cases, run_meta)
+    artifact_path = _write_artifact(w, results, run_meta)
     print(f"\nArtifact: {artifact_path}")
-
     return 0
 
 
