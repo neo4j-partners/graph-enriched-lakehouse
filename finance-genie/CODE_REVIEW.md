@@ -116,8 +116,8 @@ In `verify_fraud_patterns.py` at line 665, `build_genie_expected` returns a hard
 
 - [x] **Phase 1** — jobs/ bootstrap and consistency (complete)
 - [x] **Phase 2** — verify_fraud_patterns.py split and cleanup (complete)
-- [ ] **Phase 3** — cross-module consolidation and long-method splits (pending)
-- [ ] **Phase 4** — artifact schema + remaining polish (pending)
+- [x] **Phase 3** — cross-module consolidation and long-method splits (complete)
+- [x] **Phase 4** — artifact schema + remaining polish (complete, except optional items)
 
 ### Phase 1 — jobs/ bootstrap and consistency
 
@@ -144,27 +144,28 @@ In `verify_fraud_patterns.py` at line 665, `build_genie_expected` returns a hard
 
 ### Phase 3 — cross-module consolidation and long-method splits
 
-Ring-lookup consolidation (review §"Ring-by-account lookup rebuilt in every check function"):
+Ring-lookup consolidation (review §"Ring-by-account lookup rebuilt in every check function") — **light-duplication approach**: each runtime scope (`setup/` vs `jobs/`) has its own helper, with distinct names to signal the different inputs:
 
-- [ ] Promote `_build_ring_by_account` from `setup/checks_genie_csv.py` into a shared location (e.g. `setup/ring_utils.py` or extend `jobs/demo_utils.py`'s `_build_ring_lookup`) with a single `build_ring_lookup(rings) -> dict[int, int]` signature
-- [ ] Update `setup/checks_genie_csv.py` call sites (lines 163, 223, 286, 357) to import the shared helper
-- [ ] Update `jobs/demo_utils.py` `_build_ring_lookup` (line 96) and all callers to use the same helper; retain the `whale_ids` return via a separate small helper or a tuple-returning wrapper so callers are not forced to recompute
+- [x] `setup/checks_structural.py`: add `build_ring_index(rings: list[list[int]]) -> dict[int, int]`; `setup/checks_genie_csv.py` and `check_ring_density` import it
+- [x] `setup/checks_genie_csv.py`: delete local `_build_ring_by_account`, update the four call sites
+- [x] `jobs/demo_utils.py`: rename to `_ring_index_from_list(rings)` and `_ring_index_from_ground_truth(gt)` (distinct names make the two inputs obvious); `check_ring_pair_fraction` now uses `_ring_index_from_list`
 
 `check_community_purity` refactor (review §"Long methods" and §"return shape is inconsistent"):
 
-- [ ] Extract `_coverage_from_groups`, `_coverage_from_community_map`, `_coverage_from_ring_candidate_flag`, `_coverage_from_pairs` from `jobs/demo_utils.py:173` so the outer function becomes a dispatcher
-- [ ] Normalise the return shape so every branch produces the same keys (`structure_type`, `max_ring_coverage`, `groups_returned`, `total_rows`, `passed`, plus any branch-specific fields under a consistent name)
+- [x] Extract `_coverage_from_groups`, `_coverage_from_community_map`, `_coverage_from_ring_candidate_flag`, `_coverage_from_pairs` from `jobs/demo_utils.py`
+- [x] Add `_purity_result()` helper so every branch produces the same shape and threshold (`>= 0.80`)
 
 `generate_account_links` branch helpers (review §"Long methods"):
 
-- [ ] Extract `_pick_within_ring_transfer`, `_pick_whale_inbound_transfer`, `_pick_whale_outbound_transfer` helpers from `setup/generate_data.py:285` so the 300k-iteration loop body reads as a four-way dispatch
+- [x] Extract `_pick_within_ring_transfer`, `_pick_whale_inbound_transfer`, `_pick_whale_outbound_transfer`, `_pick_random_transfer` from `setup/generate_data.py`; loop body is now a four-way dispatch
 
 ### Phase 4 — artifact schema + remaining polish
 
 `compare_genie_runs.py` shared schema (review §"compare_genie_runs.py duplicates artifact-reading logic"):
 
-- [ ] Define the run-artifact schema once in `jobs/genie_run.py` (either a `TypedDict`, a `dataclass`, or a `load_run_artifact(path) -> RunArtifact` loader with explicit key validation)
-- [ ] Update `automated/compare_genie_runs.py` to read artifacts through the shared loader so missing/renamed keys raise a clear error instead of silent `KeyError`
+- [x] Add `jobs/genie_run_artifact.py` with `TypedDict` schema (`RunArtifact`, `Case`, `Attempt`, `Metric`, `Summary`) and `load_run_artifact(path)` that validates required keys and raises `ArtifactSchemaError`
+- [x] Move shared read helpers (`case_by_name`, `metric_value`, `metric_key`, `last_attempt`) into the same module
+- [x] `automated/compare_genie_runs.py` now calls `load_run_artifact` and imports the helpers; schema errors surface as `FAIL` messages instead of silent `KeyError`s
 
 Optional (review flagged as low-risk; defer unless touched):
 

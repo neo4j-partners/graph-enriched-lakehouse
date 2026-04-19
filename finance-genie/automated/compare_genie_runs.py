@@ -16,7 +16,6 @@ Override discovery with explicit artifact paths on the volume:
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from datetime import datetime, timezone
@@ -32,6 +31,19 @@ if _ENV_PATH.is_file():
 
 from databricks.sdk import WorkspaceClient  # noqa: E402
 from databricks_job_runner.download import download_file, list_volume_files  # noqa: E402
+
+# jobs/ hosts the shared artifact schema; it is not on the default import path
+# because cluster-side modules also live there. Insert it so we can import the
+# schema without pulling in cluster-only bootstrap code.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "jobs"))
+from genie_run_artifact import (  # noqa: E402
+    ArtifactSchemaError,
+    case_by_name,
+    last_attempt,
+    load_run_artifact,
+    metric_key,
+    metric_value,
+)
 
 RESULTS_VOLUME_DIR = os.environ.get("RESULTS_VOLUME_DIR", "").rstrip("/")
 _HERE = Path(__file__).resolve().parent
@@ -65,43 +77,14 @@ def _discover_artifact(ws: WorkspaceClient, label: str) -> str:
 # Markdown report                                                              #
 # --------------------------------------------------------------------------- #
 
-def _case_by_name(artifact: dict) -> dict[str, dict]:
-    return {c["name"]: c for c in artifact.get("cases", [])}
-
-
-def _metric_value(case: dict | None) -> float | None:
-    if case is None:
-        return None
-    m = case.get("metric")
-    if m is None:
-        return None
-    return m.get("value")
-
-
-def _metric_key(case: dict | None) -> str:
-    if case is None:
-        return "metric"
-    m = case.get("metric")
-    if m is None:
-        return "metric"
-    return m.get("key", "metric")
-
-
 def _fmt(val: float | None, precision: int = 2) -> str:
     if val is None:
         return "n/a"
     return f"{val:.{precision}f}"
 
 
-def _last_attempt(case: dict | None) -> dict:
-    if case is None:
-        return {}
-    attempts = case.get("attempts") or []
-    return attempts[-1] if attempts else {}
-
-
 def _sql_preview(case: dict | None) -> str:
-    a = _last_attempt(case)
+    a = last_attempt(case)
     sql = a.get("genie_sql") or ""
     if not sql:
         return "*(none)*"
@@ -109,7 +92,7 @@ def _sql_preview(case: dict | None) -> str:
 
 
 def _top_rows_md(case: dict | None, n: int = 3) -> str:
-    a = _last_attempt(case)
+    a = last_attempt(case)
     rows = (a.get("result_preview_records") or [])[:n]
     if not rows:
         return "*(no data)*"
@@ -126,8 +109,8 @@ def build_report(before: dict, after: dict, compare_ts: str) -> str:
     lines.append(f"# Genie BEFORE vs. AFTER — {compare_ts}")
     lines.append("")
 
-    b_cases = _case_by_name(before)
-    a_cases = _case_by_name(after)
+    b_cases = case_by_name(before)
+    a_cases = case_by_name(after)
     b_resp = before.get("summary", {}).get("responded", 0)
     b_total = before.get("summary", {}).get("total", 3)
     a_resp = after.get("summary", {}).get("responded", 0)
@@ -149,9 +132,9 @@ def build_report(before: dict, after: dict, compare_ts: str) -> str:
         all_names = [c["name"] for c in after.get("cases", [])]
 
     for name in all_names:
-        b_val = _metric_value(b_cases.get(name))
-        a_val = _metric_value(a_cases.get(name))
-        key = _metric_key(a_cases.get(name) or b_cases.get(name))
+        b_val = metric_value(b_cases.get(name))
+        a_val = metric_value(a_cases.get(name))
+        key = metric_key(a_cases.get(name) or b_cases.get(name))
         if b_val is not None and a_val is not None:
             delta = a_val - b_val
             sign = "+" if delta >= 0 else ""
@@ -170,11 +153,11 @@ def build_report(before: dict, after: dict, compare_ts: str) -> str:
         lines.append(f"## {name} — \"{question}\"")
         lines.append("")
 
-        b_rows = (_last_attempt(bc).get("row_count") or 0)
-        a_rows = (_last_attempt(ac).get("row_count") or 0)
-        b_mval = _fmt(_metric_value(bc))
-        a_mval = _fmt(_metric_value(ac))
-        mk = _metric_key(ac or bc)
+        b_rows = (last_attempt(bc).get("row_count") or 0)
+        a_rows = (last_attempt(ac).get("row_count") or 0)
+        b_mval = _fmt(metric_value(bc))
+        a_mval = _fmt(metric_value(ac))
+        mk = metric_key(ac or bc)
 
         lines.append("| | BEFORE | AFTER |")
         lines.append("|---|---|---|")
@@ -235,8 +218,11 @@ def main() -> None:
     download_file(w, before_remote, before_local)
     download_file(w, after_remote, after_local)
 
-    before = json.loads(before_local.read_text(encoding="utf-8"))
-    after = json.loads(after_local.read_text(encoding="utf-8"))
+    try:
+        before = load_run_artifact(before_local)
+        after = load_run_artifact(after_local)
+    except ArtifactSchemaError as exc:
+        _die(str(exc))
 
     # --- Build report ---
     compare_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
