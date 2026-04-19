@@ -47,12 +47,12 @@ import random
 import sys
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
 
+from checks_structural import build_ring_index
 from config import (
     SEED,
     NUM_ACCOUNTS,
@@ -64,20 +64,23 @@ from config import (
     WITHIN_RING_PROB,
     WHALE_RATE,
     WHALE_INBOUND,
-    WHALE_OUTBOUND,
-    WHALE_FIXED_OUTBOUND,
-    WHALE_RECIPIENT_POOL_SIZE,
-    RING_ANCHOR_CNT,
     RING_ANCHOR_PREF,
-    CAPTAIN_COUNT,
-    CAPTAIN_TRANSFER_PROB,
-    FRAUD_LOGNORM_MU,
-    FRAUD_LOGNORM_SIGMA,
-    NORMAL_LOGNORM_MU,
-    NORMAL_LOGNORM_SIGMA,
-    P2P_LOGNORM_MU,
-    P2P_LOGNORM_SIGMA,
 )
+
+WHALE_OUTBOUND = WHALE_INBOUND
+WHALE_RECIPIENT_POOL_SIZE = 30
+RING_ANCHOR_CNT = 4
+CAPTAIN_COUNT = 5
+# Kept below whale inbound (~210) so naive inbound-sort finds whales, not
+# captains. Above ~0.10 captains breach the top-200 inbound and break the
+# whale-hiding property.
+CAPTAIN_TRANSFER_PROB = 0.02
+FRAUD_LOGNORM_MU = 4.1
+FRAUD_LOGNORM_SIGMA = 1.2
+NORMAL_LOGNORM_MU = 4.0
+NORMAL_LOGNORM_SIGMA = 1.2
+P2P_LOGNORM_MU = 5.0
+P2P_LOGNORM_SIGMA = 1.5
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -190,11 +193,7 @@ def generate_transactions(
     all_ids   = merchants_df["merchant_id"].tolist()
     base_date = datetime(2024, 1, 1)
 
-    acct_to_ring = {
-        acct_id: ring_idx
-        for ring_idx, ring in enumerate(rings)
-        for acct_id in ring
-    }
+    acct_to_ring = build_ring_index(rings)
 
     rows = []
     for txn_id in range(1, NUM_TXN + 1):
@@ -282,18 +281,17 @@ def build_ground_truth_json(
     }
 
 
+def _random_account_other_than(exclude: int) -> int:
+    acct = random.randint(1, NUM_ACCOUNTS)
+    while acct == exclude:
+        acct = random.randint(1, NUM_ACCOUNTS)
+    return acct
+
+
 def _pick_within_ring_transfer(
     rings: list,
     ring_captain_lists: list[list[int]],
 ) -> tuple[int, int]:
-    """Sample a (src, dst) within one randomly chosen ring.
-
-    With CAPTAIN_TRANSFER_PROB probability the destination is a captain, which
-    concentrates inbound PageRank on a small set of high-degree nodes.
-    Otherwise both endpoints are sampled uniformly from the ring. Pairs stay
-    low-count (1-3) so Genie's pair-grouping can surface suspicious pairs but
-    not reveal the full ring.
-    """
     ring_idx  = random.randrange(len(rings))
     ring_list = list(rings[ring_idx])
     captains  = ring_captain_lists[ring_idx]
@@ -307,64 +305,35 @@ def _pick_within_ring_transfer(
 
 
 def _pick_whale_inbound_transfer(whale_list: list[int]) -> tuple[int, int]:
-    """Sample a transfer TO a whale from a random account.
-
-    Inflates whale raw inbound counts so Genie's "sort by inbound volume"
-    returns whales, not the fraud ring. PageRank demotes whales because they
-    receive from low-degree peripheral accounts.
-    """
     dst = random.choice(whale_list)
-    src = random.randint(1, NUM_ACCOUNTS)
-    while src == dst:
-        src = random.randint(1, NUM_ACCOUNTS)
-    return src, dst
+    return _random_account_other_than(dst), dst
 
 
 def _pick_whale_outbound_transfer(
     whale_list: list[int],
-    whale_recipient_pools: Optional[dict],
+    whale_recipient_pools: dict,
 ) -> tuple[int, int]:
-    """Sample a transfer FROM a whale.
-
-    Gives whales bidirectional P2P volume so they resemble payment aggregators
-    (high in, high out) rather than pure collection accounts. When
-    whale_recipient_pools is provided, each whale sends only to its
-    pre-assigned pool of recurring recipients — the consistent-counterparty
-    pattern of a real aggregator. Either way, ring members are never targeted,
-    preserving the sender-peripherality property that PageRank uses to
-    separate whales from ring members.
-    """
     src = random.choice(whale_list)
-    if whale_recipient_pools is not None:
-        dst = random.choice(whale_recipient_pools[src])
-    else:
-        dst = random.randint(1, NUM_ACCOUNTS)
-        while dst == src:
-            dst = random.randint(1, NUM_ACCOUNTS)
+    dst = random.choice(whale_recipient_pools[src])
     return src, dst
 
 
 def _pick_random_transfer() -> tuple[int, int]:
     src = random.randint(1, NUM_ACCOUNTS)
-    dst = random.randint(1, NUM_ACCOUNTS)
-    while dst == src:
-        dst = random.randint(1, NUM_ACCOUNTS)
-    return src, dst
+    return src, _random_account_other_than(src)
 
 
 def generate_account_links(
     rings: list,
     whale_ids: set,
-    whale_recipient_pools: Optional[dict] = None,
+    whale_recipient_pools: dict,
 ) -> pd.DataFrame:
     """Generate peer-to-peer transfer links.
 
-    Args:
-        rings: List of sets, each set containing account IDs in one fraud ring.
-        whale_ids: Set of whale account IDs.
-        whale_recipient_pools: When provided (WHALE_FIXED_OUTBOUND=True), maps
-            each whale ID to its pre-assigned list of recurring recipients.
-            When None, whale outbound destinations are drawn randomly.
+    whale_recipient_pools maps each whale ID to its pre-assigned list of
+    recurring recipients. Using a fixed pool makes whales resemble a payment
+    aggregator (consistent counterparties) rather than a pure collection
+    account.
     """
     whale_list = list(whale_ids)
     base_date  = datetime(2024, 1, 1)
@@ -458,14 +427,15 @@ def generate_all(output_dir: Path) -> dict:
     print(f"  transactions: {len(txn_df):,}")
 
     print("Generating account links ...")
-    whale_recipient_pools = (
-        _build_whale_recipient_pools(whale_ids, fraud_ids, WHALE_RECIPIENT_POOL_SIZE)
-        if WHALE_FIXED_OUTBOUND else None
+    whale_recipient_pools = _build_whale_recipient_pools(
+        whale_ids, fraud_ids, WHALE_RECIPIENT_POOL_SIZE
     )
     links_df = generate_account_links(rings, whale_ids, whale_recipient_pools)
     links_df.to_csv(output_dir / "account_links.csv", index=False)
-    mode = f"fixed pool ({WHALE_RECIPIENT_POOL_SIZE} recipients/whale)" if WHALE_FIXED_OUTBOUND else "random"
-    print(f"  account_links: {len(links_df):,}  |  whale outbound: {mode}")
+    print(
+        f"  account_links: {len(links_df):,}  |  "
+        f"whale outbound: fixed pool ({WHALE_RECIPIENT_POOL_SIZE} recipients/whale)"
+    )
 
     return {
         "accounts":        len(accounts_df),

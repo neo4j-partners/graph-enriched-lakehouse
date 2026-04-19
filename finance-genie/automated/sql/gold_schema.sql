@@ -26,7 +26,7 @@ CREATE OR REPLACE TABLE `${catalog}`.`${schema}`.gold_accounts (
     community_risk_rank      INT      COMMENT 'Rank of this account within its community, ordered by similarity_score descending, then risk_score descending, then account_id ascending. Rank 1 = the account with the highest merchant-overlap similarity in the community.',
     inbound_transfer_events  BIGINT   COMMENT 'Count of account_links rows where this account is the transfer destination (dst_account_id)',
     is_ring_community        BOOLEAN  COMMENT 'True when the account community has between 50 and 200 members and a community_avg_risk_score above 1.0, indicating a tightly-knit transfer cluster of anomalous size and centrality',
-    fraud_risk_tier          STRING   COMMENT 'Pre-computed risk classification combining community membership, transfer network centrality, and merchant-visit similarity. Values: high (is_ring_community=true AND risk_score > 0.5 AND similarity_score > 0.12), medium (is_ring_community=true with weaker individual signals), low (all other accounts).'
+    fraud_risk_tier          STRING   COMMENT 'Pre-computed binary risk classification based on community membership. Values: high (is_ring_community=true — the account belongs to a tightly-knit transfer cluster of anomalous size and centrality), low (all other accounts).'
 )
 USING DELTA
 COMMENT 'Account dimension enriched with graph analytics features derived from the transfer network';

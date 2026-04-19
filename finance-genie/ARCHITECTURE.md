@@ -16,7 +16,7 @@ The pipeline has one job: make Genie answer fraud-ring questions it cannot answe
 
 The key constraint is that the fraud rings must be invisible to tabular aggregation. Transaction amounts for fraud accounts are deliberately set within 3% of normal amounts. Genie operating on the Silver tables cannot distinguish ring members from regular accounts. After GDS writes `risk_score`, `community_id`, and `similarity_score` back into the Gold tables, it can.
 
-`setup/verify_fraud_patterns.py` runs immediately after generation. It reads the CSVs and checks four structural properties against fixed thresholds. If any check fails, the pipeline stops before anything is uploaded to Databricks.
+`diagnostics/verify_fraud_patterns.py` is an optional diagnostic. It reads the CSVs and checks four structural properties against fixed thresholds, which is useful when re-tuning parameters. It is not a required pipeline stage: the downstream GDS verification in `validation/verify_gds.py` covers the same structural ground, so a stable-parameter run does not need to invoke it.
 
 ---
 
@@ -37,46 +37,44 @@ These control dataset size. They do not affect signal quality directly, but they
 
 ---
 
-### Primary signal variables
+### Primary signal knobs (env-overridable)
 
-These are the variables that determine whether the GDS algorithms produce clean, separable outputs. They are calibrated together and documented in `worklog/PARAMETER_CALIBRATION.md`. Each variable controls a specific algorithm's signal, and each has a documented lower bound below which that algorithm's verification check fails.
+Three variables determine whether the GDS algorithms produce clean, separable outputs. They are calibrated together and documented in `worklog/PARAMETER_CALIBRATION.md`. Each controls a specific algorithm's signal, and each has a documented lower bound below which that algorithm's verification check fails.
 
-**Louvain community detection**
+**Louvain community detection — `WITHIN_RING_PROB` (default 0.35)**
 
-`WITHIN_RING_PROB` (default 0.35) is the fraction of peer-to-peer transfers that stay within a ring. This is the primary driver of the within-ring edge density ratio. At 0.35, roughly 93% of edges originating from a ring member stay inside the ring, producing a within-ring density approximately 3,400 times higher than the background density. Louvain detects the community boundary from that density contrast. Below 0.25 the internal edge ratio drops below 89% and ring boundaries blur enough that some rings merge into large background communities.
+The fraction of peer-to-peer transfers that stay within a ring, and the primary driver of the within-ring edge density ratio. At 0.35, roughly 93% of edges originating from a ring member stay inside the ring, producing a within-ring density approximately 3,400 times higher than the background density. Louvain detects the community boundary from that density contrast. Below 0.25 the internal edge ratio drops below 89% and ring boundaries blur enough that some rings merge into large background communities. `WITHIN_RING_PROB` also controls the absolute inbound count received by ring captains, which is why it interacts with the hardcoded captain constants below.
 
-`WITHIN_RING_PROB` also controls the absolute inbound count received by ring captains, which is why it interacts with the PageRank variables below.
+**PageRank centrality — `WHALE_INBOUND` (default 0.14)**
 
-**PageRank centrality**
+The fraction of all P2P transfers directed toward whale accounts. At 300,000 total transfers and 200 whales, this gives each whale approximately 210 inbound transfers on average. That number must stay above the inbound count of ring captains so that naive inbound-count sorting finds whales, not ring captains -- establishing that tabular analysis fails and graph analysis is required.
 
-The demo needs PageRank to surface ring captains (hubs within fraud rings) rather than whale accounts (high-volume legitimate accounts). Four variables manage this separation.
+**Node Similarity (Jaccard) — `RING_ANCHOR_PREF` (default 0.35)**
 
-`WHALE_INBOUND` (default 0.14) sets the fraction of all P2P transfers directed toward whale accounts. At 300,000 total transfers and 200 whales, this gives each whale approximately 210 inbound transfers on average. That number must stay above the inbound count of ring captains so that naive inbound-count sorting finds whales, not ring captains -- establishing that tabular analysis fails and graph analysis is required.
-
-`WHALE_OUTBOUND` (default 0.14) sets the fraction of P2P transfers originating from whale accounts. Matching it to `WHALE_INBOUND` gives whales symmetric in/out volumes, making them resemble payment aggregators rather than pure collection accounts. Outbound transfers go to random non-ring accounts, which keeps whale senders peripheral and preserves the PageRank separation.
-
-`WHALE_FIXED_OUTBOUND` (default true) routes each whale's outbound transfers to a fixed pool of recurring recipients rather than random accounts on each transfer. This mirrors the consistent-counterparty pattern of a real payment aggregator and strengthens the behavioral distinction between whales and ring captains.
-
-`WHALE_RECIPIENT_POOL_SIZE` (default 30) sets the size of each whale's fixed recipient pool. Recipients are drawn from plain normal accounts so they remain low-degree and do not absorb PageRank that would confuse the separation.
-
-`CAPTAIN_COUNT` (default 5) designates the number of captains per ring. Captains absorb a fraction of intra-ring inbound transfers to concentrate PageRank within the ring, ensuring ring-member accounts surface near the top of risk-score rankings.
-
-`CAPTAIN_TRANSFER_PROB` (default 0.02) is the fraction of within-ring transfers routed to a captain. At 0.02 and 300,000 total P2P transfers, each captain receives approximately 12 extra inbound transfers from routing, for a total around 155 inbound. This must stay below whale inbound (~210) so the whale-hiding property holds. At 0.10 captains receive approximately 60 extra and breach the top-200 inbound accounts, which is the threshold that demonstrates tabular analysis finds ring captains, not whales.
-
-**Node Similarity (Jaccard)**
-
-`RING_ANCHOR_PREF` (default 0.35) is the probability that a fraud account visits a ring-specific "anchor" merchant on any given transaction. This is the primary driver of Jaccard similarity between ring members. At 0.35, the fraud-to-normal Jaccard ratio is approximately 1.98x, clearing the verification threshold of 1.9x. Below 0.25 the ratio drops to roughly 1.50x and the Node Similarity gate fails.
-
-`RING_ANCHOR_CNT` (default 4) sets the number of shared anchor merchants assigned to each ring. This controls the ceiling on within-ring Jaccard similarity. Fewer anchors narrows the shared merchant pool and reduces the Jaccard ceiling; more anchors raises it but also increases collision risk between rings.
+The probability that a fraud account visits a ring-specific "anchor" merchant on any given transaction, and the primary driver of Jaccard similarity between ring members. At 0.35, the fraud-to-normal Jaccard ratio is approximately 1.98x, clearing the verification threshold of 1.9x. Below 0.25 the ratio drops to roughly 1.50x and the Node Similarity gate fails.
 
 ---
 
-### Tabular signal variables
+### Secondary signal constants (hardcoded)
 
-These six variables control the lognormal distributions for transaction amounts. They exist to keep the fraud/normal tabular signal deliberately weak -- the gap between fraud and normal transaction amounts is less than 3%. This is what makes Genie fail to find fraud rings on the base tables and succeed after GDS enrichment.
+These values are calibrated together with the primary knobs and fixed in `setup/generate_data.py`. They are documented here because they shape the signal, but they are not `.env` variables -- changing them requires editing the module and re-running the verification suite.
 
-| Variable | Default | What it controls |
-|----------|---------|-----------------|
+| Constant | Value | Role |
+|----------|-------|------|
+| `WHALE_OUTBOUND` | equal to `WHALE_INBOUND` | Matching outbound volume gives whales symmetric in/out flow, so they resemble payment aggregators rather than pure collection accounts. Outbound transfers go to non-ring accounts, keeping whale senders peripheral and preserving the PageRank separation. |
+| `WHALE_RECIPIENT_POOL_SIZE` | 30 | Each whale's outbound transfers route to a fixed pool of 30 recurring recipients drawn from plain normal accounts, mirroring the consistent-counterparty pattern of a real payment aggregator. Recipients stay low-degree and do not absorb PageRank. |
+| `RING_ANCHOR_CNT` | 4 | Shared anchor merchants per ring. Sets the ceiling on within-ring Jaccard similarity; fewer anchors narrows the shared merchant pool, more anchors raises the ceiling but increases collision risk between rings. |
+| `CAPTAIN_COUNT` | 5 | Captains per ring. Captains absorb a fraction of intra-ring inbound transfers to concentrate PageRank within the ring, ensuring ring members surface near the top of risk-score rankings. |
+| `CAPTAIN_TRANSFER_PROB` | 0.02 | Fraction of within-ring transfers routed to a captain. At 0.02 with 300,000 P2P transfers, each captain receives approximately 12 extra inbound for a total around 155 -- kept below whale inbound (~210) so the whale-hiding property holds. At 0.10 captains would breach the top-200 inbound accounts and break the separation. |
+
+---
+
+### Tabular signal constants (hardcoded)
+
+Six lognormal-distribution constants keep the fraud/normal tabular signal deliberately weak -- the gap between fraud and normal transaction medians is less than 3%. This is what makes Genie fail on the base tables and succeed after GDS enrichment. The values are fixed in `setup/generate_data.py` because the demo requires the distributions to stay indistinguishable and they do not need ongoing adjustment.
+
+| Constant | Value | What it controls |
+|----------|-------|-----------------|
 | `FRAUD_LOGNORM_MU` | 4.1 | Log-mean of transaction amounts for fraud accounts (~$60 median). |
 | `FRAUD_LOGNORM_SIGMA` | 1.2 | Log-std of transaction amounts for fraud accounts. |
 | `NORMAL_LOGNORM_MU` | 4.0 | Log-mean of transaction amounts for normal accounts (~$55 median). |
@@ -148,7 +146,7 @@ The Spark Connector batch size is hardcoded at 10,000 rows per write operation i
 
 ### Overview
 
-`validation/run_and_verify_gds.py` runs locally against the Neo4j Aura instance. It executes three GDS algorithms in sequence and writes the results back as node properties.
+`validation/run_gds.py` runs locally against the Neo4j Aura instance. It executes three GDS algorithms in sequence and writes the results back as node properties. `validation/verify_gds.py` runs afterward as a separate script and checks the results against fixed thresholds.
 
 **PageRank** runs on a graph projection of `TRANSFERRED_TO` edges treated as undirected. It writes `risk_score` to every `:Account` node. Ring captains, which have elevated inbound transfer counts from other ring members, accumulate higher scores than background accounts.
 
@@ -156,14 +154,14 @@ The Spark Connector batch size is hardcoded at 10,000 rows per write operation i
 
 **Node Similarity** runs on a bipartite projection of `:Account` nodes connected through shared `:Merchant` nodes via `TRANSACTED_WITH` edges. It writes `:SIMILAR_TO` relationships between account pairs with high Jaccard overlap in merchant visit history. The `degreeCutoff` parameter (hardcoded at 5) excludes accounts with fewer than five unique merchant visits from the projection; accounts below this cutoff receive `similarity_score=0` and are later tiered as `medium` rather than `high` in the Gold tables.
 
-After each algorithm writes its properties, the script runs a verification suite against fixed thresholds:
+`validation/verify_gds.py` checks the results against fixed thresholds:
 
 - PageRank fraud/normal average ratio must be at least 3.0x
 - Louvain community purity for at least one ring must reach 50%
 - Node Similarity fraud/normal Jaccard ratio must be at least 1.9x
 - All 25,000 accounts must have all three properties populated
 
-The script exits with status 1 if any check fails.
+It exits with status 1 if any check fails.
 
 ---
 
@@ -185,7 +183,7 @@ The GDS algorithm parameters (iterations, damping factor, topK) are hardcoded in
 
 `jobs/pull_gold_tables.py` runs as a Databricks job. It reads the GDS-enriched node properties from Neo4j via the Spark Connector and writes three Gold Delta tables that Genie can query directly.
 
-`gold_accounts` adds `risk_score`, `community_id`, `similarity_score`, and four derived columns to the base account dimension: `community_size`, `community_avg_risk_score`, `community_risk_rank`, and `inbound_transfer_events`. It also computes `is_ring_community` and `fraud_risk_tier` (high/medium/low) from those columns. The Genie Space for the "after" demo queries this table.
+`gold_accounts` adds `risk_score`, `community_id`, `similarity_score`, and four derived columns to the base account dimension: `community_size`, `community_avg_risk_score`, `community_risk_rank`, and `inbound_transfer_events`. It also computes `is_ring_community` and `fraud_risk_tier` (high when in a ring community, otherwise low) from those columns. The Genie Space for the "after" demo queries this table.
 
 `gold_fraud_ring_communities` aggregates `gold_accounts` by community to produce one row per candidate ring: member count, average and maximum risk score, average similarity score, high-risk member count, and the top-ranking account in the community.
 
@@ -204,8 +202,8 @@ The ring candidate thresholds live in `jobs/gold_constants.py` and are shared be
 | `RING_SIZE_LOW` | 50 | Minimum community member count for a community to be classified as a ring candidate. |
 | `RING_SIZE_HIGH` | 200 | Maximum member count. Communities larger than 200 are background communities, not rings. |
 | `COMMUNITY_AVG_RISK_MIN` | 1.0 | Minimum average `risk_score` for a community to be classified as a ring candidate. Ensures the community is elevated in PageRank, not just cohesive. |
-| `HIGH_TIER_RISK_MIN` | 0.5 | Minimum individual `risk_score` for `fraud_risk_tier='high'`. |
-| `HIGH_TIER_SIM_MIN` | 0.12 | Minimum individual `similarity_score` for `fraud_risk_tier='high'`. |
+
+`fraud_risk_tier` is binary: accounts in a ring-candidate community receive `TIER_HIGH` ("high"), everything else receives `TIER_LOW` ("low"). The same module also holds the GDS verification thresholds (`GDS_PR_RATIO_MIN`, `GDS_COMMUNITY_PURITY_MIN`, `GDS_SIM_RATIO_MIN`, `GDS_RING_EXCLUSION_MAX`) used by `validation/verify_gds.py`.
 
 The validation job also uses two `.env` variables:
 
@@ -226,7 +224,7 @@ Two jobs run the same three natural language questions against both Genie Spaces
 
 `jobs/genie_run_after.py` queries the AFTER space (Silver tables plus the three Gold tables). On the Gold tables, the same questions surface ring captains, Louvain communities, and high-similarity account pairs. The job can optionally gate: with `GATE=true` it exits with status 1 if any metric misses its threshold.
 
-`compare_genie_runs.py` reads both JSON artifacts and produces a side-by-side metric comparison showing the before/after delta for each question.
+`jobs/compare_report.py` reads both JSON artifacts and produces a side-by-side metric comparison showing the before/after delta for each question.
 
 For each question, the job measures one metric:
 
@@ -248,58 +246,3 @@ For each question, the job measures one metric:
 | `GROUND_TRUTH_PATH` | (required) | UC Volume path to `ground_truth.json`. Required for metric computation in both jobs. |
 | `RESULTS_VOLUME_DIR` | (required) | UC Volume directory where Genie run artifacts are written. |
 
----
-
-## What could be simplified
-
-This section identifies variables and pipeline components that add complexity without contributing to the core demo contrast -- Genie failing on base tables and succeeding on Gold tables.
-
-### Whale parameter group (four variables, one property)
-
-`WHALE_INBOUND`, `WHALE_OUTBOUND`, `WHALE_FIXED_OUTBOUND`, and `WHALE_RECIPIENT_POOL_SIZE` collectively implement a single behavioral property: whale accounts must dominate naive inbound-count rankings so that tabular analysis finds whales rather than ring captains. This is the "setup" half of the PageRank story, not the "payoff" half.
-
-All four could be replaced by `WHALE_INBOUND` alone (with `WHALE_OUTBOUND` set equal by convention, `WHALE_FIXED_OUTBOUND` hardcoded to true, and `WHALE_RECIPIENT_POOL_SIZE` hardcoded to 30). The demo never asks the audience to tune whale behavior; the whale population exists to make a structural point and then step aside. Hardcoding the three dependent variables would reduce the configurable surface without affecting any demo outcome.
-
-### CAPTAIN_COUNT and CAPTAIN_TRANSFER_PROB
-
-These two variables fine-tune how much PageRank concentrates within a ring and ensure ring captains stay below whale inbound counts. They are sensitive to `WITHIN_RING_PROB` and `NUM_P2P` in non-obvious ways (as the worklog documents). For a demo, the calibrated values of 5 captains per ring and 0.02 transfer probability are unlikely to change, and the interaction with whale parameters makes the system harder to reason about when one variable changes.
-
-Both could be hardcoded. If future work requires experimenting with ring captain salience, they are easy to re-expose.
-
-### Tabular signal distribution (six variables)
-
-`FRAUD_LOGNORM_MU`, `FRAUD_LOGNORM_SIGMA`, `NORMAL_LOGNORM_MU`, `NORMAL_LOGNORM_SIGMA`, `P2P_LOGNORM_MU`, and `P2P_LOGNORM_SIGMA` control a signal that is deliberately kept near-zero. The demo requires that these distributions produce amounts indistinguishable by Genie SQL. That requirement is satisfied by the current values and does not need ongoing adjustment. All six could be hardcoded in `generate_data.py` and removed from `config.py` and `.env.sample`.
-
-### fraud_risk_tier three-way classification
-
-`gold_accounts.fraud_risk_tier` produces three values: `high`, `medium`, and `low`. The `medium` tier applies to ring members whose merchant visit degree falls below the Node Similarity `degreeCutoff` threshold -- they are in a ring community but their similarity score is zero because they were excluded from the bipartite projection. This tier exists to avoid misclassifying these accounts as low-risk.
-
-For the demo, Genie questions work against `is_ring_community`, `risk_score`, and `similarity_score` directly. The `fraud_risk_tier` column adds a derived interpretation, but removing the medium tier (collapsing to high/not-high) would simplify both the Gold table logic and the column comment without affecting the questions that demonstrate the before/after contrast.
-
-### verify_fraud_patterns.py as a required step
-
-`setup/verify_fraud_patterns.py` gates the pipeline after data generation. It is a useful development tool and a regression check when tuning parameters. For a stable demo at fixed parameter values, it could be run once during setup and then treated as an optional diagnostic rather than a required stage in the execution sequence. The same structural checks run again downstream in `validation/run_and_verify_gds.py` after GDS execution, so the safety net is not entirely removed.
-
-### compare_genie_runs.py as a separate script
-
-`compare_genie_runs.py` reads two JSON artifacts and produces a comparison table. It adds no new Genie calls and no new metrics. Its logic could fold directly into `genie_run_after.py`: after the AFTER run completes, auto-discover the most recent BEFORE artifact and emit the comparison inline. This would remove one local execution step from the demo owner's sequence while keeping the comparison output.
-
-### RING_ANCHOR_CNT
-
-`RING_ANCHOR_CNT` (default 4) controls the number of anchor merchants per ring and sets the Jaccard ceiling. Its effect is secondary to `RING_ANCHOR_PREF` and it does not appear in any verification check independently. Hardcoding it at 4 would remove a variable that is rarely a lever in practice.
-
----
-
-### Summary table
-
-| Candidate | Impact if removed | Recommendation |
-|-----------|------------------|----------------|
-| `WHALE_OUTBOUND`, `WHALE_FIXED_OUTBOUND`, `WHALE_RECIPIENT_POOL_SIZE` | None for demo; whale behavior remains functional | Hardcode |
-| `CAPTAIN_COUNT`, `CAPTAIN_TRANSFER_PROB` | None for demo at validated values | Hardcode |
-| 6 lognormal variables | None; tabular signal gap is deliberate and stable | Hardcode |
-| `RING_ANCHOR_CNT` | None; secondary to `RING_ANCHOR_PREF` | Hardcode |
-| `fraud_risk_tier` medium tier | Minor: `medium` accounts still surface in ring communities | Simplify to binary |
-| `verify_fraud_patterns.py` as required gate | Low: downstream GDS checks cover the same ground | Make optional |
-| `compare_genie_runs.py` as separate script | Low: comparison output still appears inline | Fold into `genie_run_after.py` |
-
-The variables and steps that must remain are the four core signal parameters (`WITHIN_RING_PROB`, `WHALE_INBOUND`, `RING_ANCHOR_PREF`, `CAPTAIN_TRANSFER_PROB`), the scale parameters, `SEED`, and the full GDS and Gold table pipeline. These are the levers that control whether the before/after contrast is visible to Genie.

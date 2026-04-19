@@ -51,13 +51,10 @@ from pyspark.sql import functions as F  # noqa: E402
 from neo4j_secrets import load_neo4j_opts  # noqa: E402
 from gold_constants import (  # noqa: E402
     COMMUNITY_AVG_RISK_MIN,
-    HIGH_TIER_RISK_MIN,
-    HIGH_TIER_SIM_MIN,
     RING_SIZE_HIGH,
     RING_SIZE_LOW,
     TIER_HIGH,
     TIER_LOW,
-    TIER_MEDIUM,
 )
 
 
@@ -169,14 +166,7 @@ def main() -> None:
         )
         .withColumn(
             "fraud_risk_tier",
-            F.when(
-                F.col("is_ring_community")
-                & (F.col("risk_score") > HIGH_TIER_RISK_MIN)
-                & (F.col("similarity_score") > HIGH_TIER_SIM_MIN),
-                TIER_HIGH,
-            )
-            .when(F.col("is_ring_community"), TIER_MEDIUM)
-            .otherwise(TIER_LOW),
+            F.when(F.col("is_ring_community"), TIER_HIGH).otherwise(TIER_LOW),
         )
         .select(
             "account_id",

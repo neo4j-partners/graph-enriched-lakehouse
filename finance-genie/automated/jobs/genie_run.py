@@ -29,6 +29,7 @@ import io
 import json
 import os
 import sys
+import textwrap
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
@@ -189,11 +190,14 @@ def _run_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
         if metric_value is not None and hasattr(metric_value, "item"):
             metric_value = metric_value.item()
 
+        detail = {k: (v.item() if hasattr(v, "item") else v) for k, v in check_result.items()}
+
         metric = {
             "key": case["metric_key"],
             "value": float(metric_value) if metric_value is not None else None,
             "after_gate_criterion": case["after_gate_criterion"],
             "meets_after_gate": bool(check_result.get("passed", False)),
+            "detail": detail,
         }
         final_metric = metric
 
@@ -225,52 +229,140 @@ def _run_case(w: WorkspaceClient, case: dict, gt: dict) -> dict:
 # 5. Report printer                                                            #
 # --------------------------------------------------------------------------- #
 
-def _format_metric(metric: dict | None) -> str:
-    if metric is None:
-        return "n/a"
-    val = metric.get("value")
-    if val is None:
-        return "n/a"
-    return f"{float(val):.2f}"
+_VERDICT_LABELS = {
+    "hub_detection":        ("FRAUD DETECTED",       "NO FRAUD FOUND"),
+    "community_structure":  ("FRAUD RINGS DETECTED", "NO RINGS FOUND"),
+    "merchant_overlap":     ("COLLUSION DETECTED",   "NO COLLUSION FOUND"),
+}
+
+
+def _verdict(result: dict) -> str:
+    if not result["attempts"]:
+        return "ERROR"
+    if not result["responded"]:
+        last_err = (result["attempts"][-1].get("error") or "")
+        return "NO DATA" if "no data" in last_err.lower() else "ERROR"
+    passed = (result["metric"] or {}).get("meets_after_gate")
+    yes, no = _VERDICT_LABELS.get(result["name"], ("RESPONDED", "NO SIGNAL"))
+    return yes if passed else no
+
+
+def _findings(name: str, detail: dict | None) -> list[str]:
+    if not detail:
+        return []
+    if name == "hub_detection":
+        tp = int(detail.get("true_positives", 0))
+        n = int(detail.get("topn", 0))
+        return [
+            f"{tp}/{n} of the top-{n} risk-scored accounts are known fraud ring members",
+            "Precision = share of returned hubs that are ground-truth fraud accounts",
+        ]
+    if name == "community_structure":
+        cov = float(detail.get("max_ring_coverage", 0.0))
+        groups = int(detail.get("groups_returned", 0))
+        rows = int(detail.get("total_rows", 0))
+        stype = detail.get("structure_type", "")
+        return [
+            f"{groups} community group(s) returned across {rows} rows (shape: {stype})",
+            f"Max ring coverage {cov:.0%} = the best community covered this share of a real fraud ring",
+        ]
+    if name == "merchant_overlap":
+        same = int(detail.get("same_ring_pairs", 0))
+        cross = int(detail.get("cross_ring_pairs", 0))
+        unk = int(detail.get("unknown_pairs", 0))
+        total = int(detail.get("total_pairs", 0))
+        touched = int(detail.get("rings_touched", 0))
+        return [
+            f"{same}/{total} top-similarity pairs are same-ring; {cross} cross-ring; {unk} unknown",
+            f"Same-ring pairs span {touched} distinct fraud ring(s)",
+            "Same-ring fraction = share of returned pairs where both accounts share a ground-truth ring",
+        ]
+    return []
+
+
+def _sql_preview(result: dict, max_chars: int = 220) -> str:
+    if not result["attempts"]:
+        return "(no SQL)"
+    sql = (result["attempts"][-1].get("genie_sql") or "").strip()
+    if not sql:
+        return "(no SQL)"
+    single_line = " ".join(sql.split())
+    if len(single_line) > max_chars:
+        return single_line[:max_chars] + "…"
+    return single_line
+
+
+def _wrap_with_indent(text: str, indent: int = 14, width: int = 78) -> str:
+    pad = " " * indent
+    wrapped = textwrap.wrap(text, width=max(width - indent, 20)) or [text]
+    return ("\n" + pad).join(wrapped)
+
+
+def _final_verdict(results: list[dict]) -> str:
+    total = len(results)
+    responded = sum(1 for r in results if r["responded"])
+    detected = sum(
+        1 for r in results
+        if r["responded"] and (r["metric"] or {}).get("meets_after_gate")
+    )
+    if detected == total:
+        return f"Fraud signal detected in {detected}/{total} tests — Genie surfaced hubs, rings, and collusion."
+    if detected == 0 and responded == total:
+        return f"No fraud signal detected — all {total} questions responded but none met the after-GDS criterion."
+    if detected == 0:
+        return f"No fraud signal detected — only {responded}/{total} questions produced usable data."
+    return f"Partial fraud signal — detected {detected}/{total} patterns; {total - detected} question(s) missed criterion."
 
 
 def _print_report(results: list[dict], run_meta: dict) -> None:
-    print("=" * 62)
+    print("=" * 78)
     print(f"Genie run — {run_meta['timestamp_utc']}")
     print(f"Space: {run_meta['space_id']}  Label: {run_meta['label']}")
     gate_note = "GATE=true (exits non-zero on threshold miss)" if GATE else "GATE=false (observation only)"
     print(gate_note)
-    print("=" * 62)
+    print("=" * 78)
 
-    name_w = max(len(r["name"]) for r in results)
-    for r in results:
-        if not r["attempts"]:
-            status = "ERROR  "
-        elif r["responded"]:
-            if GATE:
-                status = "PASS   " if (r["metric"] or {}).get("meets_after_gate") else "FAIL   "
-            else:
-                status = "RESPONDED"
+    for idx, r in enumerate(results, start=1):
+        verdict = _verdict(r)
+        m = r["metric"]
+        rows = int(r["attempts"][-1].get("row_count") or 0) if r["attempts"] else 0
+
+        print()
+        print(f"[{idx}] {r['name']} — {verdict}")
+        print(f"    Question: {_wrap_with_indent(r['question'])}")
+
+        if m and m.get("value") is not None:
+            print(f"    Metric:   {m['key']}={float(m['value']):.2f}  (criterion {m['after_gate_criterion']})")
         else:
-            last_err = (r["attempts"][-1].get("error") or "")
-            status = "NO_DATA" if "no data" in last_err.lower() else "ERROR  "
+            print(f"    Metric:   n/a  (criterion {(m or {}).get('after_gate_criterion', 'n/a')})")
 
-        metric_str = ""
-        if r["metric"]:
-            m = r["metric"]
-            metric_str = f"{m['key']}={_format_metric(m)}  criterion={m['after_gate_criterion']}"
-        print(f"  {r['name']:<{name_w}}  {status}  {metric_str}")
+        findings = _findings(r["name"], (m or {}).get("detail"))
+        if findings:
+            print(f"    Finding:  {findings[0]}")
+            for line in findings[1:]:
+                print(f"              {line}")
+        elif not r["responded"] and r["attempts"]:
+            err = (r["attempts"][-1].get("error") or "").strip()
+            if err:
+                print(f"    Error:    {err[:200]}")
+
+        print(f"    Rows:     {rows}")
+        print(f"    SQL:      {_sql_preview(r)}")
 
     responded = sum(1 for r in results if r["responded"])
-    print("-" * 62)
+    print()
+    print("-" * 78)
     print(f"Responded: {responded}/{len(results)}")
+    print(f"Verdict:   {_final_verdict(results)}")
 
 
 # --------------------------------------------------------------------------- #
 # 6. Artifact writer                                                           #
 # --------------------------------------------------------------------------- #
 
-def _write_artifact(w: WorkspaceClient, results: list[dict], run_meta: dict) -> str:
+def _write_artifact(
+    w: WorkspaceClient, results: list[dict], run_meta: dict
+) -> tuple[str, dict]:
     ts_safe = run_meta["timestamp_utc"].replace(":", "-").replace(".", "-")
     filename = f"genie_run_{LABEL}_{ts_safe}.json"
     remote_path = f"{RESULTS_VOLUME_DIR}/{filename}"
@@ -292,14 +384,22 @@ def _write_artifact(w: WorkspaceClient, results: list[dict], run_meta: dict) -> 
     }
     body = json.dumps(payload, indent=2, default=str).encode("utf-8")
     w.files.upload(file_path=remote_path, contents=io.BytesIO(body), overwrite=True)
-    return remote_path
+    # Round-trip through JSON so the returned dict matches what a downstream
+    # load_run_artifact() read would produce (e.g. tuples become lists).
+    return remote_path, json.loads(body)
 
 
 # --------------------------------------------------------------------------- #
 # 7. Main                                                                     #
 # --------------------------------------------------------------------------- #
 
-def main() -> int:
+def run() -> tuple[int, str, dict]:
+    """Execute the Genie run and return (exit_code, artifact_remote_path, artifact_dict).
+
+    The in-memory artifact dict matches the JSON written to the UC Volume and is
+    returned so callers (e.g. genie_run_after.py's comparison fold) can reuse it
+    without re-reading the Volume.
+    """
     gt = load_ground_truth(GROUND_TRUTH_PATH)
     w = WorkspaceClient()
 
@@ -314,7 +414,7 @@ def main() -> int:
 
     _print_report(results, run_meta)
 
-    artifact_path = _write_artifact(w, results, run_meta)
+    artifact_path, artifact = _write_artifact(w, results, run_meta)
     print(f"\nArtifact: {artifact_path}")
 
     if GATE:
@@ -323,9 +423,14 @@ def main() -> int:
             print(f"\nGATE FAIL — {len(failed)} case(s) did not meet after-gate criterion:")
             for r in failed:
                 print(f"  {r['name']}")
-            return 1
+            return 1, artifact_path, artifact
 
-    return 0
+    return 0, artifact_path, artifact
+
+
+def main() -> int:
+    exit_code, _, _ = run()
+    return exit_code
 
 
 if __name__ == "__main__":

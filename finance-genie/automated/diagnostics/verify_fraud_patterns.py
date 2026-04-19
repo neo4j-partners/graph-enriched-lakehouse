@@ -1,18 +1,11 @@
-"""
-Finance Genie — Fraud Pattern Verification Script
+"""Regression diagnostic for the structural fraud patterns in the generated dataset.
 
-Measures the three structural fraud patterns in the generated dataset
-(whale-PageRank, ten-ring density ratio, anchor-merchant Jaccard) plus
-column-signal sanity checks, and reports each result against the targets
-documented in automated/README.md.
-
-Prints a rich report to the terminal. Exits with status 1 if any check
-fails, so the script is usable as a regression gate.
+Measures the whale-PageRank separation, ten-ring density ratio, anchor-merchant
+Jaccard, and column-signal sanity, and exits non-zero on any threshold miss.
 
 Usage:
-    From the automated/ directory (which contains pyproject.toml):
-        uv run setup/verify_fraud_patterns.py
-        uv run setup/verify_fraud_patterns.py --input ./data/
+    uv run diagnostics/verify_fraud_patterns.py
+    uv run diagnostics/verify_fraud_patterns.py --input ./data/
 """
 
 from __future__ import annotations
@@ -23,7 +16,9 @@ import random
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_AUTOMATED = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(_AUTOMATED))
+sys.path.insert(0, str(_AUTOMATED / "setup"))
 
 from config import SEED  # noqa: E402
 from generate_data import build_ground_truth  # noqa: E402

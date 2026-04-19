@@ -1,9 +1,9 @@
 """Shared schema + loader for genie_run_*.json artifacts.
 
-Both the writer (jobs/genie_run.py) and the reader
-(automated/compare_genie_runs.py) depend on this shape. Keeping the keys in
-one place means a rename here surfaces at both ends instead of producing a
-silent KeyError in the comparison report.
+Both the writer (jobs/genie_run.py) and the comparison reader
+(jobs/compare_report.py, invoked from jobs/genie_run_after.py) depend on this
+shape. Keeping the keys in one place means a rename here surfaces at both
+ends instead of producing a silent KeyError in the comparison report.
 """
 
 from __future__ import annotations
@@ -103,7 +103,7 @@ def _require_keys(obj: dict, required: tuple[str, ...], *, context: str) -> None
 
 
 # --------------------------------------------------------------------------- #
-# Read-side helpers shared by compare_genie_runs.py                            #
+# Read-side helpers shared by compare_report.py                                #
 # --------------------------------------------------------------------------- #
 
 def case_by_name(artifact: RunArtifact) -> dict[str, Case]:

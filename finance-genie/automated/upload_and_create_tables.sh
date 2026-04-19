@@ -16,7 +16,7 @@
 #   ./upload_and_create_tables.sh
 #
 # Optional overrides:
-#   DATABRICKS_PROFILE   (default: azure-rk-knight)
+#   DATABRICKS_PROFILE   (required — set in .env)
 #   DATABRICKS_CATALOG   (default: graph-enriched-lakehouse)
 #   DATABRICKS_SCHEMA    (default: graph-enriched-schema)
 #   DATABRICKS_VOLUME    (default: graph-enriched-volume)
@@ -33,7 +33,11 @@ if [[ -f "${SCRIPT_DIR}/.env" ]]; then
 fi
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-PROFILE="${DATABRICKS_PROFILE:-azure-rk-knight}"
+if [[ -z "${DATABRICKS_PROFILE:-}" ]]; then
+  echo "Error: DATABRICKS_PROFILE is not set. Add it to automated/.env." >&2
+  exit 1
+fi
+PROFILE="${DATABRICKS_PROFILE}"
 CATALOG="${DATABRICKS_CATALOG:-graph-enriched-lakehouse}"
 SCHEMA="${DATABRICKS_SCHEMA:-graph-enriched-schema}"
 VOLUME="${DATABRICKS_VOLUME:-graph-enriched-volume}"

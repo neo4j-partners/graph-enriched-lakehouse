@@ -10,15 +10,16 @@ The notebooks under `workshop/` push Delta Lake tables into Neo4j and pull enric
 │                                                                 │
 │  1. uv run setup/generate_data.py                               │
 │       → data/  (5 CSVs + ground_truth.json)                     │
-│  2. uv run setup/verify_fraud_patterns.py                       │
-│       → validates 4 structural fraud properties                 │
-│  3. ./upload_and_create_tables.sh                               │
+│  2. ./upload_and_create_tables.sh                               │
 │       → Unity Catalog: 5 managed Delta tables                   │
-│  4. ./setup_secrets.sh                                          │
+│  3. ./setup_secrets.sh                                          │
 │       → Databricks secret scope: uri, username, password,       │
 │         genie_space_id                                          │
-│  5. uv run setup/provision_genie_spaces.py                      │
+│  4. uv run setup/provision_genie_spaces.py                      │
 │       → Genie Spaces: before-GDS + after-GDS                    │
+│                                                                 │
+│  Optional diagnostic (regression check when tuning parameters): │
+│    uv run diagnostics/verify_fraud_patterns.py                  │
 └──────────────────────────┬──────────────────────────────────────┘
                            │  python -m cli submit
                            ▼
@@ -36,11 +37,13 @@ The notebooks under `workshop/` push Delta Lake tables into Neo4j and pull enric
 ┌─────────────────────────────────────────────────────────────────┐
 │  Neo4j Aura                                                     │
 │                                                                 │
-│  7. uv run validation/run_and_verify_gds.py                     │
+│  7. uv run validation/run_gds.py                                │
 │       (runs locally; connects to Aura via graphdatascience)     │
 │       PageRank        → risk_score on every :Account node       │
 │       Louvain         → community_id on every :Account node     │
 │       Node Similarity → similarity_score + :SIMILAR_TO rels     │
+│     uv run validation/verify_gds.py                             │
+│       verifies GDS outputs against ground_truth.json            │
 └──────────────────────────┬──────────────────────────────────────┘
                            │  Neo4j Spark Connector
                            ▼
@@ -92,15 +95,7 @@ uv run setup/generate_data.py
 Generates the synthetic fraud dataset and writes six files to `automated/data/`:
 `accounts.csv`, `merchants.csv`, `transactions.csv`, `account_links.csv`, `account_labels.csv`, `ground_truth.json`.
 
-### 3. Verify fraud patterns
-
-```bash
-uv run setup/verify_fraud_patterns.py
-```
-
-Checks four structural properties the demo depends on: within-ring density ratio, anchor-merchant visit rate, PageRank separation, and Node Similarity ratio. All four must pass before loading data to Databricks.
-
-### 4. Upload data and create tables
+### 3. Upload data and create tables
 
 ```bash
 ./upload_and_create_tables.sh
@@ -115,15 +110,15 @@ Schema and data are separate by design:
 
 The three gold tables (`gold_accounts`, `gold_account_similarity_pairs`, `gold_fraud_ring_communities`) are created by `pull_gold_tables.py` on the cluster using `sql/gold_schema.sql` (uploaded alongside the job scripts), following the same DDL-first pattern.
 
-### 5. Store credentials as Databricks secrets
+### 4. Store credentials as Databricks secrets
 
 ```bash
-./setup_secrets.sh --profile azure-rk-knight
+./setup_secrets.sh --profile <USER-PROFILE>
 ```
 
 Reads `automated/.env` and writes four secrets into the `neo4j-graph-engineering` scope: `uri`, `username`, `password`, and `genie_space_id` (from `GENIE_SPACE_ID_BEFORE`). Workshop participants can also store their own credentials interactively by running `workshop/00_required_setup.ipynb`.
 
-### 6. Provision Genie Spaces
+### 5. Provision Genie Spaces
 
 ```bash
 uv run setup/provision_genie_spaces.py
@@ -131,16 +126,27 @@ uv run setup/provision_genie_spaces.py
 
 Idempotently configures both Genie Spaces defined in `automated/.env` (`GENIE_SPACE_ID_BEFORE` and `GENIE_SPACE_ID_AFTER`). For each space it replaces table identifiers, sample questions, and text instructions with the contract declared at the top of the script. Exits 1 if any space fails the post-update assertion.
 
-## Running jobs
+### Optional: verify fraud patterns
 
-All CLI commands are run from inside `automated/`:
+```bash
+uv run diagnostics/verify_fraud_patterns.py
+```
+
+Regression diagnostic for the four structural fraud properties (within-ring density, anchor-merchant visit rate, PageRank separation, Node Similarity ratio). Run this when tuning generator parameters or investigating a suspected data-generation regression. It is not part of the required setup sequence; downstream GDS checks in `validation/verify_gds.py` cover the same properties after the algorithms have executed.
+
+## Running Jobs
+
+All pipeline jobs are submitted as Databricks Python tasks using the same pattern from inside `automated/`:
+
+```bash
+uv run python -m cli submit <script>
+```
+
+The sections below each follow this pattern. Before submitting any script, upload the job scripts to your workspace:
 
 ```bash
 # Upload all jobs/ scripts (and sql/gold_schema.sql) to your Databricks workspace
 uv run python -m cli upload --all
-
-# Submit a script and stream its result state and run URL
-uv run python -m cli submit <script>
 
 # Inspect logs from the most recent run
 uv run python -m cli logs
@@ -149,7 +155,7 @@ uv run python -m cli logs
 uv run python -m cli clean --yes
 ```
 
-### `neo4j_ingest.py`
+### Neo4j Ingest
 
 Pushes the five Delta tables into Neo4j as a property graph.
 
@@ -157,17 +163,27 @@ Pushes the five Delta tables into Neo4j as a property graph.
 uv run python -m cli submit neo4j_ingest.py
 ```
 
-### GDS pipeline — `run_and_verify_gds.py`
+### Run GDS Pipeline
 
-Runs the three GDS algorithms against Neo4j Aura and verifies their outputs. Runs locally using the `graphdatascience` Python client; no Databricks cluster required.
+Runs the three GDS algorithms against Neo4j Aura. Runs locally using the `graphdatascience` Python client; no Databricks cluster required.
 
 ```bash
-uv run validation/run_and_verify_gds.py
+uv run validation/run_gds.py
 ```
 
-Writes `risk_score`, `community_id`, and `similarity_score` properties to every `:Account` node, and creates `:SIMILAR_TO` relationships. Also runs a diagnostic suite confirming PageRank separation, Louvain ring coverage, and Node Similarity ratios. Run this after `neo4j_ingest.py` completes and before submitting `pull_gold_tables.py`.
+Writes `risk_score`, `community_id`, and `similarity_score` properties to every `:Account` node, and creates `:SIMILAR_TO` relationships. Run this after `neo4j_ingest.py` completes.
 
-### `pull_gold_tables.py`
+### Verify GDS Outputs
+
+Checks all five signal properties against ground truth and prints a summary report. Exits non-zero on any failure.
+
+```bash
+uv run validation/verify_gds.py
+```
+
+Confirms PageRank separation, Louvain ring coverage, and Node Similarity ratios. Run this after `run_gds.py` completes and before submitting `pull_gold_tables.py`.
+
+### Pull Gold Tables
 
 Reads GDS features back from Neo4j and writes three enriched gold tables to Delta Lake:
 `gold_accounts`, `gold_account_similarity_pairs`, `gold_fraud_ring_communities`.
@@ -176,7 +192,7 @@ Reads GDS features back from Neo4j and writes three enriched gold tables to Delt
 uv run python -m cli submit pull_gold_tables.py
 ```
 
-### `validate_gold_tables.py`
+### Validate Gold Tables
 
 Data-correctness gate. Run after `pull_gold_tables.py` and before `genie_run_before.py` to confirm the gold tables align with ground truth before running Genie tests.
 
@@ -184,7 +200,7 @@ Data-correctness gate. Run after `pull_gold_tables.py` and before `genie_run_bef
 uv run python -m cli submit validate_gold_tables.py
 ```
 
-### `genie_run.py`
+### Genie Runs
 
 Parameterized Genie runner — runs the same three analyst-phrased questions against any Genie Space, records results, and writes a JSON artifact to `RESULTS_VOLUME_DIR`. No pass/fail gating by default. See [Automated Genie testing](#automated-genie-testing).
 
@@ -201,22 +217,17 @@ uv run python -m cli submit genie_run_after.py
 # Add GATE=true to .env, submit genie_run_after.py, then remove it from .env
 ```
 
-### `compare_genie_runs.py`
+### BEFORE vs AFTER Comparison
 
-Local script that auto-discovers the most recent BEFORE and AFTER run artifacts from `RESULTS_VOLUME_DIR`, downloads them, and emits a markdown side-by-side comparison report. Run this after both `genie_run.py` submissions complete.
+The side-by-side markdown comparison is folded into `genie_run_after.py`. When `BEFORE_ARTIFACT` is set in `.env`, the wrapper reads both artifacts from the UC Volume after the AFTER run completes and prints the comparison report to stdout (visible in the job run log). The CLI runner forwards `BEFORE_ARTIFACT` to the job as a `KEY=VALUE` parameter alongside the rest of `.env`.
 
 ```bash
-# Auto-discover latest before + after artifacts
-uv run compare_genie_runs.py
-
-# Or replay against specific historical artifacts
-uv run compare_genie_runs.py \
-    --before-path /Volumes/.../genie_run_before_2026-04-18T17-00-00Z.json \
-    --after-path  /Volumes/.../genie_run_after_2026-04-18T17-10-00Z.json
+# Add the BEFORE artifact path to .env, then submit the AFTER run:
+#   BEFORE_ARTIFACT=/Volumes/.../genie_run_before_2026-04-18T17-00-00Z.json
+uv run python -m cli submit genie_run_after.py
 ```
 
-Writes the report to `automated/logs/compare_<timestamp>.md` and prints an E2E summary line:
-`E2E PASS — 8/8 steps green, 6/6 Genie questions returned data`
+When `BEFORE_ARTIFACT` is unset, the wrapper prints a one-line note explaining how to add it — the AFTER run itself still completes normally.
 
 ## What `neo4j_ingest.py` does
 
@@ -236,7 +247,7 @@ Runs six checks against the three gold tables, joining against `ground_truth.jso
 1. `gold_fraud_ring_communities` has exactly 10 rows with `is_ring_candidate=true`
 2. Each ring-candidate community is dominated by a single ground-truth ring covering ≥ 80% of its home ring
 3. All ring-candidate communities have `member_count` BETWEEN 50 AND 200
-4. `fraud_risk_tier='high'` covers ≥ 75% of the 1,000 ring-member accounts
+4. `fraud_risk_tier='high'` covers ≥ 95% of the 1,000 ring-member accounts
 5. For each ring-candidate community, `top_account_id` is a member of the dominant ring per `ground_truth.json`
 6. In `gold_account_similarity_pairs`, `same_community=true` holds for ≥ 95% of pairs where both accounts are in the same ring per `ground_truth.json`
 
@@ -259,19 +270,48 @@ Both the BEFORE (base-table-only) and AFTER (gold-table-enriched) spaces receive
 ### Sample output (`GATE=false`, default)
 
 ```
-==============================================================
-Genie run — 2026-04-18T17:05:22Z
-Space: 01f13926c98315898f217625c525f8fb  Label: before
+==============================================================================
+Genie run — 2026-04-19T04:35:07Z
+Space: 01f139ac0f8f1336a622615dcf478f71  Label: after
 GATE=false (observation only)
-==============================================================
-  hub_detection      RESPONDED  precision=0.43  criterion=> 0.70
-  community_structure  RESPONDED  max_ring_coverage=0.02  criterion=> 0.80
-  merchant_overlap   RESPONDED  same_ring_fraction=0.08  criterion=> 0.60
---------------------------------------------------------------
-Responded: 3/3
+==============================================================================
 
-Artifact: /Volumes/.../genie_test_results/genie_run_before_2026-04-18T17-05-22Z.json
+[1] hub_detection — FRAUD DETECTED
+    Question: Are there accounts that seem to be the hub of a money movement
+              network that are potentially fraudulent?
+    Metric:   precision=1.00  (criterion > 0.70)
+    Finding:  20/20 of the top-20 risk-scored accounts are known fraud ring members
+              Precision = share of returned hubs that are ground-truth fraud accounts
+    Rows:     20
+    SQL:      SELECT account_id, risk_score, fraud_risk_tier FROM gold_accounts ORDER BY risk_score DESC LIMIT 20
+
+[2] community_structure — FRAUD RINGS DETECTED
+    Question: Find groups of accounts transferring money heavily among
+              themselves.
+    Metric:   max_ring_coverage=1.00  (criterion > 0.80)
+    Finding:  10 community group(s) returned across 10 rows (shape: aggregates_community_map)
+              Max ring coverage 100% = the best community covered this share of a real fraud ring
+    Rows:     10
+    SQL:      SELECT community_id, member_count, top_account_id FROM gold_fraud_ring_communities WHERE is_ring_candidate = true
+
+[3] merchant_overlap — COLLUSION DETECTED
+    Question: Which pairs of accounts have visited the most merchants in
+              common?
+    Metric:   same_ring_fraction=1.00  (criterion > 0.60)
+    Finding:  100/100 top-similarity pairs are same-ring; 0 cross-ring; 0 unknown
+              Same-ring pairs span 10 distinct fraud ring(s)
+              Same-ring fraction = share of returned pairs where both accounts share a ground-truth ring
+    Rows:     100
+    SQL:      SELECT account_a_id, account_b_id, similarity_score FROM gold_account_similarity_pairs ORDER BY similarity_score DESC LIMIT 100
+
+------------------------------------------------------------------------------
+Responded: 3/3
+Verdict:   Fraud signal detected in 3/3 tests — Genie surfaced hubs, rings, and collusion.
+
+Artifact: /Volumes/.../genie_test_results/genie_run_after_2026-04-19T04-35-07Z.json
 ```
+
+BEFORE-space runs show the inverted form — each case reads `NO FRAUD FOUND` / `NO RINGS FOUND` / `NO COLLUSION FOUND`, and the closing `Verdict:` line reports "No fraud signal detected" when the base tables fail to meet the after-GDS criterion.
 
 Each question runs up to `GENIE_TEST_RETRIES` times (default 2). Under `GATE=true`, the job exits non-zero if any after-GDS threshold is not met.
 
@@ -289,9 +329,11 @@ uv run validation/validate_cluster.py
 # Verify node/edge counts and graph structure after ingestion
 uv run validation/validate_neo4j_graph.py
 
-# Run GDS algorithms against Neo4j Aura and verify outputs
-# Also the pipeline step between neo4j_ingest.py and pull_gold_tables.py
-uv run validation/run_and_verify_gds.py
+# Run GDS algorithms (writes risk_score, community_id, similarity_score)
+uv run validation/run_gds.py
+
+# Verify GDS outputs — prints a pass/fail summary report
+uv run validation/verify_gds.py
 
 # Diagnose Node Similarity scores and Jaccard ratios
 uv run validation/diagnose_similarity.py
@@ -306,7 +348,6 @@ automated/
 ├── pyproject.toml              # uv project; all dependencies
 ├── .env.sample                 # config template — copy to .env, never commit .env
 ├── config.py                   # loads .env, exposes all tuning constants
-├── compare_genie_runs.py       # compares before/after artifacts, emits markdown report
 ├── upload_and_create_tables.sh # applies sql/schema.sql, uploads CSVs, loads Delta tables
 ├── setup_secrets.sh            # stores Neo4j credentials in Databricks secrets
 ├── genie_instructions.md       # instructions text embedded in Genie Spaces
@@ -314,8 +355,9 @@ automated/
 ├── logs/                       # local mirror of UC Volume artifacts + compare reports
 ├── setup/                      # one-time local admin scripts (run before a demo)
 │   ├── generate_data.py        # generates synthetic fraud dataset to data/
-│   ├── verify_fraud_patterns.py # checks structural properties of generated data
 │   └── provision_genie_spaces.py # idempotently configures before/after Genie Spaces
+├── diagnostics/                # optional regression checks — not in required sequence
+│   └── verify_fraud_patterns.py # checks structural properties of generated data
 ├── sql/                        # all DDL in one place
 │   ├── schema.sql              # base table DDL with UC column comments
 │   └── gold_schema.sql         # gold table DDL with UC column comments
@@ -328,7 +370,8 @@ automated/
 │   ├── validate_gold_tables.py # data-correctness gate for the three gold tables
 │   ├── genie_run.py            # parameterized Genie runner (core logic)
 │   ├── genie_run_before.py     # submit wrapper — targets GENIE_SPACE_ID_BEFORE
-│   ├── genie_run_after.py      # submit wrapper — targets GENIE_SPACE_ID_AFTER
+│   ├── genie_run_after.py      # submit wrapper — AFTER run + optional BEFORE/AFTER comparison
+│   ├── compare_report.py       # pure markdown comparison builder, used by genie_run_after.py
 │   ├── demo_utils.py           # Genie API + check helpers
 │   ├── gold_constants.py       # shared thresholds used by pull and validate
 │   └── neo4j_secrets.py        # loads Neo4j credentials from Databricks secret scope
@@ -336,6 +379,7 @@ automated/
     ├── validate_neo4j.py       # connection check
     ├── validate_cluster.py     # cluster state and required library check
     ├── validate_neo4j_graph.py # node/edge count and structure checks
-    ├── run_and_verify_gds.py   # runs GDS pipeline and verifies outputs
+    ├── run_gds.py              # runs GDS algorithms against Neo4j Aura
+    ├── verify_gds.py           # verifies GDS outputs, prints summary report
     └── diagnose_similarity.py  # Jaccard ratio diagnostics
 ```

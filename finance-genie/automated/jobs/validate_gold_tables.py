@@ -15,7 +15,7 @@ Six checks:
   2. Each ring-candidate community is dominated by a single ground-truth ring:
      the dominant ring's members cover ≥80% of their home ring
   3. All ring-candidate communities have member_count BETWEEN 50 AND 200
-  4. fraud_risk_tier='high' covers ≥ 75% of the 1,000 ring-member accounts
+  4. fraud_risk_tier='high' covers ≥ 95% of the 1,000 ring-member accounts
   5. For each ring-candidate community, top_account_id is a member of the
      dominant ring per ground_truth.json
   6. In gold_account_similarity_pairs, same_community=true holds for ≥ 95% of
@@ -61,11 +61,12 @@ from gold_constants import (  # noqa: E402
 # --------------------------------------------------------------------------- #
 RING_CANDIDATE_COUNT_EXPECTED = 10
 RING_DOMINANCE_MIN = 0.80
-# RING_EXCLUSION_MAX=0.20 in run_and_verify_gds.py caps the fraction of ring
-# members that the NodeSim bipartite projection excludes. Excluded members
-# fall to fraud_risk_tier='medium' — so worst-case 'high' coverage is ~80%.
-# 0.75 leaves 5% headroom over that cap while still catching real regressions.
-HIGH_TIER_FRAC_MIN = 0.75
+# fraud_risk_tier is binary and keyed off is_ring_community. Every ring member
+# that lands in a ring-candidate community is 'high'; the only way a ring
+# member falls to 'low' is if Louvain split its ring so the member's community
+# is not a ring candidate. 0.95 allows for that tail while catching real
+# regressions.
+HIGH_TIER_FRAC_MIN = 0.95
 SAME_COMMUNITY_FRAC_MIN = 0.95
 
 
@@ -243,7 +244,7 @@ def _run_checks(
         print("OK    all ring candidates in range")
 
     # ------------------------------------------------------------------- #
-    # Check 4 — fraud_risk_tier='high' covers ≥ 75% of ring members       #
+    # Check 4 — fraud_risk_tier='high' covers ≥ 95% of ring members       #
     # ------------------------------------------------------------------- #
     header("[4/6] fraud_risk_tier='high' coverage of ring members")
     fraud_df = ring_df.select("account_id").distinct()
