@@ -134,7 +134,7 @@ TEST_CASES = [
         ),
         "check_fn": _merchant_check,
         "metric_key": "same_ring_fraction",
-        "after_gate_criterion": "> 0.60",
+        "after_gate_criterion": "> 0.60 with >=5 pairs",
     },
 ]
 

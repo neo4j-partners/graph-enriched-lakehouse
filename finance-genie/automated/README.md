@@ -4,6 +4,8 @@ This directory contains the one-time admin setup scripts and CLI-driven job runn
 
 The notebooks under `workshop/` push Delta Lake tables into Neo4j and pull enriched graph features back, but they require a live notebook kernel and manual execution. The scripts in `automated/` wrap that same logic as Databricks Python tasks that run unattended via the CLI.
 
+One of the goals of this project is to show that even with fairly in-depth guidance toward the enriched data in the gold tables, Genie still does not always find the fraud — because the SQL Genie generates is non-deterministic, so the fraud it surfaces is mixed run-to-run. For example, in one AFTER run Genie read "the pairs of accounts that have visited the most merchants in common" as a strict superlative and emitted `RANK() OVER (ORDER BY similarity_score DESC) ... WHERE rnk = 1`, returning only 4 pairs tied at `similarity_score=0.5`. All 4 were same-ring, spanning 2 distinct fraud rings — real signal, but a much thinner sample than the AFTER sample output below (`ORDER BY similarity_score DESC LIMIT 100`, 100 pairs across 10 rings). Same question, same space, same gold tables; different SQL shape, different verdict. This non-determinism is the point the demo is designed to expose.
+
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │  Local machine — one-time setup                                 │
@@ -263,7 +265,7 @@ Writes a JSON artifact to `RESULTS_VOLUME_DIR`. Exits non-zero on any failure.
 |------|----------|----------------|
 | `hub_detection` | "Are there accounts that seem to be the hub of a money movement network that are potentially fraudulent?" | top-20 precision > 0.70 |
 | `community_structure` | "Find groups of accounts transferring money heavily among themselves." | max Louvain ring coverage > 0.80 |
-| `merchant_overlap` | "Which pairs of accounts have visited the most merchants in common?" | same-ring fraction > 0.60 |
+| `merchant_overlap` | "Which pairs of accounts have visited the most merchants in common?" | same-ring fraction > 0.60 with ≥5 pairs |
 
 Both the BEFORE (base-table-only) and AFTER (gold-table-enriched) spaces receive the same questions. The demo narrative holds because the gold tables are designed to answer these analyst-phrased questions well; the base tables are not.
 
@@ -297,7 +299,7 @@ GATE=false (observation only)
 [3] merchant_overlap — COLLUSION DETECTED
     Question: Which pairs of accounts have visited the most merchants in
               common?
-    Metric:   same_ring_fraction=1.00  (criterion > 0.60)
+    Metric:   same_ring_fraction=1.00  (criterion > 0.60 with >=5 pairs)
     Finding:  100/100 top-similarity pairs are same-ring; 0 cross-ring; 0 unknown
               Same-ring pairs span 10 distinct fraud ring(s)
               Same-ring fraction = share of returned pairs where both accounts share a ground-truth ring
