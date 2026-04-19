@@ -1,73 +1,263 @@
-"""Submit wrapper: run genie_run.py against the AFTER (gold-table-enriched) Genie Space.
+"""AFTER space runner — asks analyst-style questions against the enriched Genie Space.
 
-After the Genie run completes, if `BEFORE_ARTIFACT` is set in `.env` (forwarded
-to the job by the CLI runner as a KEY=VALUE parameter), reads both artifacts
-from the UC Volume and prints a markdown comparison report to stdout. When the
-path is not set, prints a one-line note explaining how to add the comparison.
+Loads five category sampler modules (one per question category), randomly picks
+one question from each, asks all selected questions to Genie, and captures the
+responses (SQL, rows, summary text) as an artifact. No grading is performed;
+grading lands in Phase 5 once the captured responses stabilize.
+
+Environment variables (injected by the CLI runner as KEY=VALUE argv):
+  GENIE_SPACE_ID_AFTER       — required; the AFTER space to query
+  RESULTS_VOLUME_DIR         — required; UC Volume path for artifact output
+  SAMPLERS                   — optional; comma-separated category module names
+                               (e.g. "cat1_portfolio,cat3_community_rollup");
+                               defaults to all five categories
+  GENIE_TEST_RETRIES         — optional; attempts per question (default 2)
+  GENIE_TEST_TIMEOUT_SECONDS — optional; per-attempt timeout (default 120)
 
 Usage:
-    # In .env (optional):
-    #   BEFORE_ARTIFACT=/Volumes/.../genie_run_before_2026-04-18T17-00-00Z.json
-    uv run python -m cli submit genie_run_after.py
-
-Pass GATE=true to enable the legacy pass/fail threshold gating:
-    Add GATE=true to .env before submitting, or use the GATE env-var mechanism.
+    python -m cli submit genie_run_after.py
+    python -m cli submit genie_run_after.py SAMPLERS=cat1_portfolio,cat4_operational
 """
 
 from __future__ import annotations
 
-import argparse
+import importlib
+import io
+import json
 import os
+import random
 import sys
+import textwrap
+import traceback
 from datetime import datetime, timezone
 
-from _cluster_bootstrap import inject_params
+from _cluster_bootstrap import inject_params, resolve_here
 
-# Resolve GENIE_SPACE_ID and LABEL before genie_run imports os.environ["GENIE_SPACE_ID"].
-# GENIE_SPACE_ID_AFTER is forwarded from .env by the CLI runner as a KEY=VALUE param.
 inject_params()
+_HERE = resolve_here()
+if str(_HERE) not in sys.path:
+    sys.path.insert(0, str(_HERE))
 
-os.environ["GENIE_SPACE_ID"] = os.environ["GENIE_SPACE_ID_AFTER"]
-os.environ.setdefault("LABEL", "after")
+from demo_utils import ask_genie  # noqa: E402
+from databricks.sdk import WorkspaceClient  # noqa: E402
 
-# Parse --before-artifact from the remaining argv (inject_params strips KEY=VALUE args).
-_parser = argparse.ArgumentParser(add_help=False)
-_parser.add_argument("--before-artifact", dest="before_artifact", default=None)
-_args, _ = _parser.parse_known_args()
-BEFORE_ARTIFACT = _args.before_artifact or os.environ.get("BEFORE_ARTIFACT")
+# --------------------------------------------------------------------------- #
+# Config                                                                       #
+# --------------------------------------------------------------------------- #
+SPACE_ID = os.environ["GENIE_SPACE_ID_AFTER"]
+LABEL = "after"
+RESULTS_VOLUME_DIR = os.environ["RESULTS_VOLUME_DIR"].rstrip("/")
+RETRIES = int(os.environ.get("GENIE_TEST_RETRIES", "2"))
+TIMEOUT_SECONDS = int(os.environ.get("GENIE_TEST_TIMEOUT_SECONDS", "120"))
 
-import genie_run  # noqa: E402
-from genie_run_artifact import ArtifactSchemaError, load_run_artifact  # noqa: E402
+_ALL_SAMPLERS = [
+    "cat1_portfolio",
+    "cat2_cohort",
+    "cat3_community_rollup",
+    "cat4_operational",
+    "cat5_merchant",
+]
+
+_SAMPLER_LABELS = {
+    "cat1_portfolio": "Portfolio composition",
+    "cat2_cohort": "Cohort comparisons",
+    "cat3_community_rollup": "Community rollups",
+    "cat4_operational": "Operational workload",
+    "cat5_merchant": "Merchant-side",
+}
+
+# --------------------------------------------------------------------------- #
+# Sampler loading                                                              #
+# --------------------------------------------------------------------------- #
+def _resolve_samplers() -> list[str]:
+    raw = os.environ.get("SAMPLERS", "").strip()
+    if not raw:
+        return list(_ALL_SAMPLERS)
+    names = [s.strip() for s in raw.split(",") if s.strip()]
+    unknown = [n for n in names if n not in _ALL_SAMPLERS]
+    if unknown:
+        raise ValueError(f"Unknown sampler(s): {unknown}. Valid: {_ALL_SAMPLERS}")
+    return names
 
 
-def _print_comparison(before_path: str, after: dict) -> None:
-    """Load the BEFORE artifact from its UC Volume path and diff against the
-    in-memory AFTER artifact produced by the just-completed run."""
-    from compare_report import build_report
+def _pick_question(sampler_name: str) -> dict:
+    """Import a category module and randomly pick one question from its QUESTIONS list."""
+    module = importlib.import_module(sampler_name)
+    return random.choice(module.QUESTIONS)
 
-    try:
-        before = load_run_artifact(before_path)
-    except (FileNotFoundError, ArtifactSchemaError) as exc:
-        print(f"\nCompare skipped — cannot read BEFORE artifact at {before_path}: {exc}")
-        return
 
-    compare_ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+# --------------------------------------------------------------------------- #
+# Per-question runner (capture only, no grading)                              #
+# --------------------------------------------------------------------------- #
+def _run_case(w: WorkspaceClient, question_def: dict) -> dict:
+    attempts: list[dict] = []
+
+    for attempt_idx in range(1, RETRIES + 1):
+        try:
+            response = ask_genie(w, SPACE_ID, question_def["question"], timeout_seconds=TIMEOUT_SECONDS)
+        except Exception as exc:
+            tb = traceback.format_exc()
+            print(tb, file=sys.stderr)
+            attempts.append({
+                "attempt": attempt_idx,
+                "error": f"{type(exc).__name__}: {exc}",
+                "traceback": tb,
+                "genie_sql": None,
+                "genie_response_text": None,
+                "row_count": 0,
+                "result_preview_records": [],
+                "metric": None,
+            })
+            continue
+
+        df = response["df"]
+        row_count = int(len(df)) if df is not None else 0
+        preview = (
+            json.loads(json.dumps(df.head(10).to_dict(orient="records"), default=str))
+            if df is not None else []
+        )
+
+        attempts.append({
+            "attempt": attempt_idx,
+            "error": None,
+            "genie_sql": response["sql"],
+            "genie_response_text": response["text"],
+            "row_count": row_count,
+            "result_preview_records": preview,
+            "metric": None,
+        })
+        break
+
+    last = attempts[-1] if attempts else {}
+    responded = last.get("error") is None and last.get("row_count", 0) > 0
+
+    return {
+        "name": question_def["name"],
+        "question": question_def["question"],
+        "responded": responded,
+        "attempts_made": len(attempts),
+        "attempts": attempts,
+        "metric": None,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# Report printer                                                               #
+# --------------------------------------------------------------------------- #
+def _sql_preview(result: dict, max_chars: int = 220) -> str:
+    if not result["attempts"]:
+        return "(no SQL)"
+    sql = (result["attempts"][-1].get("genie_sql") or "").strip()
+    if not sql:
+        return "(no SQL)"
+    single_line = " ".join(sql.split())
+    return single_line[:max_chars] + "…" if len(single_line) > max_chars else single_line
+
+
+def _wrap(text: str, indent: int = 14, width: int = 78) -> str:
+    pad = " " * indent
+    wrapped = textwrap.wrap(text, width=max(width - indent, 20)) or [text]
+    return ("\n" + pad).join(wrapped)
+
+
+def _status(result: dict) -> str:
+    if not result["attempts"]:
+        return "ERROR"
+    last = result["attempts"][-1]
+    if last.get("error"):
+        return "NO DATA" if "no data" in (last.get("error") or "").lower() else "ERROR"
+    return "RESPONDED"
+
+
+def _print_report(results: list[dict], sampler_names: list[str], run_meta: dict) -> None:
+    print("=" * 78)
+    print(f"Genie AFTER run — {run_meta['timestamp_utc']}")
+    print(f"Space: {run_meta['space_id']}")
+    print(f"Categories: {', '.join(_SAMPLER_LABELS.get(s, s) for s in sampler_names)}")
+    print("Purpose: capture analyst-style responses over enriched catalog (no grading)")
+    print("=" * 78)
+
+    for idx, r in enumerate(results, start=1):
+        last = r["attempts"][-1] if r["attempts"] else {}
+        rows = int(last.get("row_count") or 0)
+        status = _status(r)
+
+        print()
+        print(f"[{idx}] {r['name']} — {status}")
+        print(f"    Question: {_wrap(r['question'])}")
+        print(f"    Rows:     {rows}")
+        print(f"    SQL:      {_sql_preview(r)}")
+
+        text = (last.get("genie_response_text") or "").strip()
+        if text:
+            print(f"    Summary:  {_wrap(text[:200])}")
+
+        if not r["responded"] and last.get("error"):
+            print(f"    Error:    {(last['error'] or '')[:200]}")
+
+    responded = sum(1 for r in results if r["responded"])
     print()
-    print("=" * 62)
-    print(f"BEFORE vs AFTER comparison — {compare_ts}")
-    print("=" * 62)
-    print(build_report(before, after, compare_ts))
-
-
-exit_code, _after_path, after_artifact = genie_run.run()
-
-if BEFORE_ARTIFACT:
-    _print_comparison(BEFORE_ARTIFACT, after_artifact)
-else:
+    print("-" * 78)
+    print(f"Responded: {responded}/{len(results)}")
     print(
-        "\nTo include a BEFORE vs AFTER comparison, set "
-        "BEFORE_ARTIFACT=<path-to-before-artifact.json> in .env and resubmit."
+        "Summary: AFTER catalog answered the above analyst questions using community, "
+        "risk-tier, and similarity dimensions unlocked by GDS enrichment."
     )
 
-if exit_code:
-    sys.exit(exit_code)
+
+# --------------------------------------------------------------------------- #
+# Artifact writer                                                              #
+# --------------------------------------------------------------------------- #
+def _write_artifact(w: WorkspaceClient, results: list[dict], run_meta: dict) -> str:
+    ts_safe = run_meta["timestamp_utc"].replace(":", "-").replace(".", "-")
+    filename = f"genie_run_after_{ts_safe}.json"
+    remote_path = f"{RESULTS_VOLUME_DIR}/{filename}"
+
+    payload = {
+        "space_id": run_meta["space_id"],
+        "label": LABEL,
+        "timestamp_utc": run_meta["timestamp_utc"],
+        "gate_enabled": False,
+        "retries_configured": RETRIES,
+        "summary": {
+            "responded": sum(1 for r in results if r["responded"]),
+            "total": len(results),
+            "meets_after_gate": 0,
+        },
+        "cases": results,
+    }
+    body = json.dumps(payload, indent=2, default=str).encode("utf-8")
+    w.files.upload(file_path=remote_path, contents=io.BytesIO(body), overwrite=True)
+    return remote_path
+
+
+# --------------------------------------------------------------------------- #
+# Main                                                                         #
+# --------------------------------------------------------------------------- #
+def main() -> int:
+    sampler_names = _resolve_samplers()
+    w = WorkspaceClient()
+
+    run_meta = {
+        "timestamp_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "space_id": SPACE_ID,
+    }
+
+    questions = []
+    for sampler_name in sampler_names:
+        q = _pick_question(sampler_name)
+        questions.append(q)
+        print(f"Selected from {sampler_name}: {q['name']}")
+
+    results = [_run_case(w, q) for q in questions]
+
+    _print_report(results, sampler_names, run_meta)
+
+    artifact_path = _write_artifact(w, results, run_meta)
+    print(f"\nArtifact: {artifact_path}")
+
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

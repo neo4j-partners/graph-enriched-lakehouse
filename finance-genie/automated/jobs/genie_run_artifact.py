@@ -1,14 +1,14 @@
 """Shared schema + loader for genie_run_*.json artifacts.
 
-Both the writer (jobs/genie_run.py) and the comparison reader
-(jobs/compare_report.py, invoked from jobs/genie_run_after.py) depend on this
-shape. Keeping the keys in one place means a rename here surfaces at both
-ends instead of producing a silent KeyError in the comparison report.
+Both genie_run_before.py and genie_run_after.py write artifacts in this shape.
+Keeping the keys in one place means a rename surfaces at both ends instead of
+producing a silent KeyError downstream.
 """
 
 from __future__ import annotations
 
 import json
+import textwrap
 from pathlib import Path
 from typing import Any, TypedDict
 
@@ -103,7 +103,7 @@ def _require_keys(obj: dict, required: tuple[str, ...], *, context: str) -> None
 
 
 # --------------------------------------------------------------------------- #
-# Read-side helpers shared by compare_report.py                                #
+# Read-side helpers                                                            #
 # --------------------------------------------------------------------------- #
 
 def case_by_name(artifact: RunArtifact) -> dict[str, Case]:
@@ -133,3 +133,19 @@ def last_attempt(case: Case | None) -> Attempt:
         return {}  # type: ignore[typeddict-item]
     attempts = case.get("attempts") or []
     return attempts[-1] if attempts else {}  # type: ignore[typeddict-item]
+
+
+def sql_preview(result: dict, max_chars: int = 220) -> str:
+    if not result["attempts"]:
+        return "(no SQL)"
+    sql = (result["attempts"][-1].get("genie_sql") or "").strip()
+    if not sql:
+        return "(no SQL)"
+    single_line = " ".join(sql.split())
+    return single_line[:max_chars] + "…" if len(single_line) > max_chars else single_line
+
+
+def wrap_text(text: str, indent: int = 14, width: int = 78) -> str:
+    pad = " " * indent
+    wrapped = textwrap.wrap(text, width=max(width - indent, 20)) or [text]
+    return ("\n" + pad).join(wrapped)
