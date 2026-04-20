@@ -168,9 +168,9 @@ live, and enrichment lands them in the catalog as ordinary columns.
 
 ---
 
-## What GDS Excels At
+## What Graph Data Science Excels At
 
-- **GDS runs inside the graph database** and operates on the network as a whole rather than on individual rows
+- **Graph Data Science runs inside the graph database** and operates on the network as a whole rather than on individual rows
 - **Output is deterministic given a fixed graph projection.** Same projection, same scores, every time
 - **Five algorithm families:** centrality, community detection, similarity, pathfinding, node embeddings. This pipeline uses three
 
