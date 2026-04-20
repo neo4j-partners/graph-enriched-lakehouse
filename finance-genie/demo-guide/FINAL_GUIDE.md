@@ -115,7 +115,7 @@ The practical implication for demo delivery: questions that route through struct
 
 For production-scale threshold calibration and result-count expectations, see [SCOPING_GUIDE.md](../SCOPING_GUIDE.md).
 
-### The harder problem: silent question substitution
+### The harder problem: confidently wrong
 
 Non-deterministic SQL shape is the visible variance. There is a deeper problem that is harder to see during a demo: Genie answers certain question classes with full confidence but answers a different question than the one asked.
 

@@ -24,9 +24,9 @@ Structural segment questions ask Genie to compare or aggregate over a structural
 
 Genie's text-to-SQL translation is non-deterministic: the same question can produce different SQL shapes across runs, varying how much signal is retrieved but not whether it exists. GDS outputs are reproducible given a fixed graph projection, so the structural signal in the Gold columns is identical on every run.
 
-## The Harder Problem: Silent Question Substitution
+## The Harder Genie Problem: Confidently Wrong
 
-On structural-discovery questions against unenriched Silver tables, Genie answers with confidence but substitutes a proxy question it can answer in SQL for the structural question it cannot. After enrichment, ranking by `risk_score` descending is the correct retrieval of eigenvector centrality, not a proxy, and precision and recall on that question class recover fully.
+On structural-discovery questions against unenriched Silver tables, Genie answers a different question than the one asked: the SQL is correct, but the question answered is wrong. After enrichment, once `risk_score` exists as a column, Genie retrieves the correct quantity and precision recovers fully.
 
 ## Proposed BEFORE Demo Questions
 
