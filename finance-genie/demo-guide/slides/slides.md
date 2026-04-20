@@ -96,7 +96,6 @@ connections efficiently.
 - **A traditional database needs a starting point.** It needs a specific account ID or customer number to begin a search
 - **A graph database needs only a description of the pattern,** and finds every place that pattern exists in the network
 - **The graph provides the data structure and traversal capability.** Detection comes from the queries written against it
-- **The question for an analytics team on Databricks:** how do you bring that graph intelligence into the lakehouse you already operate, without rebuilding the analytics stack around a new query layer?
 
 <!--
 The pivot slide. Traditional databases are point-lookup machines;
@@ -104,58 +103,6 @@ graph databases are pattern-matching machines. The closing bullet
 is the bridge to the rest of the talk: we are not rebuilding the
 analytics stack, we are landing graph intelligence in the
 lakehouse as enriched Delta columns.
--->
-
----
-
-## What Genie Excels At
-
-- **High-quality text-to-SQL translator** over Delta tables: aggregation, grouping, filtering, ranking, top-N, cohort comparisons, time-series rollups
-- **BEFORE the demo space:** Genie handles account balances, transfer volumes, merchant categories, regional activity without difficulty
-- **That is the baseline that matters:** Genie doing its designed job well on the catalog the customer already runs
-- **Genie's capability does not change after enrichment.** What changes is the set of dimensions it can group by, filter on, and compare across
-
-<!--
-Do not damn Genie with the structural contrast. The AFTER demo
-does not make Genie better; it gives Genie new dimensions to
-operate over. That framing matters. Customers evaluating Genie
-on its merits need to hear it is working as designed.
--->
-
----
-
-## What Falls Outside Genie on Base Silver
-
-- **Structural questions live in network topology,** not in the rows of a table
-- **"Which accounts are central in the transfer network?"** No SQL aggregation computes eigenvector centrality
-- **"Which accounts form tightly-interconnected communities?"** No GROUP BY groups by interaction density
-- **"Which accounts route through the same merchants?"** No join computes Jaccard overlap of neighborhood sets
-- **This is not a test of Genie.** It is a test of whether the answer exists in the tables at all. Against base Silver, it does not
-
-<!--
-The setup for the next slide. Structural answers do not live in
-the Silver tables. But that is not where the story ends. The
-harder problem is what Genie does when it is asked them anyway.
--->
-
----
-
-## The Harder Problem: Confident Wrong Answers
-
-- **Non-deterministic SQL shape is the visible variance.** The deeper problem is harder to see during a demo
-- **On structural-discovery questions, Genie answers with full confidence, and returns wrong answers.** Not wrong SQL. Wrong answers
-- **Example:** "Are there accounts that seem to be hubs of a money-movement network?" Genie ranks by transfer volume, count, or balance and returns an authoritative-looking list
-- **The list is wrong** because transfer volume is not network centrality. The question asks for structural position in a graph; the table contains only row-level aggregates
-- **Precision and recall collapse.** Proxy columns correlate loosely with centrality but do not measure it. Fraud captains route volume through structure, not mass. The actual hubs are often missed entirely
-
-<!--
-The hardest thing to convey in a demo is what analysts cannot
-see. Non-deterministic SQL is visible. The query shape changed,
-the chart title moved. Confident wrong answers are invisible.
-A ranked list comes back, the analyst acts on it. The issue is
-not bad SQL. The issue is that transfer volume and network
-centrality are different quantities, and flat rows cannot convert
-one into the other. This is the motivation for enrichment.
 -->
 
 ---
@@ -282,6 +229,58 @@ what the pipeline has already materialized to Gold.
 
 ---
 
+## What Genie Excels At
+
+- **High-quality text-to-SQL translator** over Delta tables: aggregation, grouping, filtering, ranking, top-N, cohort comparisons, time-series rollups
+- **On base Silver tables:** Genie handles account balances, transfer volumes, merchant categories, and regional activity without difficulty
+- **That is the baseline that matters:** Genie doing its designed job well on the catalog the customer already runs
+- **Genie's capability does not change after enrichment.** What changes is the set of dimensions it can group by, filter on, and compare across
+
+<!--
+Do not frame this as Genie having limits. The AFTER demo does
+not make Genie better; it gives Genie new dimensions to operate
+over. Customers evaluating Genie on its merits need to hear it
+is working as designed throughout.
+-->
+
+---
+
+## Structural Questions Require a Different Data Layer
+
+- **Structural questions live in network topology,** not in the rows of a table
+- **"Which accounts are central in the transfer network?"** Eigenvector centrality is not a column; no SQL aggregation can produce it
+- **"Which accounts form tightly-interconnected communities?"** Interaction density is not an attribute; no GROUP BY groups by it
+- **"Which accounts route through the same merchants?"** Jaccard overlap of neighborhoods is not stored; no join computes it
+- **The answer to each question exists in the network.** GDS computes it and writes it to the Gold layer as a plain Delta column
+
+<!--
+Frame the gap as a data layer problem, not a query layer
+problem. The answer exists — it just has to be computed by GDS
+and materialized before any query tool can reach it. This sets
+up the BEFORE/AFTER cleanly: same question, two different column
+inventories, two different answers.
+-->
+
+---
+
+## Column Inventory Determines the Answer
+
+- **Without graph-derived columns,** any query tool reaches for the proxies that exist: volume, count, balance
+- **Those proxies correlate loosely with structural quantities** but do not measure them. Transfer volume is not network centrality
+- **The result looks authoritative:** high-throughput accounts surface at the top — payroll processors, corporate treasuries, not ring captains
+- **Add `risk_score`, written by PageRank,** and the correct quantity is queryable by any tool, including Genie
+- **Column inventory determines the answer.** Change the inventory, change the answer
+
+<!--
+The insight this slide needs to land: the gap is not in the
+query layer, it is in the column inventory. Any tool that reads
+the table will reach for what is there. Put the right column in
+the table and the right answer becomes retrievable. This reframes
+enrichment as a data engineering decision, not a workaround.
+-->
+
+---
+
 ## BEFORE / AFTER: One Question, Two Catalogs
 
 **Analyst question:** *"Which accounts look like hubs of a money-movement network?"*
@@ -329,9 +328,9 @@ translation layer. The LLM rewrites the SQL shape on every run;
 the underlying answer does not change because the columns it is
 generating SQL against do not change.
 
-This also closes the loop from the Confident Wrong Answers
-slide earlier. That was about the absence of the right column;
-this is about what the right column buys you once it exists.
+This closes the loop from the Column Inventory slide earlier.
+That was about the absence of the right column; this is about
+what the right column buys you once it exists.
 -->
 
 ---
@@ -450,7 +449,7 @@ slide.
 ## Key Takeaways
 
 - **The unit of analysis matters.** Rows cannot represent the patterns fraud rings produce; subgraphs can
-- **Flat tables drive confident wrong answers** on structural questions. Genie will rank by proxies that correlate loosely with the right quantity. The issue is column inventory, not SQL
+- **Column inventory determines the answer.** Without graph-derived columns, any query tool reaches for proxies: volume, count, balance. Those correlate loosely with structural quantities but do not measure them
 - **GDS as silver-to-gold** writes three deterministic structural columns that Genie reads as ordinary dimensions
 - **Deterministic foundation under non-deterministic translation** produces consistent analyst-facing answers without pinning the LLM
 - **After enrichment, classic BI shapes answer questions that had no handle before:** composition, cohort, rollup, workload, merchant
