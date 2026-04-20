@@ -6,7 +6,7 @@ Financial crime is a network problem: fraud rings are subgraphs that individual 
 
 ## What Genie Excels At
 
-Genie translates analyst questions into SQL over Delta tables and excels at aggregation, grouping, filtering, ranking, and cohort comparisons. Its capability is unchanged after enrichment; what changes is that the Gold layer now carries structural dimensions Genie can operate against.
+Genie translates analyst questions into SQL over Delta tables and excels at aggregation, grouping, filtering, ranking, and cohort comparisons. Enrichment expands the column inventory Genie can group by, filter on, and compare across. Same Genie, same SQL vocabulary. Strictly more answers.
 
 ## What GDS Excels At
 
@@ -22,11 +22,11 @@ Structural segment questions ask Genie to compare or aggregate over a structural
 
 ## Non-Deterministic SQL over a Deterministic Foundation
 
-Genie's text-to-SQL translation is non-deterministic: the same question can produce different SQL shapes across runs, varying how much signal is retrieved but not whether it exists. GDS outputs are reproducible given a fixed graph projection, so the structural signal in the Gold columns is identical on every run.
+Genie's text-to-SQL translation is non-deterministic: the same question can produce different SQL shapes across runs. GDS outputs are reproducible given a fixed graph projection, so SQL variance only changes how much signal Genie surfaces, never whether it exists.
 
 ## The Harder Genie Problem: Confidently Wrong
 
-On structural-discovery questions against unenriched Silver tables, Genie answers a different question than the one asked: the SQL is correct, but the question answered is wrong. After enrichment, once `risk_score` exists as a column, Genie retrieves the correct quantity and precision recovers fully.
+The gap is in the columns, not in Genie. On structural-discovery questions against unenriched Silver tables, Genie answers a different question than the one asked: the SQL is correct, but the question answered is wrong. After enrichment, once `risk_score` exists as a column, Genie retrieves the correct quantity and precision recovers fully.
 
 ## Proposed BEFORE Demo Questions
 
