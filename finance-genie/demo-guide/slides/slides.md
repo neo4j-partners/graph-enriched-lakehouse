@@ -42,16 +42,16 @@ Databricks Genie.
 ## What This Talk Covers
 
 1. **The problem.** Fraud rings are network patterns; row-level analytics cannot see them
-2. **The graph advantage.** Why graph databases surface what SQL cannot
-3. **GDS as the enrichment engine.** Three algorithms, three structural dimensions written to Delta
-4. **The pipeline.** How graph intelligence lands in the lakehouse
-5. **What Genie unlocks.** Question classes that open up on enriched data
+2. **What Genie does well.** High-quality text-to-SQL over Delta tables, on the catalog the customer already runs
+3. **What GDS does well.** Three algorithms, three structural dimensions — answers that cannot be reached by SQL
+4. **The enrichment pipeline.** How graph intelligence lands in the lakehouse as plain Delta columns
+5. **What the pipeline unlocks for Genie.** One question that joins lakehouse data with graph-enriched columns
 6. **Where it applies.** The general pattern beyond fraud rings
 
 <!--
 Short agenda. The audience gets oriented in ten seconds and you
-get to point at the BEFORE/AFTER as the demo anchor. Everything
-else is scaffolding around that single comparison.
+get to point at the enriched-catalog unlock as the demo anchor.
+Everything else is scaffolding around that single payoff.
 -->
 
 ---
@@ -103,6 +103,67 @@ graph databases are pattern-matching machines. The closing bullet
 is the bridge to the rest of the talk: we are not rebuilding the
 analytics stack, we are landing graph intelligence in the
 lakehouse as enriched Delta columns.
+-->
+
+---
+
+## What Genie Excels At
+
+- **High-quality text-to-SQL translator** over Delta tables: aggregation, grouping, filtering, ranking, top-N, cohort comparisons, time-series rollups
+- **On base Silver tables:** Genie handles account balances, transfer volumes, merchant categories, and regional activity without difficulty
+- **That is the baseline that matters:** Genie doing its designed job well on the catalog the customer already runs
+- **Genie's capability does not change after enrichment.** What changes is the set of dimensions it can group by, filter on, and compare across
+
+<!--
+Do not frame this as Genie having limits. The enriched-catalog
+demo does not make Genie better; it gives Genie new dimensions
+to operate over. Customers evaluating Genie on its merits need
+to hear it is working as designed throughout.
+-->
+
+---
+
+<style scoped>
+section { font-size: 95%; }
+</style>
+
+## Genie in Action on the Existing Catalog
+
+| Question asked | Column inventory | Genie result |
+|---|---|---|
+| **Warm-up:** top 10 accounts by total amount spent across merchants | `SUM(amount)` over `transactions` | Clean ranked list; tabular baseline holds |
+| **Analytics:** accounts with above-average spend AND >20% night-transaction ratio | Join + conditional aggregate over `transactions` and `accounts` | Correct top-15 by total spend with night ratio and balance |
+
+- **Genie doing its designed job** on the catalog the customer already runs: aggregation, grouping, filtering, ranking, joins, conditional aggregates
+- **The SQL shapes are standard** and the dimensions all live in the base tables
+- **Pulled from `01_genie_before.ipynb`:** warm-up and analytics challenge
+
+<!--
+The baseline slide. Genie works correctly on the tabular
+questions the catalog supports — these two cells in
+01_genie_before.ipynb exercise aggregation and a conditional
+aggregate over a join. The point is not that Genie has limits;
+the point is that Genie is a capable BI translator before any
+enrichment happens. That establishes the floor the enriched-
+catalog slide builds on later in the deck.
+-->
+
+---
+
+## Structural Questions Require a Different Data Layer
+
+- **Structural questions live in network topology,** not in the rows of a table
+- **"Which accounts are central in the transfer network?"** Eigenvector centrality is not a column; no SQL aggregation can produce it
+- **"Which accounts form tightly-interconnected communities?"** Interaction density is not an attribute; no GROUP BY groups by it
+- **"Which accounts route through the same merchants?"** Jaccard overlap of neighborhoods is not stored; no join computes it
+- **The answer to each question exists in the network.** GDS computes it and writes it to the Gold layer as a plain Delta column
+
+<!--
+Frame the gap as a data layer problem, not a query layer
+problem. The answer exists — it just has to be computed by GDS
+and materialized before any query tool can reach it. This motivates
+GDS as the silver-to-gold stage: the network is where those answers
+live, and enrichment lands them in the catalog as ordinary columns.
 -->
 
 ---
@@ -229,36 +290,55 @@ what the pipeline has already materialized to Gold.
 
 ---
 
-## What Genie Excels At
+## What the Enriched Catalog Unlocks
 
-- **High-quality text-to-SQL translator** over Delta tables: aggregation, grouping, filtering, ranking, top-N, cohort comparisons, time-series rollups
-- **On base Silver tables:** Genie handles account balances, transfer volumes, merchant categories, and regional activity without difficulty
-- **That is the baseline that matters:** Genie doing its designed job well on the catalog the customer already runs
-- **Genie's capability does not change after enrichment.** What changes is the set of dimensions it can group by, filter on, and compare across
+- **Structural segments:** `community_id`, `fraud_risk_tier`. Categorical labels that behave like any warehouse dimension, but the label comes from network topology, not a row-level attribute
+- **Structural scores:** `risk_score`, `similarity_score`. Continuous features that can be bucketed, thresholded, averaged, or ranked like any numeric column
+- **Community-level aggregates:** `gold_fraud_ring_communities` pre-joins structure to account attributes, so Genie can answer at the community grain without reconstructing membership itself
+- **Every classic BI question over a segment** becomes available over a segment that is structurally defined. The SQL shapes are standard. The dimensions are new
 
 <!--
-Do not frame this as Genie having limits. The AFTER demo does
-not make Genie better; it gives Genie new dimensions to operate
-over. Customers evaluating Genie on its merits need to hear it
-is working as designed throughout.
+Frame it as dimensions, not capabilities. Genie's SQL vocabulary
+did not grow; the column inventory did. Three scalar columns
+plus a pre-joined community table, and classic BI starts
+producing answers that were unreachable before.
 -->
 
 ---
 
-## Structural Questions Require a Different Data Layer
+<style scoped>
+section { font-size: 95%; }
+</style>
 
-- **Structural questions live in network topology,** not in the rows of a table
-- **"Which accounts are central in the transfer network?"** Eigenvector centrality is not a column; no SQL aggregation can produce it
-- **"Which accounts form tightly-interconnected communities?"** Interaction density is not an attribute; no GROUP BY groups by it
-- **"Which accounts route through the same merchants?"** Jaccard overlap of neighborhoods is not stored; no join computes it
-- **The answer to each question exists in the network.** GDS computes it and writes it to the Gold layer as a plain Delta column
+## Genie on the Enriched Catalog — One Question, Two Worlds Joined
+
+**Analyst question:** *"Which merchants are most commonly visited by accounts in ring-candidate communities?"*
+
+| Input | Source | Contributes |
+|---|---|---|
+| `transactions`, `merchants` | **Original lakehouse** (Silver) — unchanged | Who shopped where, how often, for how much |
+| `community_id`, `is_ring_community` | **GDS enrichment** — written to Gold by Louvain | Which accounts belong to ring-candidate communities |
+
+- **The SQL is one join:** `transactions` ⋈ `gold_accounts` on `account_id`, filter where `is_ring_community = true`, group by `merchant_id`, order by count descending
+- **Neither half answers the question alone.** Transactions without community labels cannot isolate ring-candidate behavior; community labels without transaction history cannot name the merchants
+- **The enrichment pipeline put the structural column next to the transactional columns** in the same Unity Catalog, so Genie writes a single standard SQL query against both at once
+- **Same Genie, same SQL vocabulary. Same Databricks spend. Strictly more answers**
 
 <!--
-Frame the gap as a data layer problem, not a query layer
-problem. The answer exists — it just has to be computed by GDS
-and materialized before any query tool can reach it. This sets
-up the BEFORE/AFTER cleanly: same question, two different column
-inventories, two different answers.
+One question carries the whole AFTER story cleanly. The merchant
+question (category 5 in 05_genie_after.ipynb) is the best
+example because it visibly combines two sources: the original
+transaction and merchant tables from the base lakehouse, and
+the community_id / is_ring_community columns written by GDS.
+Neither alone resolves the question; the join does. That is the
+architectural payoff — structural columns land in the same
+catalog as transactional columns, and Genie treats them as one
+schema.
+
+If the audience wants to see the other four classes
+(portfolio, cohort, rollup, operational), point at the
+notebook — 05_genie_after.ipynb walks through all five with the
+same pattern.
 -->
 
 ---
@@ -277,37 +357,6 @@ query layer, it is in the column inventory. Any tool that reads
 the table will reach for what is there. Put the right column in
 the table and the right answer becomes retrievable. This reframes
 enrichment as a data engineering decision, not a workaround.
--->
-
----
-
-## BEFORE / AFTER: One Question, Two Catalogs
-
-**Analyst question:** *"Which accounts look like hubs of a money-movement network?"*
-
-| | BEFORE, on base Silver | AFTER, on enriched Gold |
-|---|---|---|
-| **Column Genie reaches for** | `SUM(transfer_amount)` | `risk_score`, written by PageRank |
-| **What is actually measured** | Transaction throughput | Eigenvector centrality |
-| **Result set** | High-throughput accounts: payroll, payment processors, corporate treasuries | Actual structural hubs, including ring captains |
-| **Precision / recall** | Low; the proxy correlates loosely with centrality | Recovers fully: correct quantity, correct retrieval |
-| **Analyst experience** | Confident, authoritative-looking, wrong | Consistent run over run |
-
-<!--
-This is the anchor slide of the talk. One question, two
-catalogs, two fundamentally different answers. The BEFORE column
-is what Genie returns against base Silver today, and it will
-look plausible. The AFTER column is what the same question
-returns after enrichment.
-
-The key tell is the "Column Genie reaches for" row. It is not
-that Genie fails; Genie does exactly what a text-to-SQL engine
-should do. The column inventory determined the answer. Change
-the inventory, change the answer.
-
-Practical demo tip: on the live system, run the BEFORE query
-and the AFTER query side by side and screenshot both into this
-slide before presenting.
 -->
 
 ---
@@ -331,22 +380,6 @@ generating SQL against do not change.
 This closes the loop from the Column Inventory slide earlier.
 That was about the absence of the right column; this is about
 what the right column buys you once it exists.
--->
-
----
-
-## What the Enriched Catalog Unlocks
-
-- **Structural segments:** `community_id`, `fraud_risk_tier`. Categorical labels that behave like any warehouse dimension, but the label comes from network topology, not a row-level attribute
-- **Structural scores:** `risk_score`, `similarity_score`. Continuous features that can be bucketed, thresholded, averaged, or ranked like any numeric column
-- **Community-level aggregates:** `gold_fraud_ring_communities` pre-joins structure to account attributes, so Genie can answer at the community grain without reconstructing membership itself
-- **Every classic BI question over a segment** becomes available over a segment that is structurally defined. The SQL shapes are standard. The dimensions are new
-
-<!--
-Frame it as dimensions, not capabilities. Genie's SQL vocabulary
-did not grow; the column inventory did. Three scalar columns
-plus a pre-joined community table, and classic BI starts
-producing answers that were unreachable before.
 -->
 
 ---
