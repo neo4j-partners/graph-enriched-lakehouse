@@ -42,10 +42,10 @@ Databricks Genie.
 ## What This Talk Covers
 
 1. **The problem.** Fraud rings are network patterns; row-level analytics cannot see them
-2. **What Genie does well.** High-quality text-to-SQL over Delta tables, on the catalog the customer already runs
-3. **What GDS does well.** Three algorithms, three structural dimensions — answers that cannot be reached by SQL
+2. **What Genie does well.** High-quality natural language to Structured Query Language over Delta tables
+3. **What Graph Data Science does well.** Centrality, community membership, and neighborhood overlap: structural patterns no SQL query can produce
 4. **The enrichment pipeline.** How graph intelligence lands in the lakehouse as plain Delta columns
-5. **What the pipeline unlocks for Genie.** One question that joins lakehouse data with graph-enriched columns
+5. **What the pipeline unlocks for Genie.** Structural dimensions in the Gold layer that Genie treats as ordinary columns; the full range of BI questions now applies to network-defined segments
 6. **Where it applies.** The general pattern beyond fraud rings
 
 <!--
@@ -56,9 +56,33 @@ Everything else is scaffolding around that single payoff.
 
 ---
 
+## Demo Data Set: Synthetic Banking Network
+
+- **Two financial networks:** a spending graph and a peer-to-peer transfer graph
+- **Spending graph:** accounts transact with merchants
+- **Transfer graph:** accounts send money directly to other accounts
+- **Fraud rings** leave structural footprints in both
+- The goal: surface those patterns, not score individual transactions
+
+<!--
+The dataset contains two overlapping networks. The first is a
+bipartite account-merchant graph: accounts spend at merchants.
+The second is a peer-to-peer transfer network: accounts send money
+directly to other accounts. Fraud rings leave footprints in both —
+tight clusters of accounts trading with each other and routing
+through the same merchants. The goal is not to label fraud; it is
+to make the structural patterns visible so analysts can investigate.
+-->
+
+---
+
+![bg contain](./silver-data-model.png)
+
+---
+
 ## Financial Crime Is a Network Problem
 
-- **Criminals organize, coordinate, and move money in networks.** The gap in most fraud systems is not the rules
+- **Criminals organize, coordinate, and move money in networks.** Most fraud rules do not see the network
 - **The gap is the unit of analysis:** rules fire against individual transactions, but fraud rings operate as connected patterns across dozens of accounts and thousands of transactions
 - **The individual event looks clean.** The connected pattern does not
 - **Result:** coordinated schemes evade detection while false-positive rates commonly run into the high double digits across published industry surveys
@@ -80,6 +104,7 @@ analysis is wrong.
 - **The pattern appears anywhere in the network,** without knowing in advance which accounts to start from
 - **A fraud ring is not a property of any individual transaction.** It is the pattern of connections between accounts
 - **No row-level aggregation can produce a network property**
+- **The patterns live in the connections, not in individual rows**
 
 <!--
 A ring is a shape, not a row. You cannot reach it by summing
@@ -90,29 +115,12 @@ connections efficiently.
 
 ---
 
-## Why a Graph Database
-
-- **A graph database is the only data store** where you can describe a pattern, a subgraph shape, and find every instance efficiently, without a predetermined starting point
-- **A traditional database needs a starting point.** It needs a specific account ID or customer number to begin a search
-- **A graph database needs only a description of the pattern,** and finds every place that pattern exists in the network
-- **The graph provides the data structure and traversal capability.** Detection comes from the queries written against it
-
-<!--
-The pivot slide. Traditional databases are point-lookup machines;
-graph databases are pattern-matching machines. The closing bullet
-is the bridge to the rest of the talk: we are not rebuilding the
-analytics stack, we are landing graph intelligence in the
-lakehouse as enriched Delta columns.
--->
-
----
-
 ## What Genie Excels At
 
-- **High-quality text-to-SQL translator** over Delta tables: aggregation, grouping, filtering, ranking, top-N, cohort comparisons, time-series rollups
-- **On base Silver tables:** Genie handles account balances, transfer volumes, merchant categories, and regional activity without difficulty
-- **That is the baseline that matters:** Genie doing its designed job well on the catalog the customer already runs
-- **Genie's capability does not change after enrichment.** What changes is the set of dimensions it can group by, filter on, and compare across
+- **High-quality text-to-SQL translator:** Translates analyst questions to SQL over Delta tables
+- **Standard BI operations without difficulty:** aggregation, filtering, ranking, cohort comparisons, time-series rollups
+- **What we do:** expand the column inventory Genie can group by, filter on, and compare across
+- **Same Genie, same SQL vocabulary. Strictly more answers.**
 
 <!--
 Do not frame this as Genie having limits. The enriched-catalog
@@ -123,20 +131,14 @@ to hear it is working as designed throughout.
 
 ---
 
-<style scoped>
-section { font-size: 95%; }
-</style>
-
 ## Genie in Action on the Existing Catalog
 
-| Question asked | Column inventory | Genie result |
-|---|---|---|
-| **Warm-up:** top 10 accounts by total amount spent across merchants | `SUM(amount)` over `transactions` | Clean ranked list; tabular baseline holds |
-| **Analytics:** accounts with above-average spend AND >20% night-transaction ratio | Join + conditional aggregate over `transactions` and `accounts` | Correct top-15 by total spend with night ratio and balance |
+Two questions from the base catalog, Genie answering what it's built for:
 
-- **Genie doing its designed job** on the catalog the customer already runs: aggregation, grouping, filtering, ranking, joins, conditional aggregates
-- **The SQL shapes are standard** and the dimensions all live in the base tables
-- **Pulled from `01_genie_before.ipynb`:** warm-up and analytics challenge
+- **Q1:** "What are the top 10 accounts by total amount spent across merchants?" — clean ranked list; standard aggregation over `transactions`
+- **Q2:** "Show accounts with above-average spend and more than 20% of transactions at night" — join and conditional aggregate; correct top-15 with night ratio and balance
+- **Genie doing its designed job** on the catalog the customer already runs
+- **The SQL shapes are standard:** all dimensions live in the base tables
 
 <!--
 The baseline slide. Genie works correctly on the tabular
@@ -153,10 +155,9 @@ catalog slide builds on later in the deck.
 ## Structural Questions Require a Different Data Layer
 
 - **Structural questions live in network topology,** not in the rows of a table
-- **"Which accounts are central in the transfer network?"** Eigenvector centrality is not a column; no SQL aggregation can produce it
-- **"Which accounts form tightly-interconnected communities?"** Interaction density is not an attribute; no GROUP BY groups by it
-- **"Which accounts route through the same merchants?"** Jaccard overlap of neighborhoods is not stored; no join computes it
-- **The answer to each question exists in the network.** GDS computes it and writes it to the Gold layer as a plain Delta column
+- **"Which accounts are central in the transfer network?"** How central an account is to the flow of money across the network is not a column; no SQL query can compute it from rows
+- **"Which accounts form tightly-interconnected communities?"** How tightly a cluster of accounts trades with each other is not a stored attribute; no GROUP BY captures it
+- **"Which accounts route through the same merchants?"** Whether two accounts route through the same counterparties is not stored; no join recovers it
 
 <!--
 Frame the gap as a data layer problem, not a query layer
@@ -168,11 +169,45 @@ live, and enrichment lands them in the catalog as ordinary columns.
 
 ---
 
+## Why a Graph Database Answers What SQL Cannot
+
+Those answers exist in the network. Reaching them requires a data store built for connections, not rows.
+
+- **SQL needs a starting point:** a specific account ID or customer number to begin a search
+- **A graph database needs only a description of the pattern** and finds every place that pattern exists in the network
+- **The graph provides the data structure.** Detection comes from the queries written against it
+
+<!--
+The pivot slide. Traditional databases are point-lookup machines;
+graph databases are pattern-matching machines. Now positioned after
+the Genie gap, this slide answers "why can't SQL reach those questions?"
+rather than introducing graph databases from scratch.
+-->
+
+---
+
+## What We Need: Better Columns for Better Genie Answers
+
+- **The gap is in the columns, not in Genie.** Structural questions have no column to query against — yet.
+- **The result looks authoritative but answers the wrong question:** high-volume accounts surface, not the ones with suspicious network connections
+- **Add `risk_score` from PageRank** and the right accounts are findable by any tool, including Genie
+- **Change the columns. Change what Genie finds.**
+
+<!--
+The insight this slide needs to land: the gap is not in the
+query layer, it is in the column inventory. Any tool that reads
+the table will reach for what is there. Put the right column in
+the table and the right answer becomes retrievable. This reframes
+enrichment as a data engineering decision, not a workaround.
+-->
+
+---
+
 ## What Graph Data Science Excels At
 
 - **Graph Data Science runs inside the graph database** and operates on the network as a whole rather than on individual rows
 - **Output is deterministic given a fixed graph projection.** Same projection, same scores, every time
-- **Five algorithm families:** centrality, community detection, similarity, pathfinding, node embeddings. This pipeline uses three
+- **Five algorithm families:** centrality (who is central to money flow), community detection (who trades tightly together), similarity (who shares the same counterparties), pathfinding, node embeddings. This pipeline uses three
 
 <!--
 Keep this slide general. The next three slides each cover one
@@ -184,64 +219,38 @@ translator queries.
 
 ---
 
-## PageRank → `risk_score`
+## Sample GDS Algorithms
 
-- **Eigenvector centrality over the account-to-account transfer graph**
-- **Measures structural position, not local counts.** An account with ten connections to highly-connected accounts ranks higher than one with fifty connections to peripheral accounts
-- **Output:** one float per node representing centrality in the transfer network
-
-<!--
-This is exactly the quantity that proxies like transfer volume
-approximate badly. Ring captains route volume through structure,
-so PageRank surfaces them even when their raw throughput looks
-normal. 3.65× on the demo is the measured separation.
--->
-
----
-
-## Louvain → `community_id` / `fraud_risk_tier`
-
-- **Modularity-optimal community partition.** Groups accounts into communities that maximize within-community edge density relative to a random baseline
-- **Ignores attribute labels entirely.** Two merchants in different industries and different regions land in the same community if their transaction flows are tightly interwoven
-- **Output:** one integer per node for community membership. `fraud_risk_tier` is derived from membership: accounts in ring-candidate communities land in the high tier
+- **PageRank → `risk_score`:** centrality in the account transfer network; which accounts the most-connected accounts route flow through
+- **Louvain → `community_id` / `fraud_risk_tier`:** community membership by transaction density; accounts that trade more tightly with each other than with the rest of the network
+- **Node Similarity → `similarity_score`:** overlap of shared merchant connections; two accounts that never transacted directly can score high if they route through the same merchants
 
 <!--
-Louvain partitions by behavior, not by attributes. The 70%
-purity number is honest: each ring-candidate community holds
-~100 ring members and ~44 non-ring accounts absorbed by the
-modularity objective. That is a Louvain tradeoff, not a GDS
-failure. Worth naming directly if the audience pushes on
-false positives.
+PageRank: eigenvector centrality over the account-to-account transfer graph.
+Fraud population averages 3.65× the centrality of non-fraud accounts on the
+demo dataset.
 
-Note fraud_risk_tier is a derived column, not a direct GDS
-output. Worth calling out so the architecture diagram makes
-sense two slides later.
--->
+Louvain: modularity-optimal partition. Each of the ten synthetic rings lands
+in its own community with 100% ring coverage; average community purity is 70%
+(~100 ring members + ~44 non-ring accounts per ring-candidate community).
+fraud_risk_tier is a derived column, not a direct GDS output.
 
----
-
-## Node Similarity → `similarity_score`
-
-- **Jaccard overlap of shared-merchant sets,** computed over the bipartite account-merchant transaction graph
-- **Two accounts that never transacted directly** can score high on similarity if they route through the same merchants
-- **Output:** one float per node pair representing structural overlap
-- **Degree cutoff:** accounts with fewer than five unique merchant visits are excluded;
-
-<!--
-The "shared neighborhood" question. Ring members visit anchor
-merchants at elevated rates, which produces the Jaccard
-separation. The degree cutoff is the honest caveat: accounts
-that barely interact get excluded.
+Node Similarity: Jaccard overlap of shared-merchant sets over the bipartite
+account-merchant graph. Fraud ring members score 1.98× higher than non-fraud
+on average. Degree cutoff: accounts with fewer than five unique merchant visits
+are excluded; 3.2% of ring members fall below.
 -->
 
 ---
 
 ## The Enrichment Pipeline
 
-- **Load:** Spark Connector reads Silver tables from Unity Catalog and loads account + transaction records into Neo4j Aura **as a property graph**
-- **Compute:** GDS runs PageRank, Louvain, Node Similarity against the full network
-- **Enrich:** Pipeline writes results back to the Gold layer as plain Delta columns: `risk_score`, `community_id`, `similarity_score`, plus derived `fraud_risk_tier`
-- **Query:** Genie queries enriched Gold tables directly, treating graph-derived columns as ordinary dimensions
+Four steps convert a network of account relationships into plain columns that Genie queries like any other dimension.
+
+- **Load:** Reads account and transaction records from the existing lakehouse and maps them as a network in Neo4j Aura
+- **Compute:** Runs graph algorithms against the full network to surface structural patterns: which accounts are central to money flow, which cluster together, which share the same connections
+- **Enrich:** Writes the results back to the lakehouse as plain columns, such as `risk_score`, `community_id`, and `similarity_score`, that any query tool can read
+- **Query:** Genie queries those columns directly, treating graph-derived results as ordinary dimensions
 
 <!--
 Four steps. Structural analysis runs once per pipeline cycle;
@@ -255,71 +264,72 @@ graph analysis is invisible to the query layer.
 
 ```
 Unity Catalog Silver          Neo4j Aura + GDS               Unity Catalog Gold
-+-------------------+         +-------------------+          +-------------------+
-| accounts          |         | PageRank          |          | risk_score        |
-| transfers         |--load-->| Louvain           |--write-->| community_id      |
-| merchants         |         | Node Similarity   |          | similarity_score  |
-| transactions      |         | property graph    |          | fraud_risk_tier*  |
-+-------------------+         +-------------------+          +-------------------+
-                                                                      |
-                                                             * derived from
-                                                               community_id     |
-                                                                                v
-                                                             +-------------------+
-                                                             | Databricks Genie  |
-                                                             | text-to-SQL       |
-                                                             +-------------------+
++-------------------+         +-------------------+          +---------------------------+
+| accounts          |         | PageRank          |          | gold_accounts             |
+| account_links     |--load-->| Louvain           |--pull--> |   risk_score              |
+| merchants         |  (nb02) | Node Similarity   |  Spark   |   community_id            |
+| transactions      |         | property graph    |  + join  |   similarity_score        |
+| account_labels    |         +-------------------+  (nb04)  +---------------------------+
++-------------------+                                        | gold_account_             |
+                                                             |   similarity_pairs        |
+                                                             +---------------------------+
+                                                                        |
+                                                                        v
+                                                             +--------------------+
+                                                             | Databricks Genie   |
+                                                             | text-to-SQL        |
+                                                             +--------------------+
 ```
 
 - **The graph and the warehouse are connected entirely through enriched Delta tables.** No live query path between them
+- **nb04 pulls account features from Neo4j via the Spark Connector** and joins them with Silver tables before writing Gold — `account_labels` feeds the join but is not loaded into Neo4j
 
 <!--
-The asterisk on fraud_risk_tier is deliberate. Three algorithms
-produce three direct outputs; the tier is a derived categorical
-that makes downstream SQL cleaner. Call it out so the column
-count does not confuse anyone.
+The pull direction matters. Neo4j does not write to Unity Catalog
+directly; Databricks pulls from Neo4j via the Spark Connector in
+nb04, joins with Silver tables (accounts, account_labels), and
+materializes the Gold tables. That is the architectural commitment
+that lets security review, MRM, and platform teams sign off:
+nothing in the graph reaches production queries except what the
+pipeline has already materialized to Gold.
 
-The no-live-query property is the architectural commitment that
-lets security review, MRM, and platform teams sign off on the
-pattern. Nothing in the graph reaches production queries except
-what the pipeline has already materialized to Gold.
+Two Gold tables support the Genie AFTER demo: gold_accounts
+(account metadata + three GDS features) and
+gold_account_similarity_pairs (similarity edge pairs). Both are
+queried directly in 05_genie_after.ipynb.
 -->
 
 ---
 
 ## What the Enriched Catalog Unlocks
 
-- **Structural segments:** `community_id`, `fraud_risk_tier`. Categorical labels that behave like any warehouse dimension, but the label comes from network topology, not a row-level attribute
-- **Structural scores:** `risk_score`, `similarity_score`. Continuous features that can be bucketed, thresholded, averaged, or ranked like any numeric column
-- **Community-level aggregates:** `gold_fraud_ring_communities` pre-joins structure to account attributes, so Genie can answer at the community grain without reconstructing membership itself
-- **Every classic BI question over a segment** becomes available over a segment that is structurally defined. The SQL shapes are standard. The dimensions are new
+GDS results land in the Gold layer as plain lakehouse columns:
+
+- **Graph-derived features**: structural analysis results stored as plain lakehouse columns 
+- **Structural dimensions**: network-derived categories (`community_id`, `fraud_risk_tier`) for grouping and filtering
+- **Structural scores**: network-derived numbers (`risk_score`, `similarity_score`) for ranking and thresholding
+- **Community-level aggregates**: pre-joined summary tables ready to query at the community level
+- **New dimensions, same SQL**: every classic BI question now applies to segments defined by network structure
 
 <!--
 Frame it as dimensions, not capabilities. Genie's SQL vocabulary
-did not grow; the column inventory did. Three scalar columns
+did not grow; the column invenftory did. Three scalar columns
 plus a pre-joined community table, and classic BI starts
 producing answers that were unreachable before.
 -->
 
 ---
 
-<style scoped>
-section { font-size: 95%; }
-</style>
+## Genie on the Enriched Catalog: One Question, Two Sources
 
-## Genie on the Enriched Catalog — One Question, Two Worlds Joined
+*"Which merchants are most commonly visited by accounts in ring-candidate communities?"*
 
-**Analyst question:** *"Which merchants are most commonly visited by accounts in ring-candidate communities?"*
+Two data sources. One SQL query.
 
-| Input | Source | Contributes |
-|---|---|---|
-| `transactions`, `merchants` | **Original lakehouse** (Silver) — unchanged | Who shopped where, how often, for how much |
-| `community_id`, `is_ring_community` | **GDS enrichment** — written to Gold by Louvain | Which accounts belong to ring-candidate communities |
-
-- **The SQL is one join:** `transactions` ⋈ `gold_accounts` on `account_id`, filter where `is_ring_community = true`, group by `merchant_id`, order by count descending
-- **Neither half answers the question alone.** Transactions without community labels cannot isolate ring-candidate behavior; community labels without transaction history cannot name the merchants
-- **The enrichment pipeline put the structural column next to the transactional columns** in the same Unity Catalog, so Genie writes a single standard SQL query against both at once
-- **Same Genie, same SQL vocabulary. Strictly more answers**
+- **Original lakehouse:** `transactions` and `merchants` — who shopped where, how often, for how much
+- **GDS enrichment:** `community_id`, `is_ring_community` — which accounts belong to ring-candidate communities
+- **Neither half answers the question alone.** The enrichment pipeline put both in the same catalog; Genie writes one standard query against both.
+- **New dimensions, same SQL. Strictly more answers.**
 
 <!--
 One question carries the whole AFTER story cleanly. The merchant
@@ -340,106 +350,6 @@ same pattern.
 
 ---
 
-## Column Inventory Determines the Answer
-
-- **Without graph-derived columns,** any query tool reaches for the proxies that exist: volume, count, balance
-- **Those proxies correlate loosely with structural quantities** but do not measure them. Transfer volume is not network centrality
-- **The result looks authoritative:** high-throughput accounts surface at the top — payroll processors, corporate treasuries, not ring captains
-- **Add `risk_score`, written by PageRank,** and the correct quantity is queryable by any tool, including Genie
-- **Column inventory determines the answer.** Change the inventory, change the answer
-
-<!--
-The insight this slide needs to land: the gap is not in the
-query layer, it is in the column inventory. Any tool that reads
-the table will reach for what is there. Put the right column in
-the table and the right answer becomes retrievable. This reframes
-enrichment as a data engineering decision, not a workaround.
--->
-
----
-
-## Deterministic Foundation, Non-Deterministic Translation
-
-- **GDS outputs are reproducible** given a fixed projection. Same projection, same scores, every time
-- **Genie's text-to-SQL translation is non-deterministic.** The same question can generate different SQL shapes across runs: `RANK()=1` one time, `LIMIT 100` the next, `PERCENTILE` the time after that
-- **That variance is how text-to-SQL works.** Fighting it by pinning the model is a losing effort
-- **The fix is underneath, not around.** Put the signal in deterministic columns produced upstream. Variance can only permute *how* the signal is presented, never *whether* it exists
-- **Consequence:** an analyst-facing experience that behaves consistently run over run, without requiring Genie itself to be deterministic
-
-<!--
-This is the architectural claim that answers "can we trust
-Genie?" You do not need a deterministic LLM. You need a
-deterministic column inventory underneath a non-deterministic
-translation layer. The LLM rewrites the SQL shape on every run;
-the underlying answer does not change because the columns it is
-generating SQL against do not change.
-
-This closes the loop from the Column Inventory slide earlier.
-That was about the absence of the right column; this is about
-what the right column buys you once it exists.
--->
-
----
-
-## Retrieval Is Correct; Interpretation Has a Layer
-
-| Question type | Example | What Genie returns |
-|---|---|---|
-| **Aggregate over a structural segment** | "How does avg risk score compare between tiers?" | Self-explanatory: a clean GROUP BY / AVG |
-| **Retrieve structural rank directly** | "Which accounts are most structurally central?" | Correct retrieval of `risk_score` DESC, no proxy |
-
-- **After enrichment, both question types return the correct quantity.** The SQL and the values are right
-- **The second type carries an interpretation layer** the first does not. The top-`risk_score` accounts may sit in the large background community, not in a ring-candidate community, because PageRank measures centrality and Louvain measures community, and they are different things
-- **Rule of thumb for the demo:** favor aggregate-over-segment questions on stage. They require no graph-theory primer to interpret. Structural-rank questions are correct but invite the "why aren't these in the ring?" follow-up
-
-<!--
-Reconciles with the earlier slide: retrieval is correct; the
-interpretation nuance is that PageRank and Louvain measure
-different things, and a high-PageRank account in a benign
-community is not a contradiction; it is the two measures
-doing their jobs. The demo stays on the first row because it
-plays cleanly. The second row is demoable but requires the
-presenter to narrate the interpretation.
--->
-
----
-
-## AFTER Demo: Five Question Classes Unlocked
-
-1. **Portfolio composition over structural segments:** share of accounts in ring-candidate communities, balance split across risk tiers, community-size distribution
-2. **Cohort comparisons across tiers:** balance, age, transaction count, regional mix, merchant-category spending, high vs. low tier
-3. **Rollups over ring-candidate communities:** total balance, regional breakdown, internal-vs-external transfer ratio
-4. **Operational and investigator workload:** review queue sizing, regional concentration, exposure rollups
-5. **Merchant-side questions that had no handle before:** merchants serving ring communities, tier composition of merchant customer bases
-
-<!--
-One slide covers what five slides used to. The structure is
-still visible. Each class corresponds to a question family an
-analyst already knows how to ask, but the audience gets the
-scope in under a minute. Pair with the next slide for concrete
-examples.
--->
-
----
-
-## One Question from Each Class
-
-- **Composition:** *What share of accounts sits in ring-candidate communities, by region?*
-- **Cohort:** *How do balance, age, and transaction count compare between the high-risk and low-risk tiers?*
-- **Rollup:** *For each ring-candidate community, what is the ratio of internal transfers to external transfers?*
-- **Workload:** *How many accounts need investigator review if the bar is the high-risk tier, and what is the regional breakdown?*
-- **Merchant:** *Which merchants are most commonly visited by accounts in ring-candidate communities?*
-
-<!--
-Pick three of these for the live portion. Composition and
-cohort are the safest plays. Standard BI shapes over a new
-dimension, clean bar charts, no interpretation layer. Rollup
-and workload play well to ops and audit audiences. Merchant is
-the "oh, this opens new investigations" moment.
--->
-
----
-
 ## Where This Pattern Applies
 
 - **Fraud-ring surfacing:** tight-community trading, shared merchant preferences that do not fit the background distribution
@@ -456,12 +366,53 @@ applies. The algorithm changes; the architecture does not.
 
 ---
 
-## Why This Framing Passes Regulatory Review
+## Going Deeper: Genie's Behavior in Practice
+
+These two slides apply when running the demo live or fielding detailed questions about how Genie behaves under the hood.
+
+---
+
+## Deterministic Foundation, Non-Deterministic Translation
+
+- **Genie generates different SQL each run.** Same question, different shape: `RANK()=1` one time, `LIMIT 100` the next. That is how text-to-SQL works
+- **GDS columns are fixed.** Same projection, same scores, every time. The signal does not move
+- **The combination is reliable:** SQL variance only changes how much signal Genie surfaces, never whether it exists
+
+<!--
+This is the architectural claim that answers "can we trust
+Genie?" You do not need a deterministic LLM. You need a
+deterministic column inventory underneath a non-deterministic
+translation layer. The LLM rewrites the SQL shape on every run;
+the underlying answer does not change because the columns it is
+generating SQL against do not change.
+-->
+
+---
+
+## Genie on Structural Questions: A Precision Problem
+
+- **Without the right column, Genie answers a different question.** Asked which accounts are structurally central, it ranks by volume. Volume and centrality are not the same thing
+- **The result looks authoritative.** High-volume accounts surface with confidence. The SQL is correct. The question answered is wrong
+- **Enrichment resolves it:** once `risk_score` exists as a column, Genie retrieves the correct quantity. Precision recovers fully
+
+<!--
+This is the silent question substitution problem from the FINAL_GUIDE.
+Genie does not fail visibly — it returns results with full confidence.
+The problem is that it answered "which accounts have the highest volume"
+instead of "which accounts are structurally central." Without the right
+column, that substitution is invisible. The enrichment pipeline closes
+the gap by converting the structural quantity into a column before
+Genie is involved.
+-->
+
+---
+
+## GDS Narrows the Search Space. Humans Close It.
 
 - **GDS does not label fraud.** The Gold columns are features: `risk_score` is a float, `community_id` is an integer, `fraud_risk_tier` is a string
-- **Each column has a published mathematical definition.** PageRank, Louvain, and Jaccard are all documented, with reproducible computation under a fixed projection
+- **Each column has a published mathematical definition.** PageRank, Louvain, and Jaccard are documented with reproducible computation
 - **The analyst, investigator, or downstream model adjudicates.** GDS narrows the search space; humans and downstream systems make the call
-- **"Three columns with published definitions and reproducible computation"** is defensible under Model Risk Management review. *"The graph database found the fraud"* is not
+- **Three columns with published mathematical definitions.** Concrete inputs for analysis, not fraud verdicts
 
 <!--
 This is the defensible framing for regulated environments. GDS
