@@ -140,6 +140,8 @@ Idempotently configures both Genie Spaces defined in `automated/.env` (`GENIE_SP
 
 Runs three structural-discovery questions plus a teaser against the BEFORE space to capture the baseline before graph enrichment. For CLI submission details, see [Running Jobs](#running-jobs) below.
 
+The BEFORE misses are not Genie failures. Genie will answer each structural question, but it answers a different question than the one asked. Asked to find transfer-network hubs, it ranks by inbound transfer count rather than eigenvector centrality. Asked to find groups moving money among themselves, it groups by a shared attribute rather than interaction density. The substitution is silent: the response looks plausible. The issue is that network centrality and community membership do not exist as columns in the Silver tables. No SQL query can produce them. The BEFORE run records this gap explicitly against ground truth so the AFTER run has a baseline to compare against.
+
 Upload the job scripts to your workspace before the first submit (required whenever scripts are added or renamed):
 
 ```bash

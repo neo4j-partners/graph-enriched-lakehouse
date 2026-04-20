@@ -72,9 +72,13 @@ Jaccard overlap of shared-merchant sets, computed over the bipartite account-mer
 
 ---
 
-## What the enriched catalog actually unlocks for Genie
+@FI
+The enrichment pipeline writes GDS algorithm results back to the Gold layer as plain columns: network analysis from PageRank, Louvain, and Node Similarity materialized as ordinary Delta fields that Genie queries like any other dimension. Three kinds of graph-derived feature become available:
 
-After enrichment, the Gold schema carries three new kinds of dimension that Genie can group by, filter on, rank by, and compare across.
+- **Graph-derived features**: network analysis results from PageRank, Louvain, and Node Similarity stored as plain Gold columns. Genie sees ordinary tabular data with no graph query layer involved.
+- **Structural dimensions**: categorical labels derived from graph topology (`community_id`, `fraud_risk_tier`) that Genie groups, filters, and compares across
+- **Structural scores**: continuous floats from algorithm outputs (`risk_score`, `similarity_score`) that Genie ranks, buckets, averages, or thresholds
+- **Community-level aggregates**: a pre-joined summary table (`gold_fraud_ring_communities`) that Genie queries at the community grain without reconstructing membership
 
 **Structural segments**: `community_id`, `fraud_risk_tier`. These are categorical labels that behave like any other dimension in a warehouse. The difference is that the label comes from network topology rather than a row-level attribute. `community_id` is an integer assigned by Louvain to every account based on its position in the transfer graph. `fraud_risk_tier` is a string, either `high` or `low`, derived from whether an account belongs to a ring-candidate community.
 

@@ -96,8 +96,8 @@ and writes three Gold tables to Unity Catalog:
 
 ### 05_genie_after.ipynb _(serverless)_
 
-Asks five analyst questions to the AFTER Genie Space — the space pointed at the
-enriched gold tables. One question per category:
+Asks five analyst questions to the AFTER Genie Space, the space pointed at the
+enriched Gold tables. One question per category:
 
 1. **Portfolio composition** — what share of accounts sits in ring-candidate
    communities, broken out by region (the teaser question from `01_genie_before`,
@@ -111,9 +111,11 @@ enriched gold tables. One question per category:
 5. **Merchant-side** — which merchants are most commonly visited by ring-candidate
    accounts
 
-No structural questions are re-run. Genie answers each category question using
-`community_id`, `fraud_risk_tier`, and `similarity_score` as scalar columns —
-the same way it answers questions against any other warehouse table.
+These are segment questions over structural dimensions: GROUP BY, AVG, cohort
+comparisons, top-N lists. The structural analysis is already done. Genie reads
+`community_id`, `fraud_risk_tier`, and `similarity_score` as scalar columns the
+same way it reads any other column in the catalog. The answers are self-explanatory
+without graph knowledge. That is what the enrichment pipeline makes possible.
 
 ### 06_train_model.ipynb _(optional)_
 
@@ -127,13 +129,8 @@ fraud caught into an estimated dollar impact.
 
 ## Reference Material
 
-- `INSTRUCTOR_NOTES.md` — objection-rebuttal guide for presenters; covers the
-  "isn't Genie just doing `WHERE fraud_risk_tier = 'high'`?" question and other
-  common audience challenges
 - `GENIE_SETUP.md` — Genie Space instructions and column definitions for
   `fraud_risk_tier`, `risk_score`, `community_id`, and `similarity_score`
 - `aura_gds_guide.md` — step-by-step GDS algorithm guide for running in the
-  Neo4j Aura Query tab (alternative to the Python-client notebook)
-- `GOLD_TABLE_ENRICHMENT.md` — description of the three gold tables and their
-  columns
+  Neo4j Aura Query tab, an alternative to the Python-client notebook
 - `diagrams/` — architecture diagrams for the workshop

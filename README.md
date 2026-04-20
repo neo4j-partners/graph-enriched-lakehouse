@@ -8,7 +8,7 @@ Demos that show what Neo4j GDS adds to a Databricks Lakehouse when it runs as a 
 
 ### [Finance Genie](./finance-genie/README.md)
 
-A fraud-surfacing demo for Databricks account teams and partners. A synthetic dataset of 25,000 accounts, 7,500 merchants, 250,000 account-to-merchant transactions, and 300,000 peer-to-peer transfers loads into Neo4j Aura. PageRank, Louvain community detection, and Node Similarity run against the projection and write `risk_score`, `community_id`, and `similarity_score` back into three gold Delta tables. Genie then answers structural questions (hub candidates, community structure, merchant-overlap clusters) that live in the network rather than in individual rows.
+A fraud-surfacing demo for Databricks account teams and partners. A synthetic dataset of 25,000 accounts, 7,500 merchants, 250,000 account-to-merchant transactions, and 300,000 peer-to-peer transfers loads into Neo4j Aura. PageRank, Louvain community detection, and Node Similarity run against the projection and write `risk_score`, `community_id`, and `similarity_score` back into three gold Delta tables. GDS handles the structural analysis: identifying which accounts are central in the transfer network, which form tight communities, which share merchant histories. Genie then answers segment questions over those dimensions: portfolio composition by risk tier, cohort comparisons across community membership, operational workload estimates, and merchant-side analysis conditioned on structural membership. Questions that require no graph knowledge to read, over a catalog that did not carry those dimensions before the pipeline ran.
 
 Start here:
 

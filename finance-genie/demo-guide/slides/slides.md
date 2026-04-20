@@ -189,7 +189,6 @@ translator queries.
 - **Eigenvector centrality over the account-to-account transfer graph**
 - **Measures structural position, not local counts.** An account with ten connections to highly-connected accounts ranks higher than one with fifty connections to peripheral accounts
 - **Output:** one float per node representing centrality in the transfer network
-- **On the demo dataset:** the fraud population averages **3.65×** the centrality of non-fraud accounts
 
 <!--
 This is exactly the quantity that proxies like transfer volume
@@ -205,7 +204,6 @@ normal. 3.65× on the demo is the measured separation.
 - **Modularity-optimal community partition.** Groups accounts into communities that maximize within-community edge density relative to a random baseline
 - **Ignores attribute labels entirely.** Two merchants in different industries and different regions land in the same community if their transaction flows are tightly interwoven
 - **Output:** one integer per node for community membership. `fraud_risk_tier` is derived from membership: accounts in ring-candidate communities land in the high tier
-- **On the demo dataset:** each of the ten synthetic rings lands in its own community with **100% ring coverage**; average community purity is 70%
 
 <!--
 Louvain partitions by behavior, not by attributes. The 70%
@@ -227,8 +225,7 @@ sense two slides later.
 - **Jaccard overlap of shared-merchant sets,** computed over the bipartite account-merchant transaction graph
 - **Two accounts that never transacted directly** can score high on similarity if they route through the same merchants
 - **Output:** one float per node pair representing structural overlap
-- **On the demo dataset:** fraud ring members score **1.98×** higher than the non-fraud population on average
-- **Degree cutoff:** accounts with fewer than five unique merchant visits are excluded; 3.2% of ring members fall below
+- **Degree cutoff:** accounts with fewer than five unique merchant visits are excluded;
 
 <!--
 The "shared neighborhood" question. Ring members visit anchor
@@ -322,7 +319,7 @@ section { font-size: 95%; }
 - **The SQL is one join:** `transactions` ⋈ `gold_accounts` on `account_id`, filter where `is_ring_community = true`, group by `merchant_id`, order by count descending
 - **Neither half answers the question alone.** Transactions without community labels cannot isolate ring-candidate behavior; community labels without transaction history cannot name the merchants
 - **The enrichment pipeline put the structural column next to the transactional columns** in the same Unity Catalog, so Genie writes a single standard SQL query against both at once
-- **Same Genie, same SQL vocabulary. Same Databricks spend. Strictly more answers**
+- **Same Genie, same SQL vocabulary. Strictly more answers**
 
 <!--
 One question carries the whole AFTER story cleanly. The merchant
