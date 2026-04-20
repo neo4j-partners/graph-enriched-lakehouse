@@ -4,10 +4,6 @@ Confirms the gap that the BEFORE catalog cannot close: structural questions that
 require network topology do not resolve from row-level SQL alone. Each miss is
 reported as evidence of the gap, not as a test failure.
 
-A teaser question drawn from the AFTER category set is appended. Asked against
-the BEFORE catalog it cannot land cleanly; it is reported as
-"NOT AVAILABLE ON THIS CATALOG — answered in AFTER run."
-
 Environment variables (injected by the CLI runner as KEY=VALUE argv):
   GENIE_SPACE_ID_BEFORE      — required; the BEFORE space to query
   GROUND_TRUTH_PATH          — required; path to ground_truth.json on the UC Volume
@@ -129,13 +125,6 @@ def _build_cases(ring_community_map) -> list[dict]:
             "check_fn": _merchant_check,
             "metric_key": "same_ring_fraction",
             "after_gate_criterion": "> 0.60 with >=5 pairs",
-        },
-        {
-            "name": "teaser_portfolio",
-            "question": (
-                "What share of accounts sits in communities flagged as ring candidates, "
-                "broken out by region?"
-            ),
         },
     ]
 
@@ -269,8 +258,7 @@ def _findings(name: str, detail: dict | None) -> list[str]:
 
 def _print_report(results: list[dict], run_meta: dict) -> None:
     warm_up = next((r for r in results if r["name"] == "warm_up"), None)
-    structural = [r for r in results if r["name"] not in ("teaser_portfolio", "warm_up")]
-    teaser = next((r for r in results if r["name"] == "teaser_portfolio"), None)
+    structural = [r for r in results if r["name"] != "warm_up"]
 
     print("=" * 78)
     print(f"Genie BEFORE run — {run_meta['timestamp_utc']}")
@@ -332,27 +320,6 @@ def _print_report(results: list[dict], run_meta: dict) -> None:
             for line in sql.splitlines():
                 print(f"      {line}")
         preview = last_s.get("result_preview_records") or []
-        if preview:
-            print(f"    · · ·")
-            print(f"    Data (first {min(3, len(preview))} of {rows} rows):")
-            for rec in preview[:3]:
-                print(f"      {rec}")
-
-    if teaser:
-        last_t = teaser["attempts"][-1] if teaser["attempts"] else {}
-        rows = int(last_t.get("row_count") or 0)
-        print()
-        print(f"  {'─' * 74}")
-        print(f"  [T] {teaser['name']} — NOT AVAILABLE ON THIS CATALOG — answered in AFTER run")
-        print(f"    Question: {wrap_text(teaser['question'])}")
-        print(f"    Note:     community_id and is_ring_community columns do not exist in base tables.")
-        print(f"    Rows:     {rows}")
-        sql = (last_t.get("genie_sql") or "").strip()
-        if sql:
-            print("    SQL:")
-            for line in sql.splitlines():
-                print(f"      {line}")
-        preview = last_t.get("result_preview_records") or []
         if preview:
             print(f"    · · ·")
             print(f"    Data (first {min(3, len(preview))} of {rows} rows):")

@@ -111,6 +111,12 @@ worklog/
 .claude/
 .mcp.json
 
+# Node
+node_modules/
+package-lock.json
+finance-genie/demo-guide/slides/*.pdf
+finance-genie/demo-guide/slides/*.html
+
 # Generated data files
 finance-genie/automated/data/
 finance-genie/automated/logs/

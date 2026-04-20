@@ -8,7 +8,7 @@ Requires Node.js 22 LTS (`brew install node@22`) and a one-time `npm install` in
 
 ```bash
 cd slides
-/opt/homebrew/opt/node@22/bin/node ./node_modules/.bin/marp slides.md --server
+/opt/homebrew/opt/node@22/bin/node ./node_modules/.bin/marp . --server
 ```
 
 Opens at http://localhost:8080/.

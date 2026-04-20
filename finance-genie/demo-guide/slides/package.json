@@ -1,0 +1,8 @@
+{
+  "name": "slides",
+  "version": "1.0.0",
+  "private": true,
+  "devDependencies": {
+    "@marp-team/marp-cli": "^4.1.1"
+  }
+}

@@ -68,7 +68,7 @@ Reads the five Delta tables and writes them to Neo4j as a property graph:
 `TRANSFERRED_TO` (Account → Account) relationships. Requires the dedicated
 cluster with the Neo4j Spark Connector.
 
-### 03_aura_gds_guide.ipynb _(dedicated cluster)_
+### 03_gds_enrichment.ipynb _(dedicated cluster)_
 
 Runs three GDS algorithms against the projected graph via the `graphdatascience`
 Python client:
