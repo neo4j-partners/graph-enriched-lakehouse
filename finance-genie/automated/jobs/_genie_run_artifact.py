@@ -1,6 +1,6 @@
 """Shared schema + loader for genie_run_*.json artifacts.
 
-Both genie_run_before.py and genie_run_after.py write artifacts in this shape.
+Both 01_genie_run_before.py and 05_genie_run_after.py write artifacts in this shape.
 Keeping the keys in one place means a rename surfaces at both ends instead of
 producing a silent KeyError downstream.
 """

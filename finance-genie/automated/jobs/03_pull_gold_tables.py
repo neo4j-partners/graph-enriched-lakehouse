@@ -17,7 +17,7 @@ survive every pipeline run. Any schema change must be reflected in both files.
 
 Usage (from finance-genie/automated/ with .env in place):
     python -m cli upload --all
-    python -m cli submit pull_gold_tables.py
+    python -m cli submit 03_pull_gold_tables.py
     python -m cli logs
 
 Cluster prerequisite: the Neo4j Spark Connector JAR must be installed as a
@@ -48,8 +48,8 @@ if str(_HERE) not in sys.path:
 from pyspark.sql import SparkSession, Window  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
 
-from neo4j_secrets import load_neo4j_opts  # noqa: E402
-from gold_constants import (  # noqa: E402
+from _neo4j_secrets import load_neo4j_opts  # noqa: E402
+from _gold_constants import (  # noqa: E402
     COMMUNITY_AVG_RISK_MIN,
     RING_SIZE_HIGH,
     RING_SIZE_LOW,

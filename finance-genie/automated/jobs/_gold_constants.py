@@ -1,7 +1,7 @@
-"""Shared thresholds between pull_gold_tables.py and validate_gold_tables.py.
+"""Shared thresholds between 03_pull_gold_tables.py and 04_validate_gold_tables.py.
 
 Changing any of these here changes the definition of a fraud-ring community —
-both the build (pull_gold_tables.py) and the gate (validate_gold_tables.py) read
+both the build (03_pull_gold_tables.py) and the gate (04_validate_gold_tables.py) read
 from this module so they cannot drift.
 """
 

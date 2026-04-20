@@ -5,7 +5,7 @@ Runs as a Databricks Python task (no notebook kernel required).
 
 Usage (from finance-genie/automated/ with .env in place):
     python -m cli upload --all
-    python -m cli submit neo4j_ingest.py
+    python -m cli submit 02_neo4j_ingest.py
     python -m cli logs
 
 Cluster prerequisites (install as cluster libraries before submitting):
@@ -31,7 +31,7 @@ if str(_HERE) not in sys.path:
 from graphdatascience import GraphDataScience  # noqa: E402
 from pyspark.sql import SparkSession  # noqa: E402
 
-from neo4j_secrets import load_neo4j_opts  # noqa: E402
+from _neo4j_secrets import load_neo4j_opts  # noqa: E402
 
 # --------------------------------------------------------------------------- #
 # 2. Config + Neo4j credentials                                                #

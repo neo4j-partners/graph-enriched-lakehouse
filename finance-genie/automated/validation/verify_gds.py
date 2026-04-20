@@ -30,7 +30,7 @@ from neo4j.exceptions import AuthError, ServiceUnavailable
 from _common import fail, header, load_env, ok
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "jobs"))
-from gold_constants import (  # noqa: E402
+from _gold_constants import (  # noqa: E402
     GDS_COMMUNITY_PURITY_MIN as COMMUNITY_PURITY_MIN,
     GDS_PR_RATIO_MIN as PR_RATIO_MIN,
     GDS_RING_EXCLUSION_MAX as RING_EXCLUSION_MAX,

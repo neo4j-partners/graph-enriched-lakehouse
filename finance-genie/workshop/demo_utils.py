@@ -426,7 +426,7 @@ def check_ring_pair_fraction(
         "cross_ring_pairs": cross_ring,
         "unknown_pairs": unknown,
         "rings_touched": len(rings_seen),
-        "passed": same_ring_fraction > 0.60 and total_pairs > 0,
+        "passed": same_ring_fraction > 0.60 and total_pairs >= 5,
     }
 
 

@@ -1,7 +1,7 @@
 """Direct-SQL data-correctness gate for the gold tables.
 
 Runs as a Databricks Python task. Reads the three gold tables written by
-pull_gold_tables.py, joins them against ground_truth.json from the UC Volume,
+03_pull_gold_tables.py, joins them against ground_truth.json from the UC Volume,
 and verifies that the fraud labels and ring aggregates align with the
 simulated ground truth. Runs BEFORE genie_test.py so that a Genie test
 failure can be distinguished from a bad gold-table build.
@@ -25,7 +25,7 @@ Writes a JSON artifact to RESULTS_VOLUME_DIR. Exits non-zero on any failure.
 
 Usage (from finance-genie/automated/ with .env in place):
     python -m cli upload --all
-    python -m cli submit validate_gold_tables.py
+    python -m cli submit 04_validate_gold_tables.py
     python -m cli logs
 """
 
@@ -50,7 +50,7 @@ if str(_HERE) not in sys.path:
 from pyspark.sql import SparkSession  # noqa: E402
 from pyspark.sql import functions as F  # noqa: E402
 
-from gold_constants import (  # noqa: E402
+from _gold_constants import (  # noqa: E402
     RING_SIZE_HIGH,
     RING_SIZE_LOW,
     TIER_HIGH,

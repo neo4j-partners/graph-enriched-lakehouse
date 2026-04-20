@@ -15,8 +15,8 @@ Environment variables (injected by the CLI runner as KEY=VALUE argv):
   GENIE_TEST_TIMEOUT_SECONDS — optional; per-attempt timeout (default 120)
 
 Usage:
-    python -m cli submit genie_run_after.py
-    python -m cli submit genie_run_after.py SAMPLERS=cat1_portfolio,cat4_operational
+    python -m cli submit 05_genie_run_after.py
+    python -m cli submit 05_genie_run_after.py SAMPLERS=cat1_portfolio,cat4_operational
 """
 
 from __future__ import annotations
@@ -37,9 +37,9 @@ _HERE = resolve_here()
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from demo_utils import ask_genie  # noqa: E402
+from _demo_utils import ask_genie  # noqa: E402
 from databricks.sdk import WorkspaceClient  # noqa: E402
-from genie_run_artifact import sql_preview, wrap_text  # noqa: E402
+from _genie_run_artifact import wrap_text  # noqa: E402
 
 SPACE_ID = os.environ["GENIE_SPACE_ID_AFTER"]
 LABEL = "after"
@@ -154,14 +154,27 @@ def _print_report(results: list[dict], sampler_names: list[str], run_meta: dict)
         rows = int(last.get("row_count") or 0)
 
         print()
-        print(f"[{idx}] {r['name']} — {_status(r)}")
+        print(f"  {'─' * 74}")
+        print(f"  [{idx}] {r['name']} — {_status(r)}")
         print(f"    Question: {wrap_text(r['question'])}")
         print(f"    Rows:     {rows}")
-        print(f"    SQL:      {sql_preview(r)}")
+
+        sql = (last.get("genie_sql") or "").strip()
+        if sql:
+            print("    SQL:")
+            for line in sql.splitlines():
+                print(f"      {line}")
 
         text = (last.get("genie_response_text") or "").strip()
         if text:
             print(f"    Summary:  {wrap_text(text[:200])}")
+
+        preview = last.get("result_preview_records") or []
+        if preview:
+            print(f"    · · ·")
+            print(f"    Data (first {min(3, len(preview))} of {rows} rows):")
+            for rec in preview[:3]:
+                print(f"      {rec}")
 
         if not r["responded"] and last.get("error"):
             print(f"    Error:    {(last['error'] or '')[:200]}")
@@ -222,4 +235,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()

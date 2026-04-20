@@ -16,7 +16,7 @@ Environment variables (injected by the CLI runner as KEY=VALUE argv):
   GENIE_TEST_TIMEOUT_SECONDS — optional; per-attempt timeout (default 120)
 
 Usage:
-    python -m cli submit genie_run_before.py
+    python -m cli submit 01_genie_run_before.py
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ _HERE = resolve_here()
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
-from demo_utils import (  # noqa: E402
+from _demo_utils import (  # noqa: E402
     ask_genie,
     check_community_purity,
     check_ring_pair_fraction,
@@ -44,7 +44,7 @@ from demo_utils import (  # noqa: E402
     load_ground_truth,
 )
 from databricks.sdk import WorkspaceClient  # noqa: E402
-from genie_run_artifact import sql_preview, wrap_text  # noqa: E402
+from _genie_run_artifact import wrap_text  # noqa: E402
 
 SPACE_ID = os.environ["GENIE_SPACE_ID_BEFORE"]
 LABEL = "before"
@@ -102,6 +102,10 @@ def _merchant_check(df, gt):
 
 def _build_cases(ring_community_map) -> list[dict]:
     return [
+        {
+            "name": "warm_up",
+            "question": "What are the top 10 accounts by total amount spent across all merchants?",
+        },
         {
             "name": "hub_detection",
             "question": (
@@ -264,7 +268,8 @@ def _findings(name: str, detail: dict | None) -> list[str]:
 
 
 def _print_report(results: list[dict], run_meta: dict) -> None:
-    structural = [r for r in results if r["name"] != "teaser_portfolio"]
+    warm_up = next((r for r in results if r["name"] == "warm_up"), None)
+    structural = [r for r in results if r["name"] not in ("teaser_portfolio", "warm_up")]
     teaser = next((r for r in results if r["name"] == "teaser_portfolio"), None)
 
     print("=" * 78)
@@ -273,13 +278,36 @@ def _print_report(results: list[dict], run_meta: dict) -> None:
     print("Purpose: confirm structural gap on base tables (misses are expected evidence)")
     print("=" * 78)
 
+    if warm_up:
+        last_wu = warm_up["attempts"][-1] if warm_up["attempts"] else {}
+        rows = int(last_wu.get("row_count") or 0)
+        print()
+        print(f"  {'─' * 74}")
+        print(f"  [W] warm_up — TABULAR BASELINE")
+        print(f"    Question: {wrap_text(warm_up['question'])}")
+        print(f"    Note:     Confirms Genie answers basic tabular aggregations correctly.")
+        print(f"    Rows:     {rows}")
+        sql = (last_wu.get("genie_sql") or "").strip()
+        if sql:
+            print("    SQL:")
+            for line in sql.splitlines():
+                print(f"      {line}")
+        preview = last_wu.get("result_preview_records") or []
+        if preview:
+            print(f"    · · ·")
+            print(f"    Data (first {min(3, len(preview))} of {rows} rows):")
+            for rec in preview[:3]:
+                print(f"      {rec}")
+
     for idx, r in enumerate(structural, start=1):
         verdict = _verdict(r)
         m = r["metric"]
-        rows = int(r["attempts"][-1].get("row_count") or 0) if r["attempts"] else 0
+        last_s = r["attempts"][-1] if r["attempts"] else {}
+        rows = int(last_s.get("row_count") or 0)
 
         print()
-        print(f"[{idx}] {r['name']} — {verdict}")
+        print(f"  {'─' * 74}")
+        print(f"  [{idx}] {r['name']} — {verdict}")
         print(f"    Question: {wrap_text(r['question'])}")
 
         if m and m.get("value") is not None:
@@ -292,22 +320,44 @@ def _print_report(results: list[dict], run_meta: dict) -> None:
             print(f"    Finding:  {findings[0]}")
             for line in findings[1:]:
                 print(f"              {line}")
-        elif not r["responded"] and r["attempts"]:
-            err = (r["attempts"][-1].get("error") or "").strip()
+        elif not r["responded"] and last_s.get("error"):
+            err = (last_s["error"] or "").strip()
             if err:
                 print(f"    Error:    {err[:200]}")
 
         print(f"    Rows:     {rows}")
-        print(f"    SQL:      {sql_preview(r)}")
+        sql = (last_s.get("genie_sql") or "").strip()
+        if sql:
+            print("    SQL:")
+            for line in sql.splitlines():
+                print(f"      {line}")
+        preview = last_s.get("result_preview_records") or []
+        if preview:
+            print(f"    · · ·")
+            print(f"    Data (first {min(3, len(preview))} of {rows} rows):")
+            for rec in preview[:3]:
+                print(f"      {rec}")
 
     if teaser:
-        rows = int(teaser["attempts"][-1].get("row_count") or 0) if teaser["attempts"] else 0
+        last_t = teaser["attempts"][-1] if teaser["attempts"] else {}
+        rows = int(last_t.get("row_count") or 0)
         print()
-        print(f"[T] {teaser['name']} — NOT AVAILABLE ON THIS CATALOG — answered in AFTER run")
+        print(f"  {'─' * 74}")
+        print(f"  [T] {teaser['name']} — NOT AVAILABLE ON THIS CATALOG — answered in AFTER run")
         print(f"    Question: {wrap_text(teaser['question'])}")
         print(f"    Note:     community_id and is_ring_community columns do not exist in base tables.")
         print(f"    Rows:     {rows}")
-        print(f"    SQL:      {sql_preview(teaser)}")
+        sql = (last_t.get("genie_sql") or "").strip()
+        if sql:
+            print("    SQL:")
+            for line in sql.splitlines():
+                print(f"      {line}")
+        preview = last_t.get("result_preview_records") or []
+        if preview:
+            print(f"    · · ·")
+            print(f"    Data (first {min(3, len(preview))} of {rows} rows):")
+            for rec in preview[:3]:
+                print(f"      {rec}")
 
     confirmed = sum(
         1 for r in structural
@@ -315,7 +365,7 @@ def _print_report(results: list[dict], run_meta: dict) -> None:
     )
     print()
     print("-" * 78)
-    print(f"Structural gap confirmed in {confirmed}/{len(structural)} questions.")
+    print(f"Structural gap confirmed in {confirmed}/{len(structural)} structural questions.")
     print(
         "Summary: BEFORE catalog cannot resolve structural questions from row-level SQL. "
         "Enrichment unlocks portfolio, cohort, community, operational, and merchant-composition "
@@ -369,4 +419,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    main()
