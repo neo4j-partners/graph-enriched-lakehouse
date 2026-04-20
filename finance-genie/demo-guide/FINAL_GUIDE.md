@@ -72,7 +72,6 @@ Jaccard overlap of shared-merchant sets, computed over the bipartite account-mer
 
 ---
 
-@FI
 The enrichment pipeline writes GDS algorithm results back to the Gold layer as plain columns: network analysis from PageRank, Louvain, and Node Similarity materialized as ordinary Delta fields that Genie queries like any other dimension. Three kinds of graph-derived feature become available:
 
 - **Graph-derived features**: network analysis results from PageRank, Louvain, and Node Similarity stored as plain Gold columns. Genie sees ordinary tabular data with no graph query layer involved.
