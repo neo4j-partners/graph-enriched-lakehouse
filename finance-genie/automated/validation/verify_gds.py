@@ -37,6 +37,11 @@ from _gold_constants import (  # noqa: E402
     GDS_SIM_RATIO_MIN as SIM_RATIO_MIN,
 )
 
+# Precision warning threshold. Not a hard gate — the check prints WARN and
+# reports the number without failing the pipeline. See RAISE_PURITY.md for
+# rationale on why this is not yet a FAIL threshold.
+_PRECISION_WARN = 0.70
+
 REQUIRED_VARS = ("NEO4J_URI", "NEO4J_USERNAME", "NEO4J_PASSWORD")
 MAX_COMMUNITIES_OK = 500
 
@@ -308,6 +313,68 @@ def check_ring_member_nodesim_exclusion(
     return problems, f"excluded={frac:.1%}  (max {RING_EXCLUSION_MAX:.0%})"
 
 
+def check_ring_candidate_precision(
+    gds: GraphDataScience, rings: list[dict], fraud_ids: list[int]
+) -> tuple[list[str], str]:
+    """Measure how many non-fraud accounts land in ring-candidate communities.
+
+    Finds the dominant community ID for each planted ring, counts every account
+    in those communities, and reports precision = fraud_in_candidates / total_in_candidates.
+    This is a warning-only check — it never fails the pipeline. A number here is
+    the input needed to decide whether to raise GDS_COMMUNITY_PURITY_MIN.
+    See RAISE_PURITY.md for context.
+    """
+    dominant_cids: list[int] = []
+    for ring in rings:
+        members = [int(a) for a in ring["account_ids"]]
+        cid_counts = gds.run_cypher(
+            """
+            MATCH (a:Account) WHERE a.account_id IN $members
+            RETURN a.community_id AS cid, count(*) AS n
+            ORDER BY n DESC LIMIT 1
+            """,
+            params={"members": members},
+        )
+        if not cid_counts.empty:
+            dominant_cids.append(int(cid_counts.iloc[0]["cid"]))
+
+    if not dominant_cids:
+        warn("no dominant communities found — skipping precision check")
+        return [], "skipped (no communities)"
+
+    fraud_set = set(fraud_ids)
+    row = gds.run_cypher(
+        """
+        MATCH (a:Account) WHERE a.community_id IN $cids
+        RETURN count(a) AS total,
+               sum(CASE WHEN a.account_id IN $fraud_ids THEN 1 ELSE 0 END) AS fraud_count
+        """,
+        params={"cids": dominant_cids, "fraud_ids": list(fraud_set)},
+    ).iloc[0]
+
+    total = int(row["total"])
+    fraud_count = int(row["fraud_count"])
+    precision = fraud_count / total if total else 0.0
+    true_rate = len(fraud_set) / 25_000
+
+    print(
+        f"      ring-candidate accounts: {total:,}  fraud in candidates: {fraud_count:,}  "
+        f"precision: {precision:.1%}  (book fraud rate: {true_rate:.1%})"
+    )
+    print(
+        f"      over-labeling: {total - fraud_count:,} non-fraud accounts in candidate communities"
+    )
+
+    if precision < _PRECISION_WARN:
+        warn(
+            f"ring-candidate precision {precision:.1%} < {_PRECISION_WARN:.0%} — "
+            f"communities are absorbing too many non-fraud accounts. "
+            f"See RAISE_PURITY.md."
+        )
+
+    return [], f"precision={precision:.1%}  (warn below {_PRECISION_WARN:.0%})  [diagnostic only]"
+
+
 def print_summary(results: list[tuple[str, list[str], str]]) -> list[str]:
     W = 62
     all_problems: list[str] = []
@@ -353,25 +420,29 @@ def main() -> None:
     try:
         results: list[tuple[str, list[str], str]] = []
 
-        header("[1/5] Feature completeness")
+        header("[1/6] Feature completeness")
         problems, detail = check_feature_completeness(gds)
-        results.append(("[1/5] Feature completeness", problems, detail))
+        results.append(("[1/6] Feature completeness", problems, detail))
 
-        header("[2/5] PageRank (risk_score)")
+        header("[2/6] PageRank (risk_score)")
         problems, detail = check_pagerank(gds, fraud_ids)
-        results.append(("[2/5] PageRank (risk_score)", problems, detail))
+        results.append(("[2/6] PageRank (risk_score)", problems, detail))
 
-        header("[3/5] Louvain (community_id) — per-ring coverage")
+        header("[3/6] Louvain (community_id) — per-ring coverage")
         problems, detail = check_louvain_per_ring(gds, rings)
-        results.append(("[3/5] Louvain (community_id)", problems, detail))
+        results.append(("[3/6] Louvain (community_id)", problems, detail))
 
-        header("[4/5] Node Similarity (similarity_score)")
+        header("[4/6] Node Similarity (similarity_score)")
         problems, detail = check_similarity(gds, fraud_ids)
-        results.append(("[4/5] Node Similarity", problems, detail))
+        results.append(("[4/6] Node Similarity", problems, detail))
 
-        header("[5/5] Ring-member NodeSim exclusion (degreeCutoff)")
+        header("[5/6] Ring-member NodeSim exclusion (degreeCutoff)")
         problems, detail = check_ring_member_nodesim_exclusion(gds, fraud_ids)
-        results.append(("[5/5] Ring-member exclusion", problems, detail))
+        results.append(("[5/6] Ring-member exclusion", problems, detail))
+
+        header("[6/6] Ring-candidate population precision (diagnostic)")
+        problems, detail = check_ring_candidate_precision(gds, rings, fraud_ids)
+        results.append(("[6/6] Ring-candidate precision", problems, detail))
 
         all_problems = print_summary(results)
         if all_problems:

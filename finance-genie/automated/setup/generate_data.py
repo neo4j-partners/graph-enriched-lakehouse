@@ -166,19 +166,14 @@ def generate_account_labels(fraud_ids: set) -> pd.DataFrame:
 def generate_merchants() -> pd.DataFrame:
     categories = ["retail", "online", "restaurant", "travel",
                   "crypto", "gaming", "grocery", "utilities"]
-    risk_tiers = ["low", "medium", "high"]
     regions    = ["US-East", "US-West", "US-Central", "EU-West", "EU-East", "APAC"]
 
     rows = []
     for i in range(1, NUM_MERCHANTS + 1):
-        cat     = random.choice(categories)
-        weights = [0.1, 0.3, 0.6] if cat in ("crypto", "gaming") else [0.6, 0.3, 0.1]
-        tier    = random.choices(risk_tiers, weights=weights)[0]
         rows.append({
             "merchant_id":   i,
             "merchant_name": f"merchant_{i:04d}",
-            "category":      cat,
-            "risk_tier":     tier,
+            "category":      random.choice(categories),
             "region":        random.choice(regions),
         })
     return pd.DataFrame(rows)
@@ -250,7 +245,7 @@ def build_ground_truth_json(
     and per-ring anchor merchants without opening any CSV.
     """
     merch_lookup = (
-        merchants_df.set_index("merchant_id")[["category", "risk_tier"]]
+        merchants_df.set_index("merchant_id")[["category"]]
         .to_dict("index")
     )
     return {
@@ -270,7 +265,6 @@ def build_ground_truth_json(
                     {
                         "merchant_id": mid,
                         "category":    merch_lookup[mid]["category"],
-                        "risk_tier":   merch_lookup[mid]["risk_tier"],
                     }
                     for mid in ring_anchors[i]
                 ],
@@ -401,18 +395,15 @@ def generate_all(output_dir: Path) -> dict:
     merchants_df.to_csv(output_dir / "merchants.csv", index=False)
 
     # Assign anchor merchants to each ring after merchants are generated.
-    # Anchors are sampled from ALL merchants (not just high-risk) so the
-    # overall high-risk fraction stays the same for fraud and normal accounts.
-    # The structural signal comes from shared SPECIFIC merchants, not merchant
-    # tier — a column filter on risk_tier cannot find the fraud ring.
+    # Anchors are sampled from ALL merchants. The structural signal comes from
+    # shared SPECIFIC merchants, not from any merchant attribute — a column
+    # filter cannot find the fraud ring.
     all_merchant_ids = merchants_df["merchant_id"].tolist()
-    high_risk_ids    = merchants_df[merchants_df["risk_tier"] == "high"]["merchant_id"].tolist()
     ring_anchors     = {
         ring_idx: random.sample(all_merchant_ids, RING_ANCHOR_CNT)
         for ring_idx in range(N_RINGS)
     }
-    print(f"  merchants: {len(merchants_df):,}  |  high-risk: {len(high_risk_ids)}  "
-          f"|  anchor merchants/ring: {RING_ANCHOR_CNT}")
+    print(f"  merchants: {len(merchants_df):,}  |  anchor merchants/ring: {RING_ANCHOR_CNT}")
 
     print("Writing ground truth ...")
     gt = build_ground_truth_json(rings, fraud_ids, whale_ids, ring_anchors, merchants_df)

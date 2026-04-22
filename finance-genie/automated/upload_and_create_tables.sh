@@ -234,14 +234,13 @@ run_sql "INSERT INTO merchants" \
      CAST(merchant_id AS BIGINT) AS merchant_id,
      merchant_name,
      category,
-     risk_tier,
      region
    FROM read_files(
      '${VOLUME_PATH}/merchants.csv',
      format      => 'csv',
      header      => 'true',
      inferSchema => 'false',
-     schema      => 'merchant_id STRING, merchant_name STRING, category STRING, risk_tier STRING, region STRING'
+     schema      => 'merchant_id STRING, merchant_name STRING, category STRING, region STRING'
    )"
 
 run_sql "INSERT INTO transactions" \

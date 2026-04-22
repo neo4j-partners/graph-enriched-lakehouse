@@ -14,7 +14,7 @@ QUESTIONS = [
         ),
     },
     {
-        "name": "merchant_category_risk_tier_share",
+        "name": "merchant_category_account_risk_tier_share",
         "question": (
             "For each merchant category, what share of transaction volume comes "
             "from accounts in the high-risk tier?"
@@ -28,7 +28,7 @@ QUESTIONS = [
         ),
     },
     {
-        "name": "merchant_risk_tier_gap",
+        "name": "merchant_account_risk_tier_gap",
         "question": (
             "Which merchants show the largest gap between the risk-tier composition "
             "of their customer base and the risk-tier composition of the overall "

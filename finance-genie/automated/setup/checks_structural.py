@@ -234,15 +234,12 @@ def check_anchor_jaccard(transactions_df, rings, fraud_ids, sample_cross_pairs=2
     }
 
 
-def check_column_signals(accounts_df, transactions_df, merchants_df, fraud_ids):
+def check_column_signals(accounts_df, transactions_df, fraud_ids):
     accounts_df = accounts_df.copy()
     accounts_df["_is_fraud"] = accounts_df["account_id"].isin(fraud_ids)
 
     txn_df = transactions_df.copy()
     txn_df["_is_fraud"] = txn_df["account_id"].isin(fraud_ids)
-
-    high_risk_ids = set(merchants_df[merchants_df["risk_tier"] == "high"]["merchant_id"])
-    txn_df["_is_high_risk"] = txn_df["merchant_id"].isin(high_risk_ids)
 
     def split(df, col):
         f = float(df[df["_is_fraud"]][col].mean())
@@ -253,9 +250,6 @@ def check_column_signals(accounts_df, transactions_df, merchants_df, fraud_ids):
     age_f,  age_n  = split(accounts_df, "holder_age")
     amt_f,  amt_n  = split(txn_df, "amount")
     hour_f, hour_n = split(txn_df, "txn_hour")
-
-    hr_f = float(txn_df[txn_df["_is_fraud"]]["_is_high_risk"].mean())
-    hr_n = float(txn_df[~txn_df["_is_fraud"]]["_is_high_risk"].mean())
 
     def diff_pct(f, n):
         return abs(f - n) / n * 100 if n else 0.0
@@ -286,12 +280,9 @@ def check_column_signals(accounts_df, transactions_df, merchants_df, fraud_ids):
         "txn_hour":   10,
     }
 
-    high_risk_gap_pp = abs(hr_f - hr_n) * 100
-    columns_pass     = all(
+    passed = all(
         c["diff_pct"] < column_thresholds[c["column"]] for c in column_results
     )
-    high_risk_pass   = high_risk_gap_pp < 5
-    passed           = columns_pass and high_risk_pass
 
     diagnostic = None
     if not passed:
@@ -300,15 +291,10 @@ def check_column_signals(accounts_df, transactions_df, merchants_df, fraud_ids):
             for c in column_results
             if c["diff_pct"] >= column_thresholds[c["column"]]
         ]
-        msgs   = []
-        if leaked:
-            msgs.append(f"leaked columns: {', '.join(leaked)}")
-        if not high_risk_pass:
-            msgs.append(f"high_risk_gap_pp {high_risk_gap_pp:.2f} >= 5")
         diagnostic = (
-            f"{'; '.join(msgs)}. A column-level gap beyond its threshold means the "
-            "generator is leaking more signal than the design budget allows. "
-            "Rebalance the column's fraud-vs-normal distributions in "
+            f"leaked columns: {', '.join(leaked)}. A column-level gap beyond its "
+            "threshold means the generator is leaking more signal than the design "
+            "budget allows. Rebalance the column's fraud-vs-normal distributions in "
             "generate_transactions() or generate_accounts()."
         )
 
@@ -317,14 +303,10 @@ def check_column_signals(accounts_df, transactions_df, merchants_df, fraud_ids):
         "target": (
             "balance, holder_age, txn_hour: <10% relative difference between fraud "
             "and normal. txn_amount: <15% (deliberately preserved weak signal, see "
-            "README step 3). High-risk merchant fraction gap <= 5 pp (README claim: "
-            "23.4% vs 21.0%, gap 2.4)."
+            "README step 3)."
         ),
         "measured": {
             "columns": column_results,
-            "high_risk_fraction_fraud_pct":  round(hr_f * 100, 2),
-            "high_risk_fraction_normal_pct": round(hr_n * 100, 2),
-            "high_risk_gap_pp":              round(high_risk_gap_pp, 2),
         },
         "diagnostic": diagnostic,
         "passed": passed,

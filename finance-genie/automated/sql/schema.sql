@@ -26,7 +26,6 @@ CREATE OR REPLACE TABLE `${catalog}`.`${schema}`.merchants (
     merchant_id   BIGINT  NOT NULL COMMENT 'Unique merchant identifier (primary key)',
     merchant_name STRING           COMMENT 'Merchant business name',
     category      STRING           COMMENT 'Merchant business category (e.g., retail, food, entertainment)',
-    risk_tier     STRING           COMMENT 'Pre-classified merchant risk level based on transaction pattern analysis: high, medium, or low',
     region        STRING           COMMENT 'Geographic region where the merchant operates'
 )
 USING DELTA

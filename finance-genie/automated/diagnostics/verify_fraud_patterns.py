@@ -111,7 +111,7 @@ def main():
         check_ring_density(data["account_links"], rings),
         check_anchor_jaccard(data["transactions"], rings, fraud_ids),
         check_column_signals(
-            data["accounts"], data["transactions"], data["merchants"], fraud_ids
+            data["accounts"], data["transactions"], fraud_ids
         ),
     ]
 

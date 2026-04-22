@@ -156,7 +156,7 @@ def run_pipeline(gds: GraphDataScience) -> None:
         """
         MATCH (a:Account)
         WHERE NOT (a)-[:SIMILAR_TO]-()
-        SET a.similarity_score = coalesce(a.similarity_score, 0.0)
+        SET a.similarity_score = 0.0
         RETURN count(a) AS accounts_zeroed
         """
     )
