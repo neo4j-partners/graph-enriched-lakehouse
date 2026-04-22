@@ -108,7 +108,7 @@ These live in `.env` and are infrastructure coordinates rather than signal param
 | `DATABRICKS_WAREHOUSE_ID` | SQL Warehouse used to execute DDL in `upload_and_create_tables.sh`. |
 | `CATALOG` | Unity Catalog catalog name for all tables and volumes. |
 | `SCHEMA` | Unity Catalog schema name. |
-| `DATABRICKS_VOLUME_PATH` | Volume path where CSVs and `ground_truth.json` are staged. |
+| `DATABRICKS_VOLUME` | Volume path where CSVs and `ground_truth.json` are staged. |
 | `NEO4J_URI` | Neo4j Aura connection string written to the secret scope. |
 | `NEO4J_USERNAME` | Neo4j username written to the secret scope. |
 | `NEO4J_PASSWORD` | Neo4j password written to the secret scope. |

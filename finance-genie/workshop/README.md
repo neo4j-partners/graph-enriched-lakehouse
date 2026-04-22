@@ -52,14 +52,16 @@ populated the scope.
 
 ### 01_genie_before.ipynb _(serverless)_
 
-Asks four questions to the BEFORE Genie Space — the space pointed at the base
-tables. A tabular warm-up confirms Genie is working. The next three questions
-target hub positions, community membership, and shared-merchant similarity:
-structure that lives in the transfer network topology, not in any row or column
-the base tables carry. Each miss is labeled `STRUCTURAL GAP CONFIRMED` against
-the ground-truth fraud rings — evidence of what the catalog cannot reach, not a
-Genie limitation. A teaser question previews the portfolio query the enriched
-catalog will answer in `05_genie_after`.
+Runs against the BEFORE Genie Space — the space pointed at the base Silver
+tables. A tabular warm-up confirms Genie is working; an analytics challenge
+shows it handling joins and conditional aggregates correctly. Then five anchor
+questions show where volume and frequency proxies fall short of structural
+answers: merchant favorites by volume, book share for the top-decile, review
+queue sized by volume cutoff, transfer ratio between repeat-transfer pairs, and
+merchant concentration by co-transaction activity. These are the best answers
+the base catalog can produce. After the pipeline runs, the same five questions
+asked in Genie against the enriched Gold tables return structurally different
+results.
 
 ### 02_neo4j_ingest.ipynb _(dedicated cluster)_
 
@@ -94,28 +96,14 @@ and writes three Gold tables to Unity Catalog:
 - `gold_fraud_ring_communities` — ring-level community aggregates with
   `is_ring_community` flag
 
-### 05_genie_after.ipynb _(serverless)_
+### Genie AFTER _(live in Genie — no notebook)_
 
-Asks five analyst questions to the AFTER Genie Space, the space pointed at the
-enriched Gold tables. One question per category:
-
-1. **Portfolio composition** — what share of accounts sits in ring-candidate
-   communities, broken out by region (the teaser question from `01_genie_before`,
-   now answerable)
-2. **Cohort comparisons** — spending mix differences between ring-community and
-   baseline accounts
-3. **Community rollups** — total balance and book share held by ring-candidate
-   communities
-4. **Operational workload** — investigator review queue size and regional
-   breakdown at the high-risk-tier bar
-5. **Merchant-side** — which merchants are most commonly visited by ring-candidate
-   accounts
-
-These are segment questions over structural dimensions: GROUP BY, AVG, cohort
-comparisons, top-N lists. The structural analysis is already done. Genie reads
-`community_id`, `fraud_risk_tier`, and `similarity_score` as scalar columns the
-same way it reads any other column in the catalog. The answers are self-explanatory
-without graph knowledge. That is what the enrichment pipeline makes possible.
+After the pipeline completes, open Genie against the enriched Gold tables and
+ask the same five anchor questions from `01_genie_before`. The copy-paste
+versions of the after questions are in `genie-guide.md` under **AFTER: Anchor**.
+Start with merchant favorites — it closes the before/after pair most visibly.
+Additional questions for extended demos and Q&A are in the **Fill-In / Q&A**
+section of `genie-guide.md`.
 
 ### 06_train_model.ipynb _(optional)_
 

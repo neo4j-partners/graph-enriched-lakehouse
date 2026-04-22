@@ -22,7 +22,7 @@ What are the top 10 accounts by total amount spent across all merchants?
 
 ### Analytics Challenge
 
-> Shows Genie handling a harder tabular question — joining two tables and applying a conditional aggregate. Night transactions (hours 0–5) are a known fraud signal. This answer is possible because both dimensions (spend and time-of-day) already exist as columns. Sets up the contrast with the structural questions that follow.
+> Shows Genie handling a harder tabular question — joining two tables and applying a conditional aggregate. Night transactions (hours 0–5) are a known fraud signal. This answer is possible because both dimensions (spend and time-of-day) already exist as columns. Sets up the baseline before the anchor questions run.
 
 ```
 Which accounts have both above-average total spend and a night transaction ratio above 20%? Show the top 15 by total spend with their night ratio and account balance.
@@ -30,32 +30,52 @@ Which accounts have both above-average total spend and a night transaction ratio
 
 ---
 
-### Structural Gap: Hub Detection
+### Anchor: Merchant Favorites
 
-> The point where Genie hits its limit — not because Genie is broken, but because the information doesn't exist in the data yet. There's no `risk_score` column, so Genie can only rank by raw transaction volume, which surfaces high-volume legitimate accounts alongside ring members with no way to tell them apart. The miss is the message.
-
-```
-Are there accounts that seem to be the hub of a money movement network that are potentially fraudulent?
-```
-
----
-
-### Structural Gap: Community Structure
-
-> Asks Genie to find groups of accounts that transfer money heavily among themselves — the definition of a fraud ring. Without community labels as columns, Genie can only aggregate raw transfer counts, which mixes legitimate high-volume clusters with actual rings and returns no meaningful structure.
+> The primary anchor question. Asks which merchants high-volume accounts visit most. Volume is the only proxy for ring membership on the base catalog — there is no community column. The result is a popularity ranking that sounds like a real answer. Hold on this result; the after version of this question returns a structurally different list.
 
 ```
-Find groups of accounts transferring money heavily among themselves.
+Which merchants are most commonly visited by accounts with the highest total transaction volume?
 ```
 
 ---
 
-### Structural Gap: Merchant Overlap
+### Anchor: Book Share
 
-> Asks which pairs of accounts share the most merchants in common — a co-visitation signal used to surface coordinated activity. Without a similarity score or community column, Genie can attempt the join but can't separate same-ring pairs from coincidental overlap. Expected to return low precision against the fraud ring ground truth.
+> Best-available estimate of how much capital sits in suspicious accounts, using volume decile as a proxy for ring membership. The after version asks the same thing against graph-defined ring candidates.
 
 ```
-Which pairs of accounts have visited the most merchants in common?
+For the top 10% of accounts by transfer volume, what is the total balance held and what share of the book do they represent?
+```
+
+---
+
+### Anchor: Investigator Review Queue
+
+> Volume cutoff as a stand-in for a risk tier. Shows what a queue sizing looks like when the threshold is a transaction count, not a structural signal.
+
+```
+How many accounts are in the top 10% by transfer volume, and what is the regional breakdown?
+```
+
+---
+
+### Anchor: Internal vs External Transfer Ratio
+
+> Repeat-transfer frequency as a proxy for community insularity. The after version measures the same thing against actual community membership.
+
+```
+What fraction of total transfer volume flows between accounts that have transacted with each other more than five times, versus accounts with no prior relationship?
+```
+
+---
+
+### Anchor: Merchant Community Concentration
+
+> Co-transaction frequency as a proxy for community cohesion. The after version asks which merchants serve a customer base concentrated in a single graph-defined community.
+
+```
+Are there merchants where the majority of transaction volume comes from accounts that also transact heavily with each other?
 ```
 
 ---
@@ -64,17 +84,69 @@ Which pairs of accounts have visited the most merchants in common?
 
 The pipeline has run. `community_id`, `fraud_risk_tier`, `risk_score`, and `similarity_score` are now ordinary columns. Genie's capability hasn't changed — the catalog has.
 
+Start with the anchor question. It is the same question that opened the BEFORE section, now asked against the enriched catalog. Show both results side by side and let the gap land before moving on.
+
 ---
 
-### 1. Portfolio Composition
+### Anchor: Merchant Favorites
 
-Questions about how the book breaks down across structurally-defined segments. Only answerable after enrichment because `community_id` and `is_ring_community` don't exist in the base tables.
+> Closes the before/after pair. The before answer was a popularity ranking of merchants among high-volume accounts. This answer is a different list — the merchants where ring-candidate community members cluster disproportionately. The gap is the demo's central argument.
+
+```
+Which merchants are most commonly visited by accounts in ring-candidate communities?
+```
+
+---
+
+### Anchor: Book Share
+
+> Closes the before/after pair for the book share question. Before: total balance held by the top 10% by transfer volume. After: total balance held by ring-candidate community members and their share of the book. Same shape, structurally different segment definition.
+
+```
+For ring-candidate communities taken together, what is the total balance held by their members and what share of the book do they represent?
+```
+
+---
+
+### Anchor: Investigator Review Queue
+
+> Closes the before/after pair for the review queue question. Before: accounts in the top 10% by transfer volume with a regional breakdown. After: accounts in the high risk tier with the same regional breakdown. A risk manager sees immediately that volume cutoff and structural tier return different counts.
+
+```
+How many accounts would need investigator review if the bar is high risk tier, and what is the regional breakdown of that workload?
+```
+
+---
+
+### Anchor: Internal vs External Transfer Ratio
+
+> Closes the before/after pair for the transfer ratio question. Before: fraction of volume between repeat-transfer pairs vs. unrelated pairs. After: per-community internal vs. external transfer ratio measured against actual community membership.
+
+```
+For each ring-candidate community, what is the ratio of internal transfer volume between members to external transfer volume outside the community?
+```
+
+---
+
+### Anchor: Merchant Community Concentration
+
+> Closes the before/after pair for the merchant concentration question. Before: merchants where volume comes from mutually active accounts. After: merchants whose customer base is disproportionately concentrated in a single community.
+
+```
+Are there merchants whose customer base is disproportionately concentrated in a single community?
+```
+
+---
+
+### Fill-In / Q&A
+
+Additional questions for extended demos or Q&A. All require the enriched Gold tables.
 
 ---
 
 #### Ring share by region
 
-> Asks what percentage of the book sits in ring-candidate communities, broken out by region. The same question was structurally impossible before enrichment — now it's a standard GROUP BY.
+> What percentage of the book sits in ring-candidate communities, broken out by region.
 
 ```
 What share of accounts sits in communities flagged as ring candidates, broken out by region?
@@ -84,7 +156,7 @@ What share of accounts sits in communities flagged as ring candidates, broken ou
 
 #### Balance by risk tier
 
-> Splits total account balance between high and low risk tiers. Shows the dollar weight of the structural signal — useful for risk officers who need to know how much capital is exposed.
+> Splits total account balance between high and low risk tiers. Shows the dollar weight of the structural signal.
 
 ```
 How does total account balance split between the high and low risk tiers?
@@ -94,8 +166,6 @@ How does total account balance split between the high and low risk tiers?
 
 #### Community size distribution
 
-> Asks how many communities exist and how their sizes spread. Sets up intuition for how fragmented or concentrated the ring activity is across the book.
-
 ```
 How many distinct communities are there, and what is the distribution of community sizes?
 ```
@@ -104,23 +174,13 @@ How many distinct communities are there, and what is the distribution of communi
 
 #### Intra- vs cross-community transfer volume
 
-> Asks what fraction of transfer volume flows between accounts in the same community versus across communities. A high intra-community ratio is a structural marker of ring behavior — money cycling within a closed group.
-
 ```
 What fraction of transfer volume flows between accounts in the same community versus across communities?
 ```
 
 ---
 
-### 2. Cohort Comparisons
-
-Two-cohort BI comparisons where the cohort definition comes from the graph. These questions require `community_id` or `fraud_risk_tier` as a filter column.
-
----
-
-#### Merchant-category spending mix
-
-> Compares merchant-category spending patterns between ring-community accounts and the rest. Fraud rings often concentrate at a narrow set of merchant types. This split only exists now that `community_id` is a column.
+#### Merchant-category spending mix by cohort
 
 ```
 How does merchant-category spending mix differ between ring-community accounts and the baseline?
@@ -128,9 +188,7 @@ How does merchant-category spending mix differ between ring-community accounts a
 
 ---
 
-#### Internal transfer fraction
-
-> Asks what share of ring-account transfer volume stays inside the community versus flows out, compared to normal accounts. High internal retention is a hallmark of money-cycling rings and should stand out sharply against the baseline.
+#### Internal transfer fraction vs baseline
 
 ```
 For accounts in ring-candidate communities, what fraction of their transfer volume stays within the community versus flows outside it, compared to non-ring accounts?
@@ -140,17 +198,13 @@ For accounts in ring-candidate communities, what fraction of their transfer volu
 
 #### Risk score distribution
 
-> Compares the spread of risk scores between ring-candidate and non-ring accounts. A good visual for showing that the graph signal produces a cleanly separated distribution — not a marginal lift.
-
 ```
 How does the distribution of risk scores differ between ring-candidate and non-ring accounts?
 ```
 
 ---
 
-#### Transfer count comparison
-
-> Compares average transfer count per account between ring members and the general population. Shows whether ring accounts are more or less active by transaction volume — useful context for investigators sizing case complexity.
+#### Transfer count cohort comparison
 
 ```
 What is the average transfer count per account within ring-candidate communities versus the general account population?
@@ -158,25 +212,7 @@ What is the average transfer count per account within ring-candidate communities
 
 ---
 
-### 3. Community Rollups
-
-Rollup questions over the already-labeled ring-candidate set — the same BI aggregations a stakeholder would ask about any pre-defined segment.
-
----
-
-#### Total balance in ring-candidate communities
-
-> A dollar-exposure question: how much total balance is held by ring-candidate community members, and what fraction of the book does that represent? The kind of number a risk officer or regulator wants on a dashboard.
-
-```
-For ring-candidate communities taken together, what is the total balance held by their members and what share of the book do they represent?
-```
-
----
-
 #### Ring candidates by region
-
-> Breaks down where ring-candidate communities are concentrated geographically, including average member count per region. Useful for prioritizing regional investigation teams.
 
 ```
 Break down the ring-candidate community set by region: how many candidates sit primarily in each region, and what is their average member count?
@@ -184,19 +220,7 @@ Break down the ring-candidate community set by region: how many candidates sit p
 
 ---
 
-#### Internal vs external transfer ratio per community
-
-> For each ring-candidate community individually, shows the ratio of money flowing within the community to money flowing out. Communities with very high internal ratios are the strongest candidates for active cycling behavior.
-
-```
-For each ring-candidate community, what is the ratio of internal transfer volume between members to external transfer volume outside the community, and how does that ratio distribute across the candidate set?
-```
-
----
-
-#### Internal transfer ratio vs non-candidates of similar size
-
-> Controls for community size by comparing ring-candidate internal transfer ratios against non-candidate communities of similar size. Isolates the structural signal from the trivial effect that larger communities transfer more among themselves.
+#### Internal vs external ratio vs non-candidates of similar size
 
 ```
 For ring-candidate communities, how does their internal transfer ratio compare to non-candidate communities of similar size?
@@ -204,25 +228,7 @@ For ring-candidate communities, how does their internal transfer ratio compare t
 
 ---
 
-### 4. Operational Workload
-
-Capacity and queue questions an investigations team would ask once structural risk tiers are filterable columns.
-
----
-
-#### Review queue size by region
-
-> Staffing question: if investigations reviews every high-risk-tier account, how many cases does that create and where are they? Lets a manager size the queue and assign investigators by region before a backlog builds.
-
-```
-How many accounts would need investigator review if the bar is high risk tier, and what is the regional breakdown of that workload?
-```
-
----
-
 #### Ring concentration per thousand accounts by region
-
-> Normalizes ring exposure by region size — a raw count would favor large regions. Per-thousand concentration surfaces regions that are disproportionately exposed, regardless of how many total accounts they hold.
 
 ```
 Which regions have the highest concentration of accounts in ring candidate communities per thousand accounts?
@@ -230,19 +236,7 @@ Which regions have the highest concentration of accounts in ring candidate commu
 
 ---
 
-#### Total balance in ring-candidate accounts vs overall book
-
-> Combines portfolio exposure with the operational framing: how much capital is locked inside ring-candidate accounts, and what share of the total book does that represent? Supports escalation conversations where a dollar figure is needed.
-
-```
-What is the total balance held in accounts assigned to ring-candidate communities, and how does it compare to total balance in the overall book?
-```
-
----
-
 #### Top-ranked accounts per community
-
-> Counts accounts that rank first in their community by similarity score and shows their regional distribution. These are the highest-centrality nodes in each ring — the accounts an investigator would prioritize.
 
 ```
 How many accounts rank first in their community by similarity score, and how are they distributed across regions?
@@ -250,25 +244,7 @@ How many accounts rank first in their community by similarity score, and how are
 
 ---
 
-### 5. Merchant-Side Analysis
-
-Merchant questions that previously had no structural handle. After enrichment, merchant activity can be conditioned on community membership or risk tier.
-
----
-
-#### Most-visited merchants by ring-community accounts
-
-> Flips the lens from accounts to merchants. Fraud rings often share anchor merchants — for laundering, false receipts, or coordinated activity. Surfacing those merchants lets compliance investigate the merchant relationship, not just the accounts.
-
-```
-Which merchants are most commonly visited by accounts in ring-candidate communities?
-```
-
----
-
 #### Transaction volume share from high-risk accounts by merchant category
-
-> For each merchant category, asks what fraction of transaction volume comes from high-risk-tier accounts. Categories with a high share may warrant merchant-level due diligence or enhanced monitoring.
 
 ```
 For each merchant category, what share of transaction volume comes from accounts in the high-risk tier?
@@ -276,19 +252,7 @@ For each merchant category, what share of transaction volume comes from accounts
 
 ---
 
-#### Merchants with customer base concentrated in a single community
-
-> Finds merchants whose customers are unusually clustered into one community. A merchant serving a single tight community is a red flag — it may be an anchor point for a ring rather than a normal retail or service business.
-
-```
-Are there merchants whose customer base is disproportionately concentrated in a single community?
-```
-
----
-
 #### Merchants with the largest risk-tier gap vs the overall population
-
-> Compares each merchant's risk-tier customer mix against the book-wide baseline. A large gap means that merchant is serving a significantly riskier (or safer) customer profile than expected — useful for targeted merchant risk reviews.
 
 ```
 Which merchants show the largest gap between the risk-tier composition of their customer base and the risk-tier composition of the overall account population?
