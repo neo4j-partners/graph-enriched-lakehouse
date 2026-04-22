@@ -22,7 +22,7 @@ What are the top 10 accounts by total amount spent across all merchants?
 
 ### Analytics Challenge
 
-> Shows Genie handling a harder tabular question — joining two tables and applying a conditional aggregate. Night transactions (hours 0–5) are a known fraud signal. This answer is possible because both dimensions (spend and time-of-day) already exist as columns. Sets up the baseline before the anchor questions run.
+> Shows Genie handling a harder tabular question — joining two tables and applying a conditional aggregate. Night transactions (hours 0–5) are a known fraud signal. This answer is possible because both dimensions (spend and time-of-day) already exist as columns.
 
 ```
 Which accounts have both above-average total spend and a night transaction ratio above 20%? Show the top 15 by total spend with their night ratio and account balance.
@@ -30,52 +30,64 @@ Which accounts have both above-average total spend and a night transaction ratio
 
 ---
 
-### Anchor: Merchant Favorites
+## Anchor Questions
 
-> The primary anchor question. Asks which merchants high-volume accounts visit most. Volume is the only proxy for ring membership on the base catalog — there is no community column. The result is a popularity ranking that sounds like a real answer. Hold on this result; the after version of this question returns a structurally different list.
+Each question below has a before and after version. Run the before in the BEFORE Genie space; run the after in the AFTER Genie space. The before version uses a volume or frequency proxy; the after version uses the graph-derived column the proxy could not reach.
 
+---
+
+### 1. Merchant Favorites
+
+**Before**
 ```
 Which merchants are most commonly visited by accounts with the highest total transaction volume?
 ```
 
+**After**
+```
+Which merchants are most commonly visited by accounts in ring-candidate communities?
+```
+
 ---
 
-### Anchor: Book Share
+### 2. Book Share
 
-> Best-available estimate of how much capital sits in suspicious accounts, using volume decile as a proxy for ring membership. The after version asks the same thing against graph-defined ring candidates.
-
+**Before**
 ```
 For the top 10% of accounts by transfer volume, what is the total balance held and what share of the book do they represent?
 ```
 
+**After**
+```
+For ring-candidate communities taken together, what is the total balance held by their members and what share of the book do they represent?
+```
+
 ---
 
-### Anchor: Investigator Review Queue
+### 3. Investigator Review Queue
 
-> Volume cutoff as a stand-in for a risk tier. Shows what a queue sizing looks like when the threshold is a transaction count, not a structural signal.
-
+**Before**
 ```
 How many accounts are in the top 10% by transfer volume, and what is the regional breakdown?
 ```
 
+**After**
+```
+How many accounts would need investigator review if the bar is high risk tier, and what is the regional breakdown of that workload?
+```
+
 ---
 
-### Anchor: Internal vs External Transfer Ratio
+### 4. Internal vs External Transfer Ratio
 
-> Repeat-transfer frequency as a proxy for community insularity. The after version measures the same thing against actual community membership.
-
+**Before**
 ```
 What fraction of total transfer volume flows between accounts that have transacted with each other more than five times, versus accounts with no prior relationship?
 ```
 
----
-
-### Anchor: Merchant Community Concentration
-
-> Co-transaction frequency as a proxy for community cohesion. The after version asks which merchants serve a customer base concentrated in a single graph-defined community.
-
+**After**
 ```
-Are there merchants where the majority of transaction volume comes from accounts that also transact heavily with each other?
+For each ring-candidate community, what is the ratio of internal transfer volume between members to external transfer volume outside the community?
 ```
 
 ---
@@ -84,7 +96,7 @@ Are there merchants where the majority of transaction volume comes from accounts
 
 The pipeline has run. `community_id`, `fraud_risk_tier`, `risk_score`, and `similarity_score` are now ordinary columns. Genie's capability hasn't changed — the catalog has.
 
-Start with the anchor question. It is the same question that opened the BEFORE section, now asked against the enriched catalog. Show both results side by side and let the gap land before moving on.
+Start with the anchor questions from the **Anchor Questions** section above. Show the before and after results side by side and let the gap land before moving on.
 
 ---
 

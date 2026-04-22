@@ -120,6 +120,23 @@ specific list of merchants?"
 
 ---
 
+## What We Need: Better Columns for Better Genie Answers
+
+- **The gap is in the columns, not in Genie.** Structural questions have no column to query against — yet
+- **The result looks authoritative but answers the wrong question:** proxies surface — volume, frequency, balance — not the structural signal the analyst actually wants
+- **Add graph-derived columns** and the right accounts are findable by any tool, including Genie
+- **Change the columns. Change what Genie finds.**
+
+<!--
+One-slide answer to "how did you get that?" before the deeper
+data-layer explanation. Reframes the gap as column inventory,
+not a Genie shortcoming — expansion, not limitation recovery.
+The rest of the Architecture section explains how those columns
+get produced.
+-->
+
+---
+
 ## Finding Patterns Requires a Different Data Layer
 
 - **Patterns live in network topology,** not in the rows of a table
