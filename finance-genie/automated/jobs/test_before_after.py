@@ -48,7 +48,7 @@ PREVIEW_ROWS = 5
 PAIRS = [
     {
         "title": "Merchant favorites",
-        "before": "Which merchants are most commonly visited by the top 10% of accounts by total transaction volume?",
+        "before": "Which merchants are most commonly visited by the top 10% of accounts by total dollar amount spent across merchants?",
         "after": "Which merchants are most commonly visited by accounts in ring-candidate communities?",
     },
     {
