@@ -18,6 +18,38 @@ When finished, return to Databricks and run `03_pull_and_model`.
 
 ---
 
+## How the Fraud Signal Gets In
+
+Each algorithm reads a different part of the synthetic graph. The signal was planted at data-generation time and the algorithms recover it without ever seeing the fraud labels.
+
+**PageRank and Louvain — signal source: within-ring transfers**
+
+Each fraud ring has 100 accounts. At generation time, `WITHIN_RING_PROB` of all P2P transfers are forced to stay inside a ring: ring members send money to other ring members at a much higher rate than background accounts do. This creates a dense internal `TRANSFERRED_TO` subgraph for each ring.
+
+- **Louvain** sees that density as a tight community and assigns all members the same `community_id`.
+- **PageRank** sees ring members recursively passing centrality to each other. Because the senders are themselves well-connected ring members, the centrality compounds — ring members score higher than background accounts even though their raw transfer counts are moderate.
+
+Both algorithms project only Account nodes and `TRANSFERRED_TO` relationships. Merchant data plays no role.
+
+**NodeSimilarity — signal source: anchor merchants**
+
+Each fraud ring is assigned 4 anchor merchants at generation time. Ring members direct `RING_ANCHOR_PREF` of their transactions toward those specific 4 merchants. Normal accounts visit merchants uniformly at random.
+
+The result: ring members share a distinctive set of merchants. NodeSimilarity projects the bipartite Account–Merchant graph (`TRANSACTED_WITH` relationships) and computes Jaccard similarity over shared merchant sets. Two accounts that visit the same 4 anchor merchants out of a pool of thousands score high; two accounts whose shared merchants are explained by random volume score low.
+
+The data flow for NodeSimilarity is:
+```
+anchor merchants assigned at generation
+    → ring members preferentially TRANSACTED_WITH those merchants
+    → bipartite Account–Merchant projection
+    → NodeSimilarity computes Jaccard over shared merchant sets
+    → similarity_score written to Account nodes
+```
+
+`is_fraud` is loaded onto Account nodes for workshop exploration (Steps 1b, 1c, 10, 11) but is never read by any algorithm. All three GDS algorithms operate purely on graph structure.
+
+---
+
 ## Step 1: Verify and Explore the Graph
 
 Before projecting anything, make sure the ingest landed and get a feel for the
@@ -51,21 +83,7 @@ ORDER BY is_fraud DESC
 Balances and holder-age ranges should overlap heavily; that is the whole point
 of the dataset. The graph is where the separation lives.
 
-### 1c. Merchant risk-tier distribution
-
-```cypher
-MATCH (m:Merchant)
-RETURN m.risk_tier     AS risk_tier,
-       m.category       AS category,
-       count(m)         AS merchant_count
-ORDER BY risk_tier, merchant_count DESC
-```
-
-**What to look for:** `crypto` and `gaming` categories skew heavily toward
-`risk_tier = high`: these are the merchants fraud accounts preferentially
-transact with.
-
-### 1d. Sample the subgraph around a fraud account
+### 1c. Sample the subgraph around a fraud account
 
 ```cypher
 MATCH (a:Account {is_fraud: true})
@@ -75,8 +93,8 @@ OPTIONAL MATCH (a)-[p:TRANSFERRED_TO]->(b:Account)
 RETURN a, t, m, p, b
 ```
 
-**What to look for:** the fraud account should connect to several `risk_tier = high`
-merchants and have at least one outgoing `TRANSFERRED_TO` edge to another
+**What to look for:** the fraud account connects to merchants across various
+categories and has at least one outgoing `TRANSFERRED_TO` edge to another
 account. Good visual primer before running the algorithms.
 
 ---

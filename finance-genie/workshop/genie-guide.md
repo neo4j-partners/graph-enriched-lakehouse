@@ -32,15 +32,15 @@ Which accounts have both above-average total spend and a night transaction ratio
 
 ## Anchor Questions
 
-Each question below has a before and after version. Run the before in the BEFORE Genie space; run the after in the AFTER Genie space. The before version uses a volume or frequency proxy; the after version uses the graph-derived column the proxy could not reach.
+The anchor is one fraud question with two answers, run side by side against the BEFORE space (Silver-only) and the AFTER space (enriched Gold). The gap between the two answers is the argument for the enrichment pipeline. Use the primary pair for the main demo; keep the backup in reserve if the primary doesn't land.
 
 ---
 
-### 1. Merchant Favorites
+### Primary anchor: Merchant favorites
 
 **Before**
 ```
-Which merchants are most commonly visited by accounts with the highest total transaction volume?
+Which merchants are most commonly visited by the top 10% of accounts by total dollar amount spent across merchants?
 ```
 
 **After**
@@ -50,44 +50,48 @@ Which merchants are most commonly visited by accounts in ring-candidate communit
 
 ---
 
-### 2. Book Share
+### Backup anchor: Ring share by region
 
 **Before**
 ```
-For the top 10% of accounts by transfer volume, what is the total balance held and what share of the book do they represent?
+What share of accounts send more than half their transfer volume to five or fewer repeat counterparties, broken out by region?
 ```
 
 **After**
 ```
-For ring-candidate communities taken together, what is the total balance held by their members and what share of the book do they represent?
+What share of accounts sits in communities flagged as ring candidates, broken out by region?
 ```
 
 ---
 
-### 3. Investigator Review Queue
+### Validation: High-volume account community membership
+
+> Run after the primary anchor to test whether the "diverse spending" interpretation of high-volume accounts holds under enrichment. 19 of 20 top-volume accounts are low risk and concentrate in two low-risk communities (16163 and 6049). Use this pair to show that the graph can validate as well as surface — the before answer was correct, and the enrichment confirms it.
 
 **Before**
 ```
-How many accounts are in the top 10% by transfer volume, and what is the regional breakdown?
+For the top 20 accounts by total transaction volume, how many unique merchants did each account visit?
 ```
 
 **After**
 ```
-How many accounts would need investigator review if the bar is high risk tier, and what is the regional breakdown of that workload?
+For accounts in the top 20 by total transaction volume, what is their community membership status and risk tier? Are those accounts concentrated in a small number of communities, or are they spread across the book?
 ```
 
 ---
 
-### 4. Internal vs External Transfer Ratio
+### Supplementary: Fraud hub detection
+
+> Optional pair if the audience asks directly "who are the suspects?" Same question asked against both spaces. BEFORE returns 20 high-activity accounts (whales, not fraud) with transfer counts within 5% of each other. AFTER filters to ring-community members and ranks by PageRank `risk_score`, surfacing specific accounts with community context — including a sharp outlier (risk_score ~14.7 vs ~3.8 for the rest). The detailed snapshot and failure analysis live in `GENIE_SETUP.md`.
 
 **Before**
 ```
-What fraction of total transfer volume flows between accounts that have transacted with each other more than five times, versus accounts with no prior relationship?
+Are there accounts acting as hubs of potentially fraudulent money movement networks?
 ```
 
 **After**
 ```
-For each ring-candidate community, what is the ratio of internal transfer volume between members to external transfer volume outside the community?
+Are there accounts acting as hubs of potentially fraudulent money movement networks?
 ```
 
 ---

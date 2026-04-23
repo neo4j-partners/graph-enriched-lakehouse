@@ -42,7 +42,7 @@ recovery.
 
 ## What This Talk Covers
 
-1. **Anchor.** One fraud question, two answers — before and after enrichment
+1. **Anchor.** One fraud question, two answers: before and after enrichment
 2. **Architecture.** Why the second answer needed a different data layer
 3. **Pipeline.** How the columns behind the second answer are built
 
@@ -53,7 +53,23 @@ Three parts over 15 minutes. The anchor opens with a before/after
 reveal on one question; architecture explains what Neo4j adds; the
 pipeline shows how the features that produced the after answer are
 built. Pitch the enriched lakehouse as unlocking a new set of
-questions for Genie — not as patching a Genie shortcoming.
+questions for Genie, not as patching a Genie shortcoming.
+-->
+
+---
+
+## Financial Crime Hides Between the Rows
+
+- **Coordinated fraud** spreads activity across dozens of accounts on purpose
+- **Each transaction looks clean in isolation**
+- **The fraud is hidden in the patterns across the accounts**
+- **Row-level aggregation cannot produce a property that lives in the connections**
+
+<!--
+Money laundering rings, mule networks, and coordinated schemes
+deliberately split activity across accounts to evade per-account
+detection. The pattern is network-level; no GROUP BY recovers it.
+This sets up the anchor reveal on the next slide.
 -->
 
 ---
@@ -70,7 +86,7 @@ questions for Genie — not as patching a Genie shortcoming.
 The dataset contains two overlapping networks. The first is a
 bipartite account-merchant graph: accounts spend at merchants.
 The second is a peer-to-peer transfer network: accounts send money
-directly to other accounts. Fraud rings leave footprints in both —
+directly to other accounts. Fraud rings leave footprints in both:
 tight clusters of accounts trading with each other and routing
 through the same merchants. The goal is not to label fraud; it is
 to make the structural patterns visible so analysts can investigate.
@@ -82,103 +98,144 @@ to make the structural patterns visible so analysts can investigate.
 
 ---
 
-## Financial Crime Hides Between the Rows / Financial Fraud: Pattern Detection
+## Merchant Favorites: Before Graph Enrichment
 
-- **Coordinated fraud** spreads activity across dozens of accounts on purpose
-- **Each transaction looks clean in isolation**
-- **The fraud is hidden in the patterns across the accounts**
-- **Row-level aggregation cannot produce a property that lives in the connections**
+*"Which merchants are most commonly transacted with by the top 10% of accounts by total dollar amount spent across merchants?"*
+
+| Merchant | Transactions |
+|---|---|
+| MarketPlus | 30 |
+| BeanStreet | 28 |
+| GroceryHub | 27 |
+| QuickCash | 26 |
+| FuelZone | 26 |
+
+**Top five tied at 26-30. No merchant stands out for investigation.**
 
 <!--
-Money laundering rings, mule networks, and coordinated schemes
-deliberately split activity across accounts to evade per-account
-detection. The pattern is network-level; no GROUP BY recovers it.
-This sets up the anchor reveal on the next slide.
+Best proxy available without graph columns: biggest spenders,
+their top merchants. Genie segments accounts into deciles by
+transaction volume, counts transactions in the top decile.
+
+Five merchants tied at 26 to 30. All look like ordinary commercial
+activity. From this list there's no basis to pick one merchant
+over another for investigation. The volume proxy consumed the answer.
 -->
 
 ---
 
-## Merchant Favorites: One Question, Two Answers
+## Merchant Favorites: After Graph Enrichment
 
-*"Which merchants are most commonly visited by accounts in ring-candidate communities?"*
+*"Which merchants are most commonly transacted with by accounts in ring-candidate communities?"*
 
-- **Before (raw lakehouse):** Top merchants by overall visit count — popular chains, sounds plausible
-- **After (enriched lakehouse):** Specific list of merchants where ring-community members cluster disproportionately
+| Merchant | Top-decile (before) | Ring members (after) |
+|---|---|---|
+| MarketPlus | 30 | **111** |
+| QuickCash | 26 | **104** |
+| CoinVault | not ranked | **101** |
+| LoanEdge | not ranked | **99** |
 
-**Same question. Different answer. Which one would you investigate?**
+**5% of accounts. 4× the transactions. Per account: 7×.**
 
 <!--
-This is the anchor. Run both questions live in Genie — before
-against the base catalog, after against the enriched catalog —
-so the gap is visible in real time.
+Same question shape, different filter: community_id and
+is_ring_candidate are now columns in Gold. The SQL collapses to
+a single filter and count.
 
-Hold on the two answers until someone asks "how did you get
-that?" — that is the invitation into Architecture. If nobody
-asks, offer it: "does anyone want to know how we got to that
-specific list of merchants?"
+Two things change. MarketPlus and QuickCash were in the before
+ranking at 30 and 26. From ring members alone: 111 and 104.
+Half the cohort size, four times the raw count, seven times the
+per-account rate. Second, CoinVault and LoanEdge never appeared
+in the before ranking. The volume proxy couldn't surface them;
+community membership can.
+
+Hold on this slide until someone asks "how did you get that?"
+That question is the invitation into the Architecture section.
+If nobody asks, offer it.
 -->
 
 ---
 
-## What We Need: Better Columns for Better Genie Answers
+## What Graph Analysis Adds to Genie
 
-- **The gap is in the columns, not in Genie.** Structural questions have no column to query against — yet
-- **The result looks authoritative but answers the wrong question:** proxies surface — volume, frequency, balance — not the structural signal the analyst actually wants
-- **Add graph-derived columns** and the right accounts are findable by any tool, including Genie
+Three new kinds of answers that don't exist as row-level properties:
+
+- **Centrality:** how central an account is in the flow of money. A network position.
+- **Community:** which accounts cluster tightly together. A density across many edges.
+- **Similarity:** which accounts route through the same counterparties. A neighborhood property.
+
+**Each becomes a column Genie can group by, filter on, and compare across.**
+
+<!--
+Positive-framed opening for Architecture. Lead with the unlock:
+graph analysis produces three kinds of answers that don't exist
+as row-level properties. Each of the three maps to a GDS algorithm
+we'll see later on the Sample GDS Algorithms slide: PageRank,
+Louvain, Node Similarity. Every one of them lands as a Delta column
+alongside region, product, and balance.
+
+Do not frame this as "SQL can't do X." Frame it as "graph analysis
+unlocks these answers for Genie." Expansion, not limitation recovery.
+-->
+
+---
+
+## Graph Databases Find Every Instance of a Pattern
+
+- **Describe a pattern:** a cluster of accounts moving money densely among themselves, or accounts sharing the same counterparties
+- **The graph returns every place that shape exists:** no starting account required, no ID to look up
+- **Pattern-matching is the graph's native operation,** which is why the connection questions from the last slide live there
+
+<!--
+One slide on why a graph database is the right tool to produce
+those three kinds of answers. Lead with capability, not contrast.
+Describe the pattern, get every instance back. The audience does
+not need a SQL-vs-graph mechanics lesson; they need to know the
+graph is built for the questions we just listed.
+
+If asked in Q&A, the point comparison is: SQL needs a starting
+account ID; a graph database needs only the shape.
+-->
+
+---
+
+## Better Columns for Better Genie Answers
+
+- **Graph results land as Delta columns:** `risk_score`, `community_id`, `similarity_score`, `fraud_risk_tier`
+- **Genie treats them like any other dimension:** `GROUP BY fraud_risk_tier`, `WHERE is_ring_candidate = true`
+- **New questions unlocked:** candidate-population sizing, regional review workload, merchant concentration by community
 - **Change the columns. Change what Genie finds.**
 
 <!--
-One-slide answer to "how did you get that?" before the deeper
-data-layer explanation. Reframes the gap as column inventory,
-not a Genie shortcoming — expansion, not limitation recovery.
-The rest of the Architecture section explains how those columns
-get produced.
+The pivot that ties the graph discussion back to Genie. Same Genie,
+same SQL, new dimensions. The analyst works the way they always
+have; the toolkit is strictly larger.
+
+This is the slide that completes the answer to "how did you get
+that?" Graph analysis produces the answers, those answers become
+Delta columns, Genie queries them like any other column.
 -->
 
 ---
 
-## Finding Patterns Requires a Different Data Layer
+## Architecture at a Glance
 
-- **Patterns live in network topology,** not in the rows of a table
-- **"Which accounts are central in the flow of money?"** Centrality is a network position — no SQL aggregation produces it
-- **"Which accounts cluster tightly together?"** Community is a density across many edges — no GROUP BY captures it
-- **"Which accounts route through the same merchants?"** Overlap is a neighborhood property — no join recovers it
+![w:900 center](./pipeline-architecture.png)
 
-<!--
-Three connection questions, three reasons SQL cannot reach them.
-The answer to each exists in the network, not in the rows. The
-next slide explains what data layer can reach them.
--->
-
----
-
-## SQL Traversal Starts from an Account. A Graph Database Starts from a Pattern.
-
-- **SQL traversal needs a starting point** — a specific account ID or customer number
-- **A graph database needs only the pattern** and finds every instance in the network
-- **Structural questions need a data layer built for connections**
+- **The graph and the warehouse are connected entirely through enriched Delta tables.** No live query path between them
+- **Databricks pulls account features from Neo4j via the Spark Connector** and joins them with Silver tables before writing Gold. `account_labels` feeds the join but is not loaded into Neo4j
 
 <!--
-Traditional databases are point-lookup machines; graph databases
-are pattern-matching machines. You do not need to know which
-accounts to investigate — describe the shape of a ring and the
-graph returns every place that shape exists.
--->
+The pull direction matters. Neo4j does not write to Unity Catalog
+directly; Databricks pulls from Neo4j via the Spark Connector in
+nb04, joins with Silver tables such as accounts and account_labels,
+and materializes the Gold tables. Nothing in the graph reaches
+production queries except what the pipeline has already
+materialized to Gold.
 
----
-
-## Graph Database and Lakehouse Work Together
-
-- **The graph** is the right data layer for connection questions
-- **The lakehouse** is the right layer for aggregates, joins, and the business questions Genie already handles well
-- **Compute the connection patterns in the graph, land them as columns in the lakehouse, let Genie answer against them**
-
-<!--
-The pivot that reframes this work as expansion. Genie is working
-as designed throughout; we are not patching Genie. We are giving
-Genie new dimensions — community, centrality, similarity — that
-it can group by, filter on, and compare across using the SQL it
-already generates well.
+Two Gold tables support the Genie AFTER demo: gold_accounts holds
+account metadata plus three GDS features, and
+gold_account_similarity_pairs holds similarity edge pairs.
 -->
 
 ---
@@ -187,54 +244,15 @@ already generates well.
 
 Four steps convert a network of account relationships into plain columns that Genie queries like any other dimension.
 
-- **Load — Silver into Neo4j:** Account and transaction records from the existing lakehouse map into Neo4j Aura as a network of connected entities
-- **Run GDS — patterns become columns:** Graph algorithms surface structural patterns: which accounts are central to money flow, which cluster together, which share the same connections
-- **Enrich — results land in Gold:** Databricks pulls GDS outputs from Neo4j via the Spark Connector, joins with Silver, and writes `risk_score`, `community_id`, and `similarity_score` as plain Delta columns
-- **Query — auditable by construction:** Nothing in the graph reaches a Genie query until the pipeline has materialized it into Gold; the audit trail is the Delta table
+- **Load Silver into Neo4j:** Account and transaction records from the existing lakehouse map into Neo4j Aura as a network of connected entities
+- **Run GDS, patterns become columns:** Graph algorithms surface structural patterns: which accounts are central to money flow, which cluster together, which share the same connections
+- **Enrich, results land in Gold:** Databricks pulls GDS outputs from Neo4j via the Spark Connector, joins with Silver, and writes `risk_score`, `community_id`, and `similarity_score` as plain Delta columns
+- **Query: auditable by construction.** Nothing in the graph reaches a Genie query until the pipeline has materialized it into Gold; the audit trail is the Delta table
 
 <!--
 Four steps. Structural analysis runs once per pipeline cycle;
 every downstream consumer reads the results as columns. The
 graph analysis is invisible to the query layer.
--->
-
----
-
-## Architecture at a Glance
-
-```
-Unity Catalog Silver          Neo4j Aura + GDS               Unity Catalog Gold
-+-------------------+         +-------------------+          +---------------------------+
-| accounts          |         | PageRank          |          | gold_accounts             |
-| account_links     |--load-->| Louvain           |--pull--> |   risk_score              |
-| merchants         |         | Node Similarity   |  Spark   |   community_id            |
-| transactions      |         | property graph    |  + join  |   similarity_score        |
-| account_labels    |         +-------------------+          +---------------------------+
-+-------------------+                                        | gold_account_             |
-                                                             |   similarity_pairs        |
-                                                             +---------------------------+
-                                                                        |
-                                                                        v
-                                                             +--------------------+
-                                                             | Databricks Genie   |
-                                                             | text-to-SQL        |
-                                                             +--------------------+
-```
-
-- **The graph and the warehouse are connected entirely through enriched Delta tables.** No live query path between them
-- **Databricks pulls account features from Neo4j via the Spark Connector** and joins them with Silver tables before writing Gold — `account_labels` feeds the join but is not loaded into Neo4j
-
-<!--
-The pull direction matters. Neo4j does not write to Unity Catalog
-directly; Databricks pulls from Neo4j via the Spark Connector in
-nb04, joins with Silver tables (accounts, account_labels), and
-materializes the Gold tables. Nothing in the graph reaches
-production queries except what the pipeline has already
-materialized to Gold.
-
-Two Gold tables support the Genie AFTER demo: gold_accounts
-(account metadata + three GDS features) and
-gold_account_similarity_pairs (similarity edge pairs).
 -->
 
 ---
@@ -256,9 +274,9 @@ Fraud population averages 3.65× the centrality of non-fraud accounts on the
 demo dataset.
 
 Louvain: modularity-optimal partition. Each of the ten synthetic rings lands
-in its own community with 100% ring coverage; average community purity is 70%
-(~100 ring members + ~44 non-ring accounts per ring-candidate community).
-fraud_risk_tier is a derived column, not a direct GDS output.
+in its own community with 100% ring coverage; average community purity is 70%,
+with roughly 100 ring members and 44 non-ring accounts per ring-candidate
+community. fraud_risk_tier is a derived column, not a direct GDS output.
 
 Node Similarity: Jaccard overlap of shared-merchant sets over the bipartite
 account-merchant graph. Fraud ring members score 1.98× higher than non-fraud
@@ -277,9 +295,9 @@ are excluded; 3.2% of ring members fall below.
 <!--
 The pipeline makes no judgment call. It surfaces shapes that
 resemble rings and lets analysts do the fraud work with the
-tools they already use. The "after" questions in this demo —
-merchant concentration, regional review workload, book share by
-community — are that workflow.
+tools they already use. The "after" questions in this demo cover
+merchant concentration, regional review workload, and book share
+by community. That is the workflow.
 -->
 
 ---
@@ -288,7 +306,7 @@ community — are that workflow.
 
 - **`community_id` and `fraud_risk_tier`** sit alongside region, product, and balance as ordinary dimensions
 - **Questions that had no handle before:** candidate-population sizing, regional review workload, merchant concentration by community
-- **`GROUP BY fraud_risk_tier`** — not "find the ring"
+- **`GROUP BY fraud_risk_tier`,** not "find the ring"
 
 **Same Genie, same SQL. New dimensions. Strictly more answers.**
 
@@ -318,9 +336,9 @@ applies. The algorithm changes; the architecture does not.
 
 ## Key Takeaways
 
-- **One question, two answers** — the gap is the whole argument
+- **One question, two answers:** the gap is the whole argument
 - **Graph for connection questions, lakehouse for everything Genie already does well**
-- **GDS columns land in Gold as ordinary dimensions** — the analyst's toolkit gets bigger, not different
+- **GDS columns land in Gold as ordinary dimensions:** the analyst's toolkit gets bigger, not different
 
 <!--
 Three points aligned to the three-part structure: the anchor, the
@@ -339,8 +357,8 @@ The following slides apply when running the demo live or fielding detailed quest
 
 Two questions from the base catalog, Genie answering what it's built for:
 
-- **Q1:** "What are the top 10 accounts by total amount spent across merchants?" — clean ranked list; standard aggregation over `transactions`
-- **Q2:** "Show accounts with above-average spend and more than 20% of transactions at night" — join and conditional aggregate; correct top-15 with night ratio and balance
+- **Q1:** "What are the top 10 accounts by total amount spent across merchants?" Clean ranked list; standard aggregation over `transactions`
+- **Q2:** "Show accounts with above-average spend and more than 20% of transactions at night." Join and conditional aggregate; correct top-15 with night ratio and balance
 - **Genie doing its designed job** on the catalog the customer already runs
 - **The SQL shapes are standard:** all dimensions live in the base tables
 
@@ -368,7 +386,7 @@ inventory underneath a non-deterministic translation layer.
 
 ## Defensibility
 
-- **GDS produces features with published mathematical definitions** — PageRank, Louvain, Jaccard
+- **GDS produces features with published mathematical definitions:** PageRank, Louvain, Jaccard
 - **Humans and downstream models adjudicate, not the pipeline**
 - **The pipeline surfaces candidates; it does not label fraud**
 
@@ -377,4 +395,166 @@ Defensible framing for regulated environments. GDS outputs are
 reproducible under a fixed projection; whatever reads the columns
 adjudicates: investigator triage, supervised classifier, analyst
 in Genie.
+-->
+
+---
+
+## Backup Anchor: Ring Share by Region (Before)
+
+*"What share of accounts send more than half their transfer volume to five or fewer repeat counterparties, broken out by region?"*
+
+- **Genie's SQL:** per account, rank counterparties by transfer volume; flag accounts sending over half their volume to their top 5
+- **Share of accounts flagged:** 95.5% to 96.3% across all six regions
+- **Top:** US-East with 96.3% of accounts flagged; **Bottom:** EU-West with 95.5%
+
+**A reasonable ranking: every region looks alike, with no minority to triage.**
+
+<!--
+Backup anchor if Merchant Favorites doesn't land. Same shape as
+the primary: the fraud-hunting question the analyst asks without
+graph columns.
+
+With no community_id available, the best proxy for "coordinated
+activity" is counterparty concentration: accounts that send most
+of their volume to a handful of partners. Genie writes the query
+against account_links: per account, rank counterparties by volume,
+keep the ones sending over half their volume to their top five.
+Group by region.
+
+Answer: 95 to 96 percent across every region. The ranking flagged
+almost the entire book. No regional minority, no cohort to pull
+for triage. The question consumed the answer.
+-->
+
+---
+
+## Backup Anchor: Ring Share by Region (After)
+
+*"What share of accounts sits in communities flagged as ring candidates, broken out by region?"*
+
+- **What changed:** BEFORE flagged counterparty concentration by transfer volume; AFTER filters to accounts whose community is flagged is_ring_candidate
+- **Share of accounts in ring communities:** 4.69% to 5.51% across all six regions
+- **Top:** US-West with 5.51% of accounts in ring communities; **Bottom:** APAC with 4.69%
+
+**Structurally defined minority, roughly a tenth the size of the proxy minority.**
+
+<!--
+is_ring_candidate is a column in Gold, so the query collapses: one
+left join, average by region. No CTEs, no counterparty ranking.
+
+The answer: four and a half to five and a half percent per region.
+Roughly a tenth the size of the proxy minority. US-West highest,
+APAC lowest. The structural minority the volume-proxy could not
+see, because concentration does not imply coordination.
+
+Most accounts concentrate on a handful of counterparties for
+legitimate reasons: payroll, family transfers, regular suppliers.
+Ring candidates are accounts that concentrate AND trade densely
+with each other. Only the graph makes that distinction, and once
+it's a column, Genie can triage on it like any other dimension.
+-->
+
+---
+
+## Validation: Merchant Ring-Candidate Share (Before)
+
+*"Which merchants are most commonly visited by the top 20 accounts by total transaction volume?"*
+
+- **Genie's SQL:** rank accounts by total volume, count merchant visits in the top 20
+- **243 merchants returned:** no merchant visited by more than 2 of the 20 accounts
+- **Top merchant:** merchant_5207 (retail) with 2 visits; the remaining 242 merchants with 1 visit each
+- **Shape:** the cohort is completely dispersed, with no shared merchants and no visible concentration
+
+**A dispersed list: no merchant stands out as a triage priority.**
+
+<!--
+This is the before answer for the merchant ring-candidate
+validation pair. The question is sharper than the primary anchor
+because it uses the top 20 accounts rather than the top decile,
+which makes the result more striking: across 20 of the highest-volume
+accounts, no two accounts visit more than one shared merchant.
+243 distinct merchants, maximum co-visit count of 2. The volume
+proxy produces a flat, dispersed list that looks like ordinary
+diverse spending.
+-->
+
+---
+
+## Validation: Merchant Ring-Candidate Share (After)
+
+*"For merchant_3097, merchant_4859, merchant_5048, and merchant_6683, what share of each merchant's customers are members of ring-candidate communities, and how does that compare to the book baseline?"*
+
+- **What changed:** BEFORE ranked by volume; AFTER measures ring-candidate share of each merchant's customer base against the 5.06% book baseline
+- **merchant_4859 (crypto):** 8.1% ring-candidate share, 60% above the 5.06% baseline
+- **merchant_3097 (travel):** 5.6%, within noise of baseline
+- **merchant_6683 (utilities):** 5.1%, at baseline exactly
+- **merchant_5048 (retail):** 0%, no ring-candidate customers
+
+**Three of four are at baseline. merchant_4859 is the one outlier worth investigating.**
+
+<!--
+The after answer validates which of the four merchants from the
+before overlap finding carry actual structural signal. The SQL
+joins gold_accounts and gold_fraud_ring_communities on
+fraud_risk_tier and is_ring_candidate. Two columns that don't
+exist in Silver.
+
+Three merchants are noise: travel and utilities at baseline,
+retail at zero. The crypto merchant is the signal: 3 of 37
+customers in ring-candidate communities against a 5.06% book rate.
+Not a verdict, a triage priority. The before answer could not
+distinguish merchant_4859 from the others; the after answer can.
+-->
+
+---
+
+## Validation: High-Volume Account Community Membership (Before)
+
+*"For the top 20 accounts by total transaction volume, how many unique merchants did each account visit?"*
+
+- **Genie's SQL:** rank accounts by volume, count distinct merchants per account
+- **Range:** 7 to 21 unique merchants across the top 20
+- **Top volume account:** account 13318 ($18,429) visited 9 merchants; account 11764 ($11,267) visited 21
+- **No correlation** between transaction volume and number of merchants visited
+
+**Looks like legitimate diverse spending. No structural red flag visible.**
+
+<!--
+The before answer for the account community membership validation
+pair. The before question asks how spread out these high-volume
+accounts are across merchants. It's the "diverse spending" reading
+that was surfaced in the initial analysis. The answer is consistent
+with ordinary commercial activity: high volume, spread across many
+merchants, no suspicious concentration. Without community membership
+in the catalog, this is the best signal available and it's
+inconclusive.
+-->
+
+---
+
+## Validation: High-Volume Account Community Membership (After)
+
+*"For accounts in the top 20 by total transaction volume, what is their community membership status and risk tier?"*
+
+- **What changed:** BEFORE counted unique merchants; AFTER adds community_id and fraud_risk_tier from Gold
+- **19 of 20 accounts:** low risk, concentrated in three communities (16163, 6049, 3040)
+- **1 account:** high risk, with account 3404 ($12,996) in community 3040
+- **Merchant diversity is confirmed legitimate:** spread across 243 merchants is a community 16163 / 6049 pattern, not a ring pattern
+
+**The before interpretation was correct. High volume and diverse merchants is not a layering signal here.**
+
+<!--
+The after answer closes the loop on the before interpretation.
+19 of 20 top-volume accounts are low risk and cluster in two
+main low-risk communities (16163 and 6049). The one high-risk
+account (3404) is an isolated case in community 3040, not part
+of a coordinated ring.
+
+This is the validation result the before answer couldn't produce:
+not just "these accounts visit many merchants" but "these accounts
+are in known low-risk communities, and the diversity is structural,
+not a cover." The enrichment confirmed the before reading rather
+than overturning it, which is itself a useful demo beat. The
+graph doesn't always find fraud; sometimes it confirms the analyst
+was already right.
 -->

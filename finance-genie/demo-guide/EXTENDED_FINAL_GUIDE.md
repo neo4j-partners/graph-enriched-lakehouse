@@ -127,61 +127,31 @@ This is not a criticism of Genie. It is the structural question boundary stated 
 
 ---
 
-## Proposed BEFORE demo questions
+## Anchor Questions
 
-The BEFORE space runs against unenriched Silver tables. Ask in two phases: standard BI questions first to show Genie working correctly, then structural-discovery questions to expose the gap. The contrast is the setup the AFTER space depends on.
+The anchor is one fraud question with two answers, run side by side against the BEFORE space (Silver-only) and the AFTER space (enriched Gold). The gap between the two answers is the argument for the enrichment pipeline. Use the primary pair for the main demo; keep the backup pair in reserve if the primary doesn't land.
 
-**Standard BI questions: Genie succeeds. Ask these first.**
-- Which accounts had the highest total transfer volume last quarter?
-- What are the top ten merchants by transaction count, and what categories do they represent?
-- How does average account balance vary by region?
+Before the anchor, ask one or two standard BI questions against the BEFORE catalog ("Which accounts had the highest total transfer volume last quarter?" or "What are the top ten merchants by transaction count?") so the audience sees Genie answering correctly on its home turf before the anchor exposes the column-inventory gap.
 
-**Structural-discovery questions: Genie substitutes. Ask these second.**
-- Are there accounts that appear to be the hub of a money movement network that might be involved in fraudulent activity?
-- Which groups of accounts seem to be moving money primarily among themselves?
+### Primary anchor: Merchant favorites
 
-After the second set, name what happened: "Genie answered the question it could answer with the data it has, not the question we asked. Network topology doesn't exist in these rows. That is what the enrichment pipeline changes."
+**Before:** "Which merchants are most commonly visited by the top 10% of accounts by total dollar amount spent across merchants?"
 
----
+Genie segments accounts into transaction-volume deciles and counts merchant visits among the top decile. The top of the list: merchant_1300 with 30 visits, merchant_2514 with 28 visits, a flat 26-to-30 visit band across the top five. A plausible-looking list of popular chains with no priority for investigation.
 
-## Proposed AFTER demo questions
+**After:** "Which merchants are most commonly visited by accounts in ring-candidate communities?"
 
-Five categories, chosen because they all produce answers that were not possible from the BEFORE catalog and all fall squarely inside Genie's text-to-SQL envelope. A live demo picks three to five questions total. Recommended questions are marked: these have produced clean, self-explanatory results in live testing and require no graph-theory context to read.
+Genie filters transactions to accounts whose community is flagged `is_ring_candidate` and counts merchant visits. Two merchants from the BEFORE list come back at nearly 4x the visit rate: merchant_1300 goes from 30 visits to 111, merchant_2971 from 26 to 104. Three new names surface that the volume-proxy never ranked: merchant_0857 with 101 visits, merchant_7046 with 99, merchant_2930 with 99. Ring-candidate accounts are 5% of the book yet generate 4x the visit count at these merchants. That is the intensity signal an analyst can triage on.
 
-### 1. Portfolio composition over structural segments
+### Backup anchor: Ring share by region
 
-- What share of accounts sits in communities flagged as ring candidates, broken out by region?
-- **Recommended:** How does total account balance split between the high and low risk tiers? Produces a self-explanatory bar chart with a clean GROUP BY and AVG; no graph knowledge required to read the result.
-- How many distinct communities are there, and what is the distribution of community sizes?
-- What fraction of transfer volume flows between accounts in the same community versus across communities?
+**Before:** "What share of accounts send more than half their transfer volume to five or fewer repeat counterparties, broken out by region?"
 
-### 2. Cohort comparisons across tiers
+Without community columns, the best proxy for coordinated activity is counterparty concentration. Genie ranks each account's counterparties by transfer volume and flags accounts whose top-five share exceeds 50%. The result: 95.5% to 96.3% of accounts qualify in every region. The proxy consumes almost the entire book. No regional minority, no cohort to pull for triage.
 
-- **Recommended:** Compare average account balance, average account age, and average monthly transaction count between the high-risk tier and the low-risk tier. Classic cohort comparison; non-technical audiences can read the side-by-side table immediately.
-- Do accounts in ring communities concentrate in particular regions or account types, and how does that concentration compare to the overall account population?
-- Are ring-community accounts newer or older than the general population?
-- How does merchant-category spending mix differ between ring-community accounts and the baseline?
+**After:** "What share of accounts sits in communities flagged as ring candidates, broken out by region?"
 
-### 3. Rollups over already-labeled communities
-
-- **Recommended:** For ring-candidate communities taken together, what is the total balance held by their members and what share of the book do they represent? Operationally relevant to risk teams; the single-row answer is easy to screenshot and share.
-- Break down the ring-candidate community set by region: how many candidates sit primarily in each region, and what is their average member count?
-- For each ring-candidate community, what is the ratio of internal transfer volume between members to external transfer volume outside the community?
-- Compare average account age and average account balance inside ring-candidate communities against non-candidate communities of similar size.
-
-### 4. Operational and investigator workload questions
-
-- **Recommended:** How many accounts would need investigator review if the bar is high risk tier, and what is the regional breakdown of that workload? Translates directly to staffing conversations; the regional breakdown drives follow-up questions naturally.
-- Which regions have the highest concentration of accounts in ring-candidate communities per thousand accounts?
-- What is the total balance held in accounts assigned to ring-candidate communities, and how does it compare to total balance in the overall book?
-- How many accounts rank first in their community by similarity score, and how are they distributed across regions?
-
-### 5. Merchant-side questions that previously had no handle
-
-- **Recommended:** Which merchants are most commonly visited by accounts in ring-candidate communities? Previously unanswerable from Silver; the result is immediately surprising and visually compelling.
-- For each merchant category, what share of transaction volume comes from accounts in the high-risk tier?
-- Are there merchants whose customer base is disproportionately concentrated in a single community?
-- Which merchants show the largest gap between the risk-tier composition of their customer base and the risk-tier composition of the overall account population?
+`is_ring_candidate` is a column in Gold. One left join, group by region. The result: 4.69% to 5.51% of accounts per region, roughly a tenth the size of the proxy minority. US-West leads at 5.51%, APAC trails at 4.69%. Concentration does not imply coordination. Payroll, family transfers, and regular suppliers all concentrate legitimately. Only the graph separates concentration from coordination, and once it is a column, Genie can triage on it like any other dimension.
 
 ---
 

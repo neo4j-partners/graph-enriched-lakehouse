@@ -182,54 +182,47 @@ All three checks should pass if the GDS algorithms ran successfully and the spac
 
 ## Before: Genie Without Graph Enrichment
 
-This is what Genie returned when queried against the raw tables — before GDS enrichment and before the gold tables existed.
+This is what Genie returns when queried against the raw Silver tables — no GDS enrichment, no gold tables.
 
 **Question asked:** "Are there accounts acting as hubs of potentially fraudulent money movement networks?"
 
-**Genie's answer:** Yes — 20 accounts flagged as fraudulent hubs.
+**Genie's answer:** Yes — 20 accounts ranked by peer-to-peer transfer activity.
 
-| Account | Transfers | Outgoing | Incoming | High-Risk Txns % | Risk Score |
-|---------|-----------|----------|----------|-----------------|------------|
-| 16078 | 71 | $24,079 | $12,762 | 53.85% | 36.49 |
-| 4940 | 84 | $19,533 | $10,628 | 54.55% | 35.86 |
-| 9420 | 52 | $11,796 | $6,645 | 38.89% | 33.09 |
-| 22481 | 80 | $27,507 | $9,279 | 41.67% | 32.17 |
-| 4807 | 91 | $36,768 | $21,728 | 50.0% | 32.10 |
+| Account | Outgoing Transfers | Incoming Transfers | Total Activity |
+|---------|--------------------|--------------------|----------------|
+| 13914 | 238 | 254 | 492 |
+| 4342  | 241 | 237 | 478 |
+| 16570 | 247 | 230 | 477 |
+| 7429  | 247 | 228 | 475 |
+| 7698  | 242 | 230 | 472 |
 
-Genie recommended immediately freezing these five accounts.
+Genie's summary asked whether to identify hubs by transfer dollar amount instead — the SQL it ran ranked purely by transfer count over `account_links`.
 
-**Why this answer is wrong:** Every account in the top 20 is a whale — a high-volume legitimate account, such as a payment aggregator or treasury account. The actual fraud consists of 1,000 accounts organized into 10 rings of 100 members each. None of them appear in this list. Genie sorted by inbound transfer count and raw risk score, which is exactly what the data was designed to fool. The 1,000 fraud ring members have moderate transfer volumes (15–30 each) and are completely invisible to this analysis.
+**Why this answer is wrong:** The top 20 accounts land within 5% of each other on total activity (467 to 492). Every account here is a high-volume legitimate account — a payment aggregator or treasury account — not a fraud ring member. The actual fraud consists of 1,000 accounts organized into 10 rings of 100 members each, and none appear on this list. Fraud ring members transact at ordinary volumes and route through a shared set of anchor merchants; that pattern is invisible to a row-level COUNT over `account_links`.
 
-The signals Genie used — high transfer count, disproportionate outflows, high-risk merchant percentage — are all whale characteristics, not fraud ring characteristics. Fraud ring members transact at ordinary volumes and visit a shared set of anchor merchants that is indistinguishable from background noise without graph structure.
+The only signal Genie has in Silver is transfer count. Without community membership, risk-score centrality, or similarity-to-peers as columns, there is no way to separate high-activity whales from ring captains with coordinated peers.
 
 ---
 
 ## After: Genie With Graph Enrichment
 
-This is what Genie returned after the GDS pipeline ran successfully and the gold tables were rebuilt with the corrected parameters.
+This is what Genie returns once the GDS pipeline has run and `gold_accounts` carries `community_id`, `risk_score`, `is_ring_community`, and `similarity_score` as ordinary columns.
 
 **Question asked:** "Are there accounts acting as hubs of potentially fraudulent money movement networks?"
 
-**Genie's answer:** Yes — 10 fraud rings identified, each containing exactly 100 confirmed fraudulent accounts.
+**Genie's answer:** Yes — 20 accounts inside ring-candidate communities, ranked by PageRank `risk_score`.
 
-| Community ID | Total Members | Fraud Members | Avg Risk Score | Avg Similarity Score |
-|-------------|---------------|---------------|----------------|----------------------|
-| 3515 | 109–127 | 100 | 1.2–1.5 | 0.18–0.22 |
-| 8382 | 109–127 | 100 | 1.2–1.5 | 0.18–0.22 |
-| 16873 | 109–127 | 100 | 1.2–1.5 | 0.18–0.22 |
-| ... | ... | 100 | 1.2–1.5 | 0.18–0.22 |
+| Account | Risk Score | Community | Community Size | Community Avg Risk |
+|---------|------------|-----------|----------------|--------------------|
+| 14268 | 14.71 | 15944 | 143 | 2.60 |
+| 20129 | 3.89 | 18545 | 119 | 2.84 |
+| 16205 | 3.86 | 18545 | 119 | 2.84 |
+| 16579 | 3.82 | 7676  | 118 | 2.84 |
+| 7890  | 3.80 | 4015  | 126 | 2.72 |
 
-Top hub accounts within rings (captain accounts):
+Seven distinct ring-candidate communities surface in the top 20, with community sizes clustered in the 118–143 band (the GDS ring-candidate size range). Account 14268 stands out as a sharp outlier in community 15944, with `risk_score` nearly 4x the next account in the list.
 
-| Account | Risk Score | Inbound | Outbound | Amount Received |
-|---------|------------|---------|----------|----------------|
-| 19903 | 2.58 | 26 | 26 | $622K |
-| 12457 | 2.58 | 22 | 23 | $819K |
-| 8554 | 2.55 | 28 | 20 | $394K |
-
-Genie also correctly noted that the highest raw risk scores in the network (20–25) belong to legitimate high-volume accounts, not fraud ring members, and explained why: whale centrality comes from raw transfer volume while ring centrality comes from recursive topology.
-
-**Why this answer is correct:** Genie used `community_id` to group accounts into rings, identified the 10 communities with 100 fraud members each, and then ranked hub accounts within those communities by `risk_score`. It also used `similarity_score` (0.18–0.22) to confirm coordinated merchant visit patterns across ring members. All three GDS features contributed to the answer.
+**Why this answer is correct:** Genie used `is_ring_community` to filter out the whales (whose high centrality is in the peer-to-peer transfer graph overall, not in ring-sized clusters) and then ranked by `risk_score` inside the filtered set. Community context — size, avg risk, `community_id` — gives the analyst an investigation handle: account 14268 is not "high risk" in isolation, it is "high risk inside a specific ring-sized community." Volume-based hub ranking cannot produce this answer because PageRank over the peer-to-peer transfer graph is a network quantity, not a row property.
 
 ---
 
