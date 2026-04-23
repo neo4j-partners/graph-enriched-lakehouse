@@ -140,7 +140,49 @@ If nobody asks, offer it.
 
 ---
 
-# Architecture: Why the Second Answer Needed a Different Layer
+# Better Data for Better Genie Answers
+
+---
+
+![bg contain](./what_is_graph.png)
+
+---
+
+## Graph Databases Find Every Instance of a Pattern
+
+- **Describe a pattern:** cluster of accounts, shared counterparties, any network shape
+- **Get every instance back:** no starting account, no ID to look up
+- **Pattern-matching is the graph's native operation**
+
+<!--
+One slide on why a graph database is the right tool to produce
+those three kinds of answers. Lead with capability, not contrast.
+Describe the pattern, get every instance back. The audience does
+not need a SQL-vs-graph mechanics lesson; they need to know the
+graph is built for the questions we just listed.
+
+If asked in Q&A, the point comparison is: SQL needs a starting
+account ID; a graph database needs only the shape.
+-->
+
+---
+
+## Better Data for Better Genie Answers
+
+- **Graph results land as Delta columns:** `risk_score`, `community_id`, `similarity_score`, `fraud_risk_tier`
+- **Genie treats them like any other dimension:** `GROUP BY fraud_risk_tier`, `WHERE is_ring_candidate = true`
+- **New questions unlocked:** candidate-population sizing, regional review workload, merchant concentration by community
+- **Change the columns. Change what Genie finds.**
+
+<!--
+The pivot that ties the graph discussion back to Genie. Same Genie,
+same SQL, new dimensions. The analyst works the way they always
+have; the toolkit is strictly larger.
+
+This is the slide that completes the answer to "how did you get
+that?" Graph analysis produces the answers, those answers become
+Delta columns, Genie queries them like any other column.
+-->
 
 ---
 
@@ -164,44 +206,6 @@ alongside region, product, and balance.
 
 Do not frame this as "SQL can't do X." Frame it as "graph analysis
 unlocks these answers for Genie." Expansion, not limitation recovery.
--->
-
----
-
-## Graph Databases Find Every Instance of a Pattern
-
-- **Describe a pattern:** cluster of accounts, shared counterparties, any network shape
-- **Get every instance back:** no starting account, no ID to look up
-- **Pattern-matching is the graph's native operation**
-
-<!--
-One slide on why a graph database is the right tool to produce
-those three kinds of answers. Lead with capability, not contrast.
-Describe the pattern, get every instance back. The audience does
-not need a SQL-vs-graph mechanics lesson; they need to know the
-graph is built for the questions we just listed.
-
-If asked in Q&A, the point comparison is: SQL needs a starting
-account ID; a graph database needs only the shape.
--->
-
----
-
-## Better Columns for Better Genie Answers
-
-- **Graph results land as Delta columns:** `risk_score`, `community_id`, `similarity_score`, `fraud_risk_tier`
-- **Genie treats them like any other dimension:** `GROUP BY fraud_risk_tier`, `WHERE is_ring_candidate = true`
-- **New questions unlocked:** candidate-population sizing, regional review workload, merchant concentration by community
-- **Change the columns. Change what Genie finds.**
-
-<!--
-The pivot that ties the graph discussion back to Genie. Same Genie,
-same SQL, new dimensions. The analyst works the way they always
-have; the toolkit is strictly larger.
-
-This is the slide that completes the answer to "how did you get
-that?" Graph analysis produces the answers, those answers become
-Delta columns, Genie queries them like any other column.
 -->
 
 ---
