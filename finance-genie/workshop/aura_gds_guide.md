@@ -1,12 +1,12 @@
 # GDS Algorithms in Neo4j Aura
 
 **This is a reference guide.** Run these commands in the **Neo4j Aura Workspace**
-(Query tab), not in Databricks. It is a plain-markdown alternative to
-[`02_aura_gds_guide.py`](./02_aura_gds_guide.py) for readers who prefer to follow
-along outside a Databricks notebook.
+(Query tab), not in Databricks. It is a standalone alternative to
+`03_gds_enrichment.ipynb` for readers who prefer to follow along outside a
+Databricks notebook.
 
-After running `01_neo4j_ingest`, switch to Aura and execute the steps below.
-When finished, return to Databricks and run `03_pull_and_model`.
+After running `02_neo4j_ingest`, switch to Aura and execute the steps below.
+When finished, return to Databricks and run `04_pull_gold_tables`.
 
 ## What We're Computing
 
@@ -46,7 +46,7 @@ anchor merchants assigned at generation
     → similarity_score written to Account nodes
 ```
 
-`is_fraud` is loaded onto Account nodes for workshop exploration (Steps 1b, 1c, 10, 11) but is never read by any algorithm. All three GDS algorithms operate purely on graph structure.
+All three GDS algorithms operate purely on graph structure.
 
 ---
 
@@ -65,37 +65,59 @@ MATCH ()-[p:TRANSFERRED_TO]->() WITH accounts, merchants, txns, count(p) AS p2p
 RETURN accounts, merchants, txns, p2p
 ```
 
-**Expected:** ~5,000 accounts, ~500 merchants, ~50,000 transactions, ~8,000 transfers.
+**Expected:** ~25,000 accounts, ~7,500 merchants, ~250,000 transactions, ~300,000 transfers.
 
-### 1b. Fraud vs legitimate account breakdown
+### 1b. Account breakdown by transfer activity
 
 ```cypher
 MATCH (a:Account)
-RETURN a.is_fraud             AS is_fraud,
-       count(a)                AS account_count,
+OPTIONAL MATCH (a)-[:TRANSFERRED_TO]-()
+WITH a, count(*) AS degree
+RETURN a.account_type AS account_type,
+       count(a) AS account_count,
        round(avg(a.balance), 2) AS avg_balance,
-       min(a.holder_age)        AS min_age,
-       max(a.holder_age)        AS max_age
-ORDER BY is_fraud DESC
+       round(avg(degree), 1) AS avg_degree,
+       max(degree) AS max_degree
+ORDER BY account_count DESC
 ```
 
-**What to look for:** ~200 fraud accounts (4%) vs ~4,800 legitimate accounts.
-Balances and holder-age ranges should overlap heavily; that is the whole point
-of the dataset. The graph is where the separation lives.
+**What to look for:** transfer degree is fairly uniform across account types.
+No single column separates high-risk accounts from low-risk ones — that is the
+whole point. The separation lives in graph structure, not in tabular attributes.
 
-### 1c. Sample the subgraph around a fraud account
+### 1c. Account breakdown by balance tier
 
 ```cypher
-MATCH (a:Account {is_fraud: true})
+MATCH (a:Account)
+WITH a,
+     CASE WHEN a.balance < 10000 THEN 'low'
+          WHEN a.balance < 100000 THEN 'mid'
+          ELSE 'high' END AS balance_tier
+RETURN balance_tier,
+       count(a) AS accounts,
+       round(avg(a.balance), 2) AS avg_balance,
+       min(a.holder_age) AS min_age,
+       max(a.holder_age) AS max_age
+ORDER BY accounts DESC
+```
+
+**What to look for:** balance tiers and age ranges overlap heavily across all
+groups. A column filter cannot isolate the fraud rings.
+
+### 1d. Sample the subgraph around an account
+
+```cypher
+MATCH (a:Account)
+WHERE (a)-[:TRANSFERRED_TO]-()
 WITH a LIMIT 1
 OPTIONAL MATCH (a)-[t:TRANSACTED_WITH]->(m:Merchant)
 OPTIONAL MATCH (a)-[p:TRANSFERRED_TO]->(b:Account)
 RETURN a, t, m, p, b
 ```
 
-**What to look for:** the fraud account connects to merchants across various
-categories and has at least one outgoing `TRANSFERRED_TO` edge to another
-account. Good visual primer before running the algorithms.
+**What to look for:** the account connects to merchants across various
+categories and has at least one `TRANSFERRED_TO` edge to another account.
+Good visual primer before running the algorithms.
 
 ---
 
@@ -106,6 +128,7 @@ This projects only Account nodes and `TRANSFERRED_TO` relationships: the peer-to
 money-flow graph where fraud rings live.
 
 ```cypher
+CALL gds.graph.drop('account_transfers', false) YIELD graphName;
 CALL gds.graph.project(
   'account_transfers',
   'Account',
@@ -115,7 +138,7 @@ YIELD graphName, nodeCount, relationshipCount
 RETURN graphName, nodeCount, relationshipCount
 ```
 
-**Expected:** ~5,000 nodes, ~8,000 relationships.
+**Expected:** ~25,000 nodes, ~300,000 relationships.
 
 ---
 
@@ -144,13 +167,12 @@ RETURN nodePropertiesWritten, ranIterations, didConverge
 MATCH (a:Account)
 WHERE a.risk_score IS NOT NULL
 RETURN a.account_id AS id,
-       a.is_fraud AS fraud,
        round(a.risk_score, 6) AS pagerank
 ORDER BY a.risk_score DESC
 LIMIT 10
 ```
 
-Look for fraud accounts appearing in the top results. That is the signal.
+These top accounts are the most central nodes in the transfer network. Cross-reference the IDs against `account_labels` in Databricks after running the full pipeline to verify the fraud signal.
 
 ---
 
@@ -181,17 +203,33 @@ ORDER BY size DESC
 LIMIT 15
 ```
 
-**Visualise a fraud-heavy community:**
+**Visualise a small, dense community (likely a fraud ring):**
 
 ```cypher
 MATCH (a:Account)
-WHERE a.community_id IS NOT NULL AND a.is_fraud = true
-WITH a.community_id AS community, count(*) AS fraud_count
-ORDER BY fraud_count DESC LIMIT 1
+WHERE a.community_id IS NOT NULL
+WITH a.community_id AS community, count(*) AS size
+ORDER BY size ASC LIMIT 1
 WITH community
 MATCH (m:Account {community_id: community})-[r:TRANSFERRED_TO]-(other:Account {community_id: community})
 RETURN m, r, other
 ```
+
+**How this query works:**
+
+The query runs in two stages separated by the intermediate `WITH community`.
+
+*Stage 1 — find the smallest community:*
+- `MATCH (a:Account) WHERE a.community_id IS NOT NULL` collects every account Louvain has labelled.
+- `WITH a.community_id AS community, count(*) AS size` groups by community and counts members.
+- `ORDER BY size ASC LIMIT 1` picks the single smallest community. Small is the tell: the background population forms one large community of thousands of accounts; fraud rings form tight clusters of ~100.
+- The second `WITH community` discards `size` and carries only the community ID into stage 2, which is what makes the `LIMIT 1` stick — without it the next `MATCH` would re-expand and lose the single-community constraint.
+
+*Stage 2 — retrieve the internal transfer subgraph:*
+- `MATCH (m:Account {community_id: community})-[r:TRANSFERRED_TO]-(other:Account {community_id: community})` finds every `TRANSFERRED_TO` relationship where **both** endpoints belong to that community. The undirected `-` (rather than `->`) returns edges in either direction, so the full internal transfer graph is captured.
+- `RETURN m, r, other` hands nodes and relationships to the Aura visual renderer, which draws them as a graph.
+
+The result is a graph panel showing only the accounts inside the ring and the transfers between them. A fraud ring looks like a dense hairball; a random slice of background accounts looks like a sparse tree.
 
 ---
 
@@ -251,9 +289,7 @@ MATCH (a:Account)-[s:SIMILAR_TO]-(b:Account)
 WHERE a.account_id < b.account_id
 RETURN a.account_id AS account_a,
        b.account_id AS account_b,
-       round(s.similarity_score, 3) AS similarity,
-       a.is_fraud AS a_fraud,
-       b.is_fraud AS b_fraud
+       round(s.similarity_score, 3) AS similarity
 ORDER BY s.similarity_score DESC
 LIMIT 10
 ```
@@ -297,20 +333,27 @@ WHERE a.risk_score IS NOT NULL
 RETURN count(a) AS accounts_with_all_features
 ```
 
-**Fraud vs legitimate comparison:**
+**Feature distribution by community size:**
 
 ```cypher
 MATCH (a:Account)
-RETURN a.is_fraud AS is_fraud,
-       count(a) AS count,
-       round(avg(a.risk_score), 6) AS avg_pagerank,
-       round(avg(a.similarity_score), 4) AS avg_similarity,
-       count(DISTINCT a.community_id) AS num_communities
-ORDER BY a.is_fraud
+WHERE a.risk_score IS NOT NULL
+  AND a.community_id IS NOT NULL
+  AND a.similarity_score IS NOT NULL
+WITH a.community_id AS community,
+     count(a) AS size,
+     round(avg(a.risk_score), 6) AS avg_pagerank,
+     round(avg(a.similarity_score), 4) AS avg_similarity
+RETURN CASE WHEN size <= 150 THEN 'small (ring candidate)' ELSE 'large (background)' END AS community_type,
+       count(community) AS num_communities,
+       round(avg(avg_pagerank), 6) AS avg_pagerank,
+       round(avg(avg_similarity), 4) AS avg_similarity
+ORDER BY community_type
 ```
 
-You should see clear separation between fraud and legitimate accounts
-across all three features.
+Small communities (fraud rings, ~100 accounts each) should show higher average
+PageRank and similarity scores than the large background community. That
+separation is the signal.
 
 ---
 
@@ -347,9 +390,9 @@ ORDER BY ring_size DESC
 ```
 
 **What to look for:** small communities (tight clusters) with `ring_size >= 3`.
-Cross-reference the `ring_members` account IDs against the `is_fraud` ground
-truth and you should see high precision. The Louvain + bidirectional
-intersection combo finds rings without needing labels.
+The Louvain + bidirectional intersection combo finds rings without needing
+labels. Validate precision by checking the returned account IDs against
+`account_labels` in Databricks after completing the pipeline.
 
 ### 11b. Off-Hours Transaction Detection
 
@@ -369,7 +412,6 @@ WITH a,
      collect(DISTINCT m.merchant_id) AS merchants_used
 WHERE off_hours_count >= 3
 RETURN a.account_id         AS account_id,
-       a.is_fraud            AS is_fraud,
        a.risk_score          AS risk_score,
        a.community_id        AS community_id,
        off_hours_count,
@@ -395,5 +437,6 @@ The graph now has three GDS-computed properties on every Account node:
 - `community_id`: Louvain cluster assignment
 - `similarity_score`: highest Jaccard similarity to any other account
 
-**Next →** Return to Databricks and run `03_pull_and_model` to read these
-features back and measure the ML lift.
+**Next →** Return to Databricks and run `04_pull_gold_tables` to read these
+features back into Unity Catalog as the three Gold tables the AFTER Genie
+space queries.

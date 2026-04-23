@@ -65,10 +65,7 @@ print("Neo4j cleared.")
 # --------------------------------------------------------------------------- #
 # 5. Write Account nodes                                                        #
 # --------------------------------------------------------------------------- #
-accounts_df = (
-    spark.table(f"`{CATALOG}`.`{SCHEMA}`.accounts")
-    .join(spark.table(f"`{CATALOG}`.`{SCHEMA}`.account_labels"), "account_id", "left")
-)
+accounts_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.accounts")
 
 (
     accounts_df.write.format("org.neo4j.spark.DataSource")

@@ -40,24 +40,6 @@ recovery.
 
 ---
 
-## What This Talk Covers
-
-1. **Anchor.** One fraud question, two answers: before and after enrichment
-2. **Architecture.** Why the second answer needed a different data layer
-3. **Pipeline.** How the columns behind the second answer are built
-
-Plus: where this pattern applies beyond fraud.
-
-<!--
-Three parts over 15 minutes. The anchor opens with a before/after
-reveal on one question; architecture explains what Neo4j adds; the
-pipeline shows how the features that produced the after answer are
-built. Pitch the enriched lakehouse as unlocking a new set of
-questions for Genie, not as patching a Genie shortcoming.
--->
-
----
-
 ## Financial Crime Hides Between the Rows
 
 - **Coordinated fraud** spreads activity across dozens of accounts on purpose
@@ -98,7 +80,7 @@ to make the structural patterns visible so analysts can investigate.
 
 ---
 
-## Merchant Favorites: Before Graph Enrichment
+## Genie: Merchant Favorites (Before Graph Enrichment)
 
 *"Which merchants are most commonly transacted with by the top 10% of accounts by total dollar amount spent across merchants?"*
 
@@ -124,7 +106,7 @@ over another for investigation. The volume proxy consumed the answer.
 
 ---
 
-## Merchant Favorites: After Graph Enrichment
+## Genie: Merchant Favorites (After Graph Enrichment)
 
 *"Which merchants are most commonly transacted with by accounts in ring-candidate communities?"*
 
@@ -136,6 +118,8 @@ over another for investigation. The volume proxy consumed the answer.
 | LoanEdge | not ranked | **99** |
 
 **5% of accounts. 4× the transactions. Per account: 7×.**
+
+**Volume proxy: where everyone goes. Ring filter: where ring candidates concentrate.**
 
 <!--
 Same question shape, different filter: community_id and
@@ -153,6 +137,10 @@ Hold on this slide until someone asks "how did you get that?"
 That question is the invitation into the Architecture section.
 If nobody asks, offer it.
 -->
+
+---
+
+# Architecture: Why the Second Answer Needed a Different Layer
 
 ---
 
@@ -182,9 +170,9 @@ unlocks these answers for Genie." Expansion, not limitation recovery.
 
 ## Graph Databases Find Every Instance of a Pattern
 
-- **Describe a pattern:** a cluster of accounts moving money densely among themselves, or accounts sharing the same counterparties
-- **The graph returns every place that shape exists:** no starting account required, no ID to look up
-- **Pattern-matching is the graph's native operation,** which is why the connection questions from the last slide live there
+- **Describe a pattern:** cluster of accounts, shared counterparties, any network shape
+- **Get every instance back:** no starting account, no ID to look up
+- **Pattern-matching is the graph's native operation**
 
 <!--
 One slide on why a graph database is the right tool to produce
@@ -218,13 +206,11 @@ Delta columns, Genie queries them like any other column.
 
 ---
 
-## Architecture at a Glance
+# The Enrichment Pipeline
+
+---
 
 ![w:900 center](./pipeline-architecture.png)
-
-- **The graph and the warehouse are connected entirely through enriched Delta tables.** No live query path between them
-- **Databricks pulls account features from Neo4j via the Spark Connector** and joins them with Silver tables before writing Gold. `account_labels` feeds the join but is not loaded into Neo4j
-
 <!--
 The pull direction matters. Neo4j does not write to Unity Catalog
 directly; Databricks pulls from Neo4j via the Spark Connector in
@@ -244,10 +230,10 @@ gold_account_similarity_pairs holds similarity edge pairs.
 
 Four steps convert a network of account relationships into plain columns that Genie queries like any other dimension.
 
-- **Load Silver into Neo4j:** Account and transaction records from the existing lakehouse map into Neo4j Aura as a network of connected entities
-- **Run GDS, patterns become columns:** Graph algorithms surface structural patterns: which accounts are central to money flow, which cluster together, which share the same connections
-- **Enrich, results land in Gold:** Databricks pulls GDS outputs from Neo4j via the Spark Connector, joins with Silver, and writes `risk_score`, `community_id`, and `similarity_score` as plain Delta columns
-- **Query: auditable by construction.** Nothing in the graph reaches a Genie query until the pipeline has materialized it into Gold; the audit trail is the Delta table
+- **Load:** Silver tables into Neo4j Aura as a property graph
+- **Run GDS:** PageRank, Louvain, Node Similarity against the graph
+- **Enrich:** pull scores via Spark Connector, join with Silver, write to Gold
+- **Query:** GDS outputs are plain Delta columns; audit trail is the table
 
 <!--
 Four steps. Structural analysis runs once per pipeline cycle;
@@ -462,7 +448,7 @@ it's a column, Genie can triage on it like any other dimension.
 
 - **Genie's SQL:** rank accounts by total volume, count merchant visits in the top 20
 - **243 merchants returned:** no merchant visited by more than 2 of the 20 accounts
-- **Top merchant:** merchant_5207 (retail) with 2 visits; the remaining 242 merchants with 1 visit each
+- **Top merchant:** Barnes-Harris (retail) with 2 visits; the remaining 242 merchants with 1 visit each
 - **Shape:** the cohort is completely dispersed, with no shared merchants and no visible concentration
 
 **A dispersed list: no merchant stands out as a triage priority.**
@@ -482,28 +468,27 @@ diverse spending.
 
 ## Validation: Merchant Ring-Candidate Share (After)
 
-*"For merchant_3097, merchant_4859, merchant_5048, and merchant_6683, what share of each merchant's customers are members of ring-candidate communities, and how does that compare to the book baseline?"*
+*"For James-Conway, Cardenas and Sons, Johnson, Williams and May, and Meyer Ltd, what share of each merchant's customers are members of ring-candidate communities, and how does that compare to the book baseline?"*
 
-- **What changed:** BEFORE ranked by volume; AFTER measures ring-candidate share of each merchant's customer base against the 5.06% book baseline
-- **merchant_4859 (crypto):** 8.1% ring-candidate share, 60% above the 5.06% baseline
-- **merchant_3097 (travel):** 5.6%, within noise of baseline
-- **merchant_6683 (utilities):** 5.1%, at baseline exactly
-- **merchant_5048 (retail):** 0%, no ring-candidate customers
+- **What changed:** BEFORE ranked by volume; AFTER measures ring-candidate share of each merchant's customer base against the ~4% book baseline
+- **James-Conway (crypto):** 76.2% ring-candidate share, ~19× above the ~4% baseline
+- **Cardenas and Sons (utilities):** ~4%, at baseline
+- **Johnson, Williams and May (grocery):** ~4%, at baseline
+- **Meyer Ltd (retail):** ~4%, at baseline
 
-**Three of four are at baseline. merchant_4859 is the one outlier worth investigating.**
+**Three of four are at baseline. James-Conway is the one outlier worth investigating.**
 
 <!--
-The after answer validates which of the four merchants from the
-before overlap finding carry actual structural signal. The SQL
-joins gold_accounts and gold_fraud_ring_communities on
-fraud_risk_tier and is_ring_candidate. Two columns that don't
-exist in Silver.
+The after answer validates which of the four merchants carry actual
+structural signal. The SQL joins gold_accounts and
+gold_fraud_ring_communities on fraud_risk_tier and is_ring_candidate.
+Two columns that don't exist in Silver.
 
-Three merchants are noise: travel and utilities at baseline,
-retail at zero. The crypto merchant is the signal: 3 of 37
-customers in ring-candidate communities against a 5.06% book rate.
-Not a verdict, a triage priority. The before answer could not
-distinguish merchant_4859 from the others; the after answer can.
+Three merchants are noise: utilities, grocery, and retail all sit at
+the ~4% book baseline. The crypto merchant is the signal: 64 of 84
+customers in ring-candidate communities against a ~4% book rate — 19×
+above baseline. Not a verdict, a triage priority. The before answer
+could not distinguish James-Conway from the others; the after answer can.
 -->
 
 ---

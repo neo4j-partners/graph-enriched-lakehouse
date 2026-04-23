@@ -137,11 +137,11 @@ Before the anchor, ask one or two standard BI questions against the BEFORE catal
 
 **Before:** "Which merchants are most commonly visited by the top 10% of accounts by total dollar amount spent across merchants?"
 
-Genie segments accounts into transaction-volume deciles and counts merchant visits among the top decile. The top of the list: merchant_1300 with 30 visits, merchant_2514 with 28 visits, a flat 26-to-30 visit band across the top five. A plausible-looking list of popular chains with no priority for investigation.
+Genie segments accounts into transaction-volume deciles and counts merchant visits among the top decile. The top of the list: Brennan, Thomas and Dennis with 30 visits, Perry and Sons with 28 visits, a flat 26-to-30 visit band across the top five. A plausible-looking list of popular chains with no priority for investigation.
 
 **After:** "Which merchants are most commonly visited by accounts in ring-candidate communities?"
 
-Genie filters transactions to accounts whose community is flagged `is_ring_candidate` and counts merchant visits. Two merchants from the BEFORE list come back at nearly 4x the visit rate: merchant_1300 goes from 30 visits to 111, merchant_2971 from 26 to 104. Three new names surface that the volume-proxy never ranked: merchant_0857 with 101 visits, merchant_7046 with 99, merchant_2930 with 99. Ring-candidate accounts are 5% of the book yet generate 4x the visit count at these merchants. That is the intensity signal an analyst can triage on.
+Genie filters transactions to accounts whose community is flagged `is_ring_candidate` and counts merchant visits. Two merchants from the BEFORE list come back at nearly 4x the visit rate: Brennan, Thomas and Dennis goes from 30 visits to 111, Alvarez-Barker from 26 to 104. Three new names surface that the volume-proxy never ranked: Smith-Noble with 101 visits, Pierce-Vincent with 99, Black, Chandler and Curtis with 99. Ring-candidate accounts are 5% of the book yet generate 4x the visit count at these merchants. That is the intensity signal an analyst can triage on.
 
 ### Backup anchor: Ring share by region
 

@@ -48,6 +48,11 @@ import sys
 from datetime import datetime, timedelta
 from pathlib import Path
 
+from faker import Faker
+
+fake = Faker()
+fake.seed_instance(42)
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
@@ -172,7 +177,7 @@ def generate_merchants() -> pd.DataFrame:
     for i in range(1, NUM_MERCHANTS + 1):
         rows.append({
             "merchant_id":   i,
-            "merchant_name": f"merchant_{i:04d}",
+            "merchant_name": fake.unique.company(),
             "category":      random.choice(categories),
             "region":        random.choice(regions),
         })

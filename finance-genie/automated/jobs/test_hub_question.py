@@ -50,9 +50,100 @@ PREVIEW_ROWS = 10
 
 PAIRS = [
     {
-        "title": "Fraud hub detection",
-        "before": "Are there accounts acting as hubs of potentially fraudulent money movement networks?",
-        "after": "Are there accounts acting as hubs of potentially fraudulent money movement networks?",
+        "title": "Anchor — Merchant favorites",
+        "before": (
+            "Which merchants are most commonly transacted with by the top 10% of accounts "
+            "by total dollar amount spent across merchants?"
+        ),
+        "after": (
+            "Which merchants show the highest concentration of ring-candidate transactions "
+            "relative to the overall book? For the top 10, show each merchant's ring-candidate "
+            "transaction share versus the ~5% baseline ring-candidate transaction share across the book."
+        ),
+    },
+    {
+        "title": "Anchor follow-up — Before vs after ranking comparison",
+        "before": (
+            "Which merchants are most commonly transacted with by the top 10% of accounts "
+            "by total dollar amount spent across merchants?"
+        ),
+        "after": (
+            "Rank the top 10 merchants by share of transactions from ring-candidate accounts. "
+            "For each, also show where they rank among the top 10 merchants most visited by "
+            "the top 10% of accounts by total spend, and flag whether they appear in both lists."
+        ),
+    },
+    {
+        "title": "Follow-on 1 — Internal transfer circulation",
+        "before": (
+            "For ring-candidate communities, what fraction of each community's total transfer "
+            "volume flows between members inside the community versus to accounts outside? "
+            "Show the top 5 communities by internal transfer ratio."
+        ),
+        "after": (
+            "For ring-candidate communities, what fraction of each community's total transfer "
+            "volume flows between members inside the community versus to accounts outside? "
+            "Show the top 5 communities by internal transfer ratio."
+        ),
+    },
+    {
+        "title": "Follow-on 2 — Shared-merchant account pairs",
+        "before": (
+            "Which pairs of accounts have the highest similarity scores? Show the top 10 pairs "
+            "with their similarity scores, whether they are in the same community, "
+            "and their fraud risk tier."
+        ),
+        "after": (
+            "Which pairs of accounts have the highest similarity scores? Show the top 10 pairs "
+            "with their similarity scores, whether they are in the same community, "
+            "and their fraud risk tier."
+        ),
+    },
+    {
+        "title": "Follow-on 3 — Investigator work queue",
+        "before": (
+            "Show the top 15 accounts by risk score within ring-candidate communities. "
+            "Include their community ID, region, total transaction volume, and fraud risk tier."
+        ),
+        "after": (
+            "Show the top 15 accounts by risk score within ring-candidate communities. "
+            "Include their community ID, region, total transaction volume, and fraud risk tier."
+        ),
+    },
+    {
+        "title": "Follow-on 4 — Book exposure by risk tier",
+        "before": (
+            "What is the total account balance held by high-risk tier accounts, and what share "
+            "of the total book does that represent? Break it down by region."
+        ),
+        "after": (
+            "What is the total account balance held by high-risk tier accounts, and what share "
+            "of the total book does that represent? Break it down by region."
+        ),
+    },
+    {
+        "title": "Validation A — Merchant ring-candidate share",
+        "before": (
+            "Which merchants are most commonly visited by the top 20 accounts "
+            "by total transaction volume?"
+        ),
+        "after": (
+            "For James-Conway, Cardenas and Sons, Johnson, Williams and May, and Meyer Ltd, "
+            "what share of each merchant's customers are members of ring-candidate communities, "
+            "and how does that compare to the book baseline?"
+        ),
+    },
+    {
+        "title": "Validation B — High-volume account community membership",
+        "before": (
+            "For the top 20 accounts by total transaction volume, how many unique "
+            "merchants did each account visit?"
+        ),
+        "after": (
+            "For accounts in the top 20 by total transaction volume, what is their "
+            "community membership status and risk tier? Are those accounts concentrated "
+            "in a small number of communities, or are they spread across the book?"
+        ),
     },
 ]
 
