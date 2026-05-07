@@ -1,5 +1,7 @@
 # Graph-Enriched Lakehouse: Finance Genie
 
+[Project website and slides](https://neo4j-partners.github.io/graph-enriched-lakehouse/)
+
 ## Graph-Enriched Lakehouse Path
 
 This is the original before/after demo path. Neo4j GDS runs as a silver-to-gold enrichment stage, and Databricks Genie queries graph-derived features after they have been materialized as ordinary Gold Delta columns.

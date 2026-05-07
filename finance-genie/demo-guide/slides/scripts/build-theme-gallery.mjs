@@ -143,7 +143,7 @@ function renderIndex() {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Finance Genie Slides</title>
+    <title>Finance Genie</title>
     <style>
       :root {
         color-scheme: light;
@@ -191,6 +191,43 @@ function renderIndex() {
         max-width: 760px;
       }
 
+      .eyebrow {
+        color: var(--accent);
+        font-size: 14px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        margin-bottom: 14px;
+        text-transform: uppercase;
+      }
+
+      .summary {
+        display: grid;
+        gap: 16px;
+        grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+        margin: 36px 0 44px;
+      }
+
+      .summary-card {
+        background: rgba(255, 255, 255, 0.76);
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 18px;
+      }
+
+      .summary-card strong {
+        color: var(--ink);
+        display: block;
+        font-size: 17px;
+        margin-bottom: 8px;
+      }
+
+      .summary-card span {
+        color: var(--muted);
+        display: block;
+        font-size: 15px;
+        line-height: 1.45;
+      }
+
       h2 {
         font-size: 28px;
         line-height: 1.1;
@@ -218,6 +255,10 @@ function renderIndex() {
 
       .button.secondary {
         background: var(--ink);
+      }
+
+      .button.tertiary {
+        background: var(--accent-2);
       }
 
       .deck {
@@ -270,12 +311,30 @@ function renderIndex() {
   </head>
   <body>
     <main>
-      <h1>Finance Genie Slides</h1>
-      <p>Choose a Marp theme variant. Each link opens the same deck rendered with a different built-in or custom theme.</p>
+      <div class="eyebrow">Finance Genie</div>
+      <h1>Graph-enriched analytics for Databricks Genie</h1>
+      <p>Finance Genie demonstrates how Neo4j Graph Data Science can enrich Databricks Lakehouse tables with network features, so Genie can answer questions about fraud-ring structure, risk communities, and relationship-driven patterns using ordinary Delta columns.</p>
       <div class="actions">
-        <a class="button" href="./slides.html">Open recommended deck</a>
+        <a class="button" href="./slides.html">Open full slide deck</a>
         <a class="button secondary" href="./slides-15min.html">Open 15-minute deck</a>
+        <a class="button tertiary" href="https://github.com/neo4j-partners/graph-enriched-lakehouse/tree/main/finance-genie">View project on GitHub</a>
       </div>
+      <section class="summary" aria-label="Project overview">
+        <div class="summary-card">
+          <strong>Baseline</strong>
+          <span>Genie answers standard BI questions over Silver tables, but network centrality and community structure are not present in row-level data.</span>
+        </div>
+        <div class="summary-card">
+          <strong>Graph enrichment</strong>
+          <span>Neo4j GDS computes PageRank, Louvain communities, and shared-merchant similarity from account, merchant, and transfer relationships.</span>
+        </div>
+        <div class="summary-card">
+          <strong>Lakehouse output</strong>
+          <span>The graph features land back in Gold Delta tables as scalar columns that Genie, SQL, dashboards, and ML can use directly.</span>
+        </div>
+      </section>
+      <h2>Theme previews</h2>
+      <p>Use these links to compare the same decks rendered with built-in and custom Marp themes.</p>
       ${sections}
     </main>
   </body>
