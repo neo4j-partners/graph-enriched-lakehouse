@@ -7,17 +7,44 @@ Presentation-ready slides formatted for [Marp](https://marp.app/).
 Requires Node.js 22 LTS (`brew install node@22`) and a one-time `npm install` in this directory.
 
 ```bash
-cd slides
-/opt/homebrew/opt/node@22/bin/node ./node_modules/.bin/marp . --server
+cd finance-genie/demo-guide/slides
+npm install
+npm run serve
 ```
 
 Opens at http://localhost:8080/.
 
+## Theme Variants
+
+Build all theme variants into `build/`:
+
+```bash
+npm run build:all
+```
+
+This creates a clickable gallery at `build/index.html` with these variants:
+
+- `finance.html`: custom finance/demo theme
+- `graph-lakehouse.html`: custom graph-paper technical theme
+- `default.html`: built-in Marp default theme
+- `gaia.html`: built-in Marp Gaia theme
+- `uncover.html`: built-in Marp Uncover theme
+
+Build one variant at a time:
+
+```bash
+npm run build:finance
+npm run build:graph
+npm run build:gaia
+```
+
+The GitHub Pages workflow publishes the full gallery.
+
 ## Export to PDF
 
 ```bash
-cd slides
-/opt/homebrew/opt/node@22/bin/node ./node_modules/.bin/marp slides.md --pdf --allow-local-files
+cd finance-genie/demo-guide/slides
+npx marp slides.md --pdf --theme-set themes/finance.css --theme finance
 ```
 
 ## Troubleshooting
@@ -26,7 +53,7 @@ cd slides
 - Marp CLI is incompatible with Node.js 25+. Install Node 22 LTS: `brew install node@22`
 
 **Images not showing?**
-- Use `--allow-local-files` flag with Marp CLI
+- Run `npm run build:all`; the build script copies local image assets into `build/`.
 
 ## Slide Format
 

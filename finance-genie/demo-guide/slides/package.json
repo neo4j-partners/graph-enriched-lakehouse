@@ -2,6 +2,16 @@
   "name": "slides",
   "version": "1.0.0",
   "private": true,
+  "scripts": {
+    "build": "npm run build:all",
+    "build:all": "node scripts/build-theme-gallery.mjs all",
+    "build:finance": "node scripts/build-theme-gallery.mjs finance",
+    "build:graph": "node scripts/build-theme-gallery.mjs graph-lakehouse",
+    "build:default": "node scripts/build-theme-gallery.mjs default",
+    "build:gaia": "node scripts/build-theme-gallery.mjs gaia",
+    "build:uncover": "node scripts/build-theme-gallery.mjs uncover",
+    "serve": "npm run build:all && python3 -m http.server 8080 --directory build"
+  },
   "devDependencies": {
     "@marp-team/marp-cli": "^4.1.1"
   }

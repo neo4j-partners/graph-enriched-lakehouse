@@ -39,11 +39,7 @@ jobs:
 
       - name: Build slides
         working-directory: finance-genie/demo-guide/slides
-        run: |
-          mkdir -p build
-          npx marp slides.md -o build/index.html --html
-          cp *.png build/
-          touch build/.nojekyll
+        run: npm run build:all
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
