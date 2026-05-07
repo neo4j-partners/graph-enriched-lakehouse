@@ -8,6 +8,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-${DEMO_DIR}/.uv-cache}"
+ENV_FILE="${DEMO_DIR}/.env"
 PROFILE=""
 YES=0
 
@@ -35,6 +37,11 @@ done
 
 cd "$DEMO_DIR"
 
+[[ -f "$ENV_FILE" ]] || {
+  echo "Error: ${ENV_FILE} not found. Copy .env.sample to .env first." >&2
+  exit 1
+}
+
 PROFILE_ARGS=()
 if [[ -n "$PROFILE" ]]; then
   PROFILE_ARGS=(--profile "$PROFILE")
@@ -46,4 +53,4 @@ if [[ "$YES" -eq 1 ]]; then
   DELETE_ARGS+=(--yes)
 fi
 
-uv run validation/delete_endpoint.py "${DELETE_ARGS[@]}"
+uv run validation/delete_endpoint.py ${DELETE_ARGS[@]+"${DELETE_ARGS[@]}"}

@@ -9,6 +9,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-${DEMO_DIR}/.uv-cache}"
+ENV_FILE="${DEMO_DIR}/.env"
 PROFILE=""
 COMPUTE=""
 ENDPOINT_TIMEOUT_MIN=30
@@ -46,6 +48,11 @@ done
 
 cd "$DEMO_DIR"
 
+[[ -f "$ENV_FILE" ]] || {
+  echo "Error: ${ENV_FILE} not found. Copy .env.sample to .env first." >&2
+  exit 1
+}
+
 PROFILE_ARGS=()
 if [[ -n "$PROFILE" ]]; then
   PROFILE_ARGS=(--profile "$PROFILE")
@@ -63,17 +70,17 @@ uv run python -m cli upload --all
 
 echo
 echo "==> Validate remote preconditions"
-uv run python -m cli submit "${COMPUTE_ARGS[@]}" 00_validate_demo_preconditions.py
+uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 00_validate_demo_preconditions.py
 
 echo
 echo "==> Deploy graph-specialist endpoint"
-uv run python -m cli submit "${COMPUTE_ARGS[@]}" 01_deploy_agent.py
+uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 01_deploy_agent.py
 
 echo
 echo "==> Wait for endpoint readiness"
 deadline=$((SECONDS + ENDPOINT_TIMEOUT_MIN * 60))
 while true; do
-  if uv run validation/validate_endpoint.py "${PROFILE_ARGS[@]}"; then
+  if uv run validation/validate_endpoint.py ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}; then
     break
   fi
   if (( SECONDS >= deadline )); then

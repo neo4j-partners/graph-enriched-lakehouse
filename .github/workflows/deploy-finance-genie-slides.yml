@@ -30,12 +30,10 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: finance-genie/demo-guide/slides/package-lock.json
 
       - name: Install Marp dependencies
         working-directory: finance-genie/demo-guide/slides
-        run: npm ci
+        run: npm install
 
       - name: Build slides
         working-directory: finance-genie/demo-guide/slides

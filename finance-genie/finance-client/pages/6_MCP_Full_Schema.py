@@ -76,6 +76,7 @@ with st.sidebar:
     st.markdown("### MCP Schema")
     st.caption(f"Connection: {db.MCP_SCHEMA_CONNECTION_NAME}")
     st.caption(f"Path: {db.MCP_SCHEMA_PATH}")
+    st.caption(f"Arguments: {db.MCP_SCHEMA_TOOL_ARGUMENTS}")
     if st.button("Refresh schema", use_container_width=True):
         clear_mcp_cache()
         st.rerun()
@@ -130,6 +131,7 @@ with st.spinner("Retrieving schema from MCP server..."):
             tool_name=selected_tool,
             catalog=db.CATALOG,
             schema=db.SCHEMA,
+            argument_mode=db.MCP_SCHEMA_TOOL_ARGUMENTS,
         )
     except Exception as exc:  # noqa: BLE001
         st.error(f"Unable to retrieve schema through MCP: {exc}")

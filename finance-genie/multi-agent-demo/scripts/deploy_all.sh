@@ -13,6 +13,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${DEMO_DIR}/.env"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-${DEMO_DIR}/.uv-cache}"
 
 PROFILE=""
 COMPUTE=""
@@ -129,25 +130,25 @@ if [[ "$SKIP_SECRETS" -eq 0 ]]; then
 fi
 
 if [[ "$SKIP_CONNECTION" -eq 0 ]]; then
-  run_step "Provision or validate UC external MCP connection" \
-    uv run setup/provision_connection.py "${CONNECTION_ARGS[@]}"
+run_step "Provision or validate UC external MCP connection" \
+    uv run setup/provision_connection.py ${CONNECTION_ARGS[@]+"${CONNECTION_ARGS[@]}"}
 fi
 
 run_step "Upload Databricks job scripts and agent code" \
   uv run python -m cli upload --all
 
 run_step "Run remote precondition validation" \
-  uv run python -m cli submit "${COMPUTE_ARGS[@]}" 00_validate_demo_preconditions.py
+  uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 00_validate_demo_preconditions.py
 
 run_step "Deploy graph-specialist Model Serving endpoint" \
-  uv run python -m cli submit "${COMPUTE_ARGS[@]}" 01_deploy_agent.py
+  uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 01_deploy_agent.py
 
 CURRENT_STEP="Wait for serving endpoint readiness"
 echo
 echo "==> ${CURRENT_STEP}"
 deadline=$((SECONDS + ENDPOINT_TIMEOUT_MIN * 60))
 while true; do
-  if uv run validation/validate_endpoint.py "${PROFILE_ARGS[@]}"; then
+  if uv run validation/validate_endpoint.py ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}; then
     break
   fi
   if (( SECONDS >= deadline )); then
@@ -159,10 +160,10 @@ done
 
 if [[ "$SKIP_SMOKE_TEST" -eq 0 ]]; then
   run_step "Run remote endpoint smoke test as a Databricks job" \
-    uv run python -m cli submit "${COMPUTE_ARGS[@]}" 02_validate_endpoint.py
+    uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 02_validate_endpoint.py
 
   run_step "Run local SDK query against remote endpoint" \
-    ./scripts/test_remote.sh "${PROFILE_ARGS[@]}"
+    ./scripts/test_remote.sh ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}
 fi
 
 echo

@@ -22,13 +22,15 @@ Build all theme variants into `build/`:
 npm run build:all
 ```
 
-This creates a clickable gallery at `build/index.html` with these variants:
+This creates a clickable gallery at `build/index.html` for both `slides.md` and `slides-15min.md` with these variants:
 
 - `finance.html`: custom finance/demo theme
 - `graph-lakehouse.html`: custom graph-paper technical theme
 - `default.html`: built-in Marp default theme
 - `gaia.html`: built-in Marp Gaia theme
 - `uncover.html`: built-in Marp Uncover theme
+
+The 15-minute deck gets matching `15min-*.html` outputs, plus `slides-15min.html` as the recommended 15-minute build.
 
 Build one variant at a time:
 

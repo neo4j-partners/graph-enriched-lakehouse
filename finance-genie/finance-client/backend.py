@@ -21,6 +21,7 @@ SCHEMA = os.getenv("SCHEMA", "graph-enriched-schema")
 MCP_SCHEMA_CONNECTION_NAME = os.getenv("MCP_SCHEMA_CONNECTION_NAME", "")
 MCP_SCHEMA_PATH = os.getenv("MCP_SCHEMA_PATH", "/")
 MCP_SCHEMA_TOOL_NAME = os.getenv("MCP_SCHEMA_TOOL_NAME", "get_full_schema")
+MCP_SCHEMA_TOOL_ARGUMENTS = os.getenv("MCP_SCHEMA_TOOL_ARGUMENTS", "catalog_schema")
 
 
 @dataclass(frozen=True)
@@ -276,13 +277,19 @@ def call_mcp_schema_tool(
     tool_name: str = MCP_SCHEMA_TOOL_NAME,
     catalog: str = CATALOG,
     schema: str = SCHEMA,
+    argument_mode: str = MCP_SCHEMA_TOOL_ARGUMENTS,
 ) -> dict[str, Any]:
     """Call the configured MCP tool that returns the lakehouse schema."""
+    arguments = (
+        {}
+        if argument_mode == "none"
+        else {"catalog": catalog, "schema": schema}
+    )
     response = mcp_schema_request(
         "tools/call",
         params={
             "name": tool_name,
-            "arguments": {"catalog": catalog, "schema": schema},
+            "arguments": arguments,
         },
         request_id="schema-1",
     )

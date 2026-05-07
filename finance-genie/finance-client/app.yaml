@@ -10,7 +10,11 @@ env:
     value: graph-enriched-lakehouse
   - name: SCHEMA
     value: graph-enriched-schema
+  - name: MCP_SCHEMA_CONNECTION_NAME
+    value: neo4j_agentcore_mcp
   - name: MCP_SCHEMA_PATH
     value: /
   - name: MCP_SCHEMA_TOOL_NAME
-    value: get_full_schema
+    value: neo4j-mcp-server-target___get-schema
+  - name: MCP_SCHEMA_TOOL_ARGUMENTS
+    value: none

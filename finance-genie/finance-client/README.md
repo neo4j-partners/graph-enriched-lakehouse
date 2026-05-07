@@ -39,6 +39,8 @@ Optional environment variables:
 - `MCP_SCHEMA_PATH`: MCP JSON-RPC path for the HTTP connection, defaults to `/`
 - `MCP_SCHEMA_TOOL_NAME`: MCP tool used by the full schema page, defaults to
   `get_full_schema`
+- `MCP_SCHEMA_TOOL_ARGUMENTS`: set to `none` for MCP tools that take no
+  arguments, or `catalog_schema` to send `catalog` and `schema`
 
 For local development, copy the sample file and fill in your warehouse ID:
 
@@ -87,11 +89,13 @@ The MCP Full Schema page uses the Databricks SDK to call an MCP server through a
 Unity Catalog HTTP connection. The connection should point at the MCP server base
 path and the app service principal needs `USE CONNECTION` on that connection.
 
-The schema MCP server is expected to expose a tool named `get_full_schema` unless
-`MCP_SCHEMA_TOOL_NAME` overrides it. The tool is called with the configured
-`catalog` and `schema` arguments. The page preserves the raw MCP response and
-also normalizes common schema response shapes into tables, columns, and
-relationships.
+The deployed app defaults to the Neo4j MCP demo connection
+`neo4j_agentcore_mcp` and tool `neo4j-mcp-server-target___get-schema`. That
+tool is called with no arguments. For other MCP schema servers, override
+`MCP_SCHEMA_TOOL_NAME` and set `MCP_SCHEMA_TOOL_ARGUMENTS=catalog_schema` when
+the tool expects the configured `catalog` and `schema` arguments. The page
+preserves the raw MCP response and also normalizes common schema response shapes
+into tables, columns, and relationships.
 
 ## Local Development
 
@@ -108,7 +112,9 @@ export DATABRICKS_WAREHOUSE_ID=<warehouse-id>
 export DATABRICKS_CONFIG_PROFILE=<your-databricks-profile>
 export CATALOG=graph-enriched-lakehouse
 export SCHEMA=graph-enriched-schema
-export MCP_SCHEMA_CONNECTION_NAME=<uc-http-connection-name>
+export MCP_SCHEMA_CONNECTION_NAME=neo4j_agentcore_mcp
+export MCP_SCHEMA_TOOL_NAME=neo4j-mcp-server-target___get-schema
+export MCP_SCHEMA_TOOL_ARGUMENTS=none
 ```
 
 You can place those values in `.env.local`; `scripts/start_local.sh` and
@@ -146,10 +152,13 @@ Optional environment variables:
 - `DATABRICKS_CONFIG_PROFILE`: passed to the Databricks CLI as `--profile`
 - `DATABRICKS_WAREHOUSE_ID`: binds the app resource key `sql-warehouse`
 - `GRANT_APP_SP_SCHEMA_ACCESS`: set to `true` to grant the app service principal `USE_CATALOG`, `USE_SCHEMA`, and `SELECT` for `CATALOG.SCHEMA`
+- `MCP_SCHEMA_CONNECTION_NAME`: defaults to `neo4j_agentcore_mcp`
+- `GRANT_APP_SP_MCP_CONNECTION_ACCESS`: defaults to `true` and grants the app service principal `USE CONNECTION` on `MCP_SCHEMA_CONNECTION_NAME`
 
 The script loads `.env.local` when present. It creates the app if needed, binds
-the SQL warehouse resource when `DATABRICKS_WAREHOUSE_ID` is set, uploads source
-to the workspace, deploys from that workspace path, and prints the app details.
+the SQL warehouse resource when `DATABRICKS_WAREHOUSE_ID` is set, grants MCP
+connection access by default, uploads source to the workspace, deploys from that
+workspace path, and prints the app details.
 
 The app reads that resource through `DATABRICKS_WAREHOUSE_ID` `valueFrom` in
 `app.yaml`.

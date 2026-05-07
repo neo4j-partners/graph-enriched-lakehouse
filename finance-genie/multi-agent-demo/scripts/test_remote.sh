@@ -8,6 +8,8 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+export UV_CACHE_DIR="${UV_CACHE_DIR:-${DEMO_DIR}/.uv-cache}"
+ENV_FILE="${DEMO_DIR}/.env"
 PROFILE=""
 PROMPT=""
 
@@ -36,6 +38,11 @@ done
 
 cd "$DEMO_DIR"
 
+[[ -f "$ENV_FILE" ]] || {
+  echo "Error: ${ENV_FILE} not found. Copy .env.sample to .env first." >&2
+  exit 1
+}
+
 PROFILE_ARGS=()
 if [[ -n "$PROFILE" ]]; then
   PROFILE_ARGS=(--profile "$PROFILE")
@@ -43,7 +50,7 @@ if [[ -n "$PROFILE" ]]; then
 fi
 
 echo "==> Validate endpoint readiness"
-uv run validation/validate_endpoint.py "${PROFILE_ARGS[@]}"
+uv run validation/validate_endpoint.py ${PROFILE_ARGS[@]+"${PROFILE_ARGS[@]}"}
 
 echo
 echo "==> Query endpoint"
@@ -51,4 +58,4 @@ QUERY_ARGS=("${PROFILE_ARGS[@]}")
 if [[ -n "$PROMPT" ]]; then
   QUERY_ARGS+=(--prompt "$PROMPT")
 fi
-uv run validation/query_endpoint.py "${QUERY_ARGS[@]}"
+uv run validation/query_endpoint.py ${QUERY_ARGS[@]+"${QUERY_ARGS[@]}"}

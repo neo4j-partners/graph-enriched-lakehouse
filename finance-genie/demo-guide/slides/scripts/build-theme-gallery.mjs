@@ -41,6 +41,19 @@ const variants = {
   },
 };
 
+const decks = {
+  full: {
+    title: "Full Demo Guide",
+    source: "slides.md",
+    description: "Complete graph-enriched lakehouse narrative.",
+  },
+  "15min": {
+    title: "15-Minute Talk",
+    source: "slides-15min.md",
+    description: "Shorter version for tight conference or meeting slots.",
+  },
+};
+
 const requested = process.argv[2] ?? "all";
 const selected =
   requested === "all"
@@ -56,23 +69,25 @@ if (selected.length === 0) {
 rmSync("build", { force: true, recursive: true });
 mkdirSync("build", { recursive: true });
 
-for (const [, variant] of selected) {
-  execFileSync(
-    "marp",
-    [
-      "slides.md",
-      "-o",
-      join("build", variant.file),
-      "--html",
-      "--theme-set",
-      "themes/finance.css",
-      "--theme-set",
-      "themes/graph-lakehouse.css",
-      "--theme",
-      variant.theme,
-    ],
-    { stdio: "inherit" },
-  );
+for (const [deckKey, deck] of Object.entries(decks)) {
+  for (const [variantKey, variant] of selected) {
+    execFileSync(
+      "marp",
+      [
+        deck.source,
+        "-o",
+        join("build", outputFile(deckKey, variantKey)),
+        "--html",
+        "--theme-set",
+        "themes/finance.css",
+        "--theme-set",
+        "themes/graph-lakehouse.css",
+        "--theme",
+        variant.theme,
+      ],
+      { stdio: "inherit" },
+    );
+  }
 }
 
 for (const asset of readdirSync(".")) {
@@ -84,19 +99,43 @@ for (const asset of readdirSync(".")) {
 writeFileSync(join("build", ".nojekyll"), "");
 
 if (requested === "all") {
-  copyFileSync(join("build", variants.finance.file), join("build", "slides.html"));
+  copyFileSync(join("build", outputFile("full", "finance")), join("build", "slides.html"));
+  copyFileSync(join("build", outputFile("15min", "finance")), join("build", "slides-15min.html"));
   writeFileSync(join("build", "index.html"), renderIndex());
 }
 
+function outputFile(deckKey, variantKey) {
+  if (deckKey === "full") {
+    return variants[variantKey].file;
+  }
+
+  return `${deckKey}-${variantKey}.html`;
+}
+
 function renderIndex() {
-  const cards = Object.values(variants)
-    .map(
-      (variant) => `
-        <a class="card" href="./${variant.file}">
-          <span class="label">${escapeHtml(variant.title)}</span>
-          <span class="description">${escapeHtml(variant.description)}</span>
-        </a>`,
-    )
+  const sections = Object.entries(decks)
+    .map(([deckKey, deck]) => {
+      const cards = Object.entries(variants)
+        .map(
+          ([variantKey, variant]) => `
+            <a class="card" href="./${outputFile(deckKey, variantKey)}">
+              <span class="label">${escapeHtml(variant.title)}</span>
+              <span class="description">${escapeHtml(variant.description)}</span>
+            </a>`,
+        )
+        .join("");
+
+      return `
+        <section class="deck">
+          <div class="deck-heading">
+            <h2>${escapeHtml(deck.title)}</h2>
+            <p>${escapeHtml(deck.description)}</p>
+          </div>
+          <div class="grid">
+            ${cards}
+          </div>
+        </section>`;
+    })
     .join("");
 
   return `<!doctype html>
@@ -152,6 +191,12 @@ function renderIndex() {
         max-width: 760px;
       }
 
+      h2 {
+        font-size: 28px;
+        line-height: 1.1;
+        margin: 0 0 8px;
+      }
+
       .actions {
         display: flex;
         flex-wrap: wrap;
@@ -173,6 +218,19 @@ function renderIndex() {
 
       .button.secondary {
         background: var(--ink);
+      }
+
+      .deck {
+        border-top: 1px solid var(--line);
+        padding: 32px 0 0;
+      }
+
+      .deck + .deck {
+        margin-top: 40px;
+      }
+
+      .deck-heading {
+        margin-bottom: 18px;
       }
 
       .grid {
@@ -216,11 +274,9 @@ function renderIndex() {
       <p>Choose a Marp theme variant. Each link opens the same deck rendered with a different built-in or custom theme.</p>
       <div class="actions">
         <a class="button" href="./slides.html">Open recommended deck</a>
-        <a class="button secondary" href="./finance.html">Finance theme</a>
+        <a class="button secondary" href="./slides-15min.html">Open 15-minute deck</a>
       </div>
-      <section class="grid" aria-label="Theme variants">
-        ${cards}
-      </section>
+      ${sections}
     </main>
   </body>
 </html>

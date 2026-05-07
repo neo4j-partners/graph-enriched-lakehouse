@@ -1,0 +1,40 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "npm"
+    directory: "/finance-genie/demo-guide/slides"
+    schedule:
+      interval: "weekly"
+
+  - package-ecosystem: "uv"
+    directory: "/finance-genie/automated"
+    schedule:
+      interval: "weekly"
+    ignore:
+      - dependency-name: "databricks-tools-core"
+    groups:
+      uv-graph:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "uv"
+    directory: "/finance-genie/multi-agent-demo"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv-graph:
+        patterns:
+          - "*"
+
+  - package-ecosystem: "uv"
+    directory: "/finance-genie/neo4j-mcp-demo"
+    schedule:
+      interval: "weekly"
+    groups:
+      uv-graph:
+        patterns:
+          - "*"

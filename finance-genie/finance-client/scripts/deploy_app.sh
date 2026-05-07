@@ -13,6 +13,8 @@ fi
 
 APP_NAME="${APP_NAME:-finance-genie-client}"
 WORKSPACE_SOURCE_PATH="${WORKSPACE_SOURCE_PATH:-}"
+MCP_SCHEMA_CONNECTION_NAME="${MCP_SCHEMA_CONNECTION_NAME:-neo4j_agentcore_mcp}"
+GRANT_APP_SP_MCP_CONNECTION_ACCESS="${GRANT_APP_SP_MCP_CONNECTION_ACCESS:-true}"
 TMP_DIR="$(mktemp -d -t finance-genie-client-deploy.XXXXXX)"
 
 cleanup() {
@@ -40,6 +42,16 @@ if [[ -z "${WORKSPACE_SOURCE_PATH}" ]]; then
   USER_NAME="$(printf '%s' "${USER_JSON}" | python -c 'import json, sys; print(json.load(sys.stdin)["userName"])')"
   WORKSPACE_SOURCE_PATH="/Workspace/Users/${USER_NAME}/apps/${APP_NAME}"
 fi
+
+APP_SP_CLIENT_ID=""
+
+get_app_sp_client_id() {
+  if [[ -z "${APP_SP_CLIENT_ID}" ]]; then
+    APP_JSON="$("${DBX[@]}" apps get "${APP_NAME}" --output json)"
+    APP_SP_CLIENT_ID="$(printf '%s' "${APP_JSON}" | python -c 'import json, sys; print(json.load(sys.stdin)["service_principal_client_id"])')"
+  fi
+  printf '%s' "${APP_SP_CLIENT_ID}"
+}
 
 echo "Preparing app source"
 rsync -a \
@@ -72,14 +84,25 @@ if [[ "${GRANT_APP_SP_SCHEMA_ACCESS:-false}" == "true" ]]; then
     echo "GRANT_APP_SP_SCHEMA_ACCESS=true requires CATALOG and SCHEMA." >&2
     exit 1
   fi
-  APP_JSON="$("${DBX[@]}" apps get "${APP_NAME}" --output json)"
-  APP_SP_CLIENT_ID="$(printf '%s' "${APP_JSON}" | python -c 'import json, sys; print(json.load(sys.stdin)["service_principal_client_id"])')"
+  APP_SP_CLIENT_ID="$(get_app_sp_client_id)"
 
   echo "Granting app service principal read access to ${CATALOG}.${SCHEMA}"
   CATALOG_GRANT_JSON="$(printf '{"changes":[{"principal":"%s","add":["USE_CATALOG"]}]}' "${APP_SP_CLIENT_ID}")"
   SCHEMA_GRANT_JSON="$(printf '{"changes":[{"principal":"%s","add":["USE_SCHEMA","SELECT"]}]}' "${APP_SP_CLIENT_ID}")"
   "${DBX[@]}" grants update catalog "${CATALOG}" --json "${CATALOG_GRANT_JSON}" >/dev/null
   "${DBX[@]}" grants update schema "${CATALOG}.${SCHEMA}" --json "${SCHEMA_GRANT_JSON}" >/dev/null
+fi
+
+if [[ "${GRANT_APP_SP_MCP_CONNECTION_ACCESS}" == "true" ]]; then
+  if [[ -z "${MCP_SCHEMA_CONNECTION_NAME}" ]]; then
+    echo "GRANT_APP_SP_MCP_CONNECTION_ACCESS=true requires MCP_SCHEMA_CONNECTION_NAME." >&2
+    exit 1
+  fi
+  APP_SP_CLIENT_ID="$(get_app_sp_client_id)"
+
+  echo "Granting app service principal USE CONNECTION on ${MCP_SCHEMA_CONNECTION_NAME}"
+  CONNECTION_GRANT_JSON="$(printf '{"changes":[{"principal":"%s","add":["USE CONNECTION"]}]}' "${APP_SP_CLIENT_ID}")"
+  "${DBX[@]}" grants update connection "${MCP_SCHEMA_CONNECTION_NAME}" --json "${CONNECTION_GRANT_JSON}" >/dev/null
 fi
 
 echo "Uploading source to workspace"
@@ -96,3 +119,4 @@ echo "Deployment submitted. App details:"
 echo
 echo "The app reads the sql-warehouse resource through DATABRICKS_WAREHOUSE_ID valueFrom in app.yaml."
 echo "Set GRANT_APP_SP_SCHEMA_ACCESS=true to have this script grant read access on CATALOG.SCHEMA."
+echo "Set GRANT_APP_SP_MCP_CONNECTION_ACCESS=false to skip granting USE CONNECTION on ${MCP_SCHEMA_CONNECTION_NAME}."
