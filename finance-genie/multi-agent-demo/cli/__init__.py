@@ -1,4 +1,4 @@
-"""Finance Genie Neo4j GDS specialist CLI wired to Databricks jobs."""
+"""simple-finance-agnet CLI wired to Databricks jobs."""
 
 from dataclasses import dataclass
 from pathlib import Path
@@ -18,7 +18,6 @@ REMOTE_PIP_DEPENDENCIES = [
     "mcp==1.27.0",
     "mlflow==3.12.0",
     "nest-asyncio==1.6.0",
-    "requests==2.33.1",
 ]
 
 
@@ -43,7 +42,7 @@ class DependencyServerless(Serverless):
         ]
 
 
-class FinanceNeo4jGdsSpecialistRunner(Runner):
+class FinancePlainNeo4jMcpAgentRunner(Runner):
     def _compute(self, mode_override: str | None = None):
         mode = mode_override or self.config.databricks_compute_mode
         if mode == "serverless":
@@ -60,9 +59,9 @@ class FinanceNeo4jGdsSpecialistRunner(Runner):
         return ClassicCluster(cluster_id=self.config.databricks_cluster_id)
 
 
-runner = FinanceNeo4jGdsSpecialistRunner(
-    run_name_prefix="finance_neo4j_gds_specialist",
+runner = FinancePlainNeo4jMcpAgentRunner(
+    run_name_prefix="simple-finance-agnet",
     project_dir=Path(__file__).resolve().parent.parent,
     scripts_dir="jobs",
-    extra_files=["finance_graph_supervisor_agent.py"],
+    extra_files=["simple_finance_agnet.py"],
 )

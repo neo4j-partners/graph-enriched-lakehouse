@@ -1,7 +1,7 @@
 [project]
 name = "finance-genie-multi-agent-demo"
 version = "0.1.0"
-description = "Finance Genie Neo4j GDS fraud specialist for Supervisor Agent demos."
+description = "simple-finance-agnet for Databricks Model Serving."
 requires-python = ">=3.12"
 dependencies = [
     "databricks-agents>=1.1.0",
@@ -17,7 +17,6 @@ dependencies = [
     "nest-asyncio",
     "pydantic>=2",
     "python-dotenv",
-    "requests",
 ]
 
 [tool.uv]

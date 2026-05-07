@@ -1,4 +1,4 @@
-"""Check whether the deployed graph-specialist serving endpoint is READY."""
+"""Check whether the deployed simple-finance-agnet agent endpoint is READY."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Delete the graph-specialist serving endpoint."""
+"""Delete the simple-finance-agnet agent serving endpoint."""
 
 from __future__ import annotations
 

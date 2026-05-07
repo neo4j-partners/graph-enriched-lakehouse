@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start or update the remote graph-specialist Model Serving endpoint.
+# Start or update the remote simple-finance-agnet Model Serving endpoint.
 #
 # Usage:
 #   ./scripts/start_remote.sh [--profile NAME] [--compute cluster|serverless]
@@ -69,11 +69,11 @@ echo "==> Upload jobs and agent code"
 uv run python -m cli upload --all
 
 echo
-echo "==> Validate remote preconditions"
+echo "==> Validate remote MCP preconditions"
 uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 00_validate_demo_preconditions.py
 
 echo
-echo "==> Deploy graph-specialist endpoint"
+echo "==> Deploy simple-finance-agnet endpoint"
 uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 01_deploy_agent.py
 
 echo

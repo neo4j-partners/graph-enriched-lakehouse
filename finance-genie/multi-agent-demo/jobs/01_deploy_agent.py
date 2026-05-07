@@ -1,4 +1,4 @@
-"""Log, register, and deploy the Neo4j GDS fraud specialist agent."""
+"""Log, register, and deploy the simple-finance-agnet agent."""
 
 from __future__ import annotations
 
@@ -39,10 +39,10 @@ def main() -> None:
 
     catalog = setting("CATALOG")
     schema = setting("SCHEMA")
-    model_name = setting("UC_MODEL_NAME", "finance_neo4j_gds_fraud_specialist")
+    model_name = setting("UC_MODEL_NAME", "simple-finance-agnet")
     uc_model_name = f"{catalog}.{schema}.{model_name}"
     endpoint_name = setting(
-        "MODEL_SERVING_ENDPOINT_NAME", "finance-neo4j-gds-fraud-specialist"
+        "MODEL_SERVING_ENDPOINT_NAME", "simple-finance-agnet"
     )
     llm_endpoint_name = setting("LLM_ENDPOINT_NAME")
     connection_name = setting("UC_CONNECTION_NAME")
@@ -50,7 +50,7 @@ def main() -> None:
     workspace = WorkspaceClient()
 
     mlflow.set_registry_uri("databricks-uc")
-    mlflow.set_experiment(f"{workspace_dir}/finance-neo4j-gds-fraud-specialist")
+    mlflow.set_experiment(f"{workspace_dir}/simple-finance-agnet")
 
     resources = [
         DatabricksServingEndpoint(endpoint_name=llm_endpoint_name),
@@ -71,8 +71,8 @@ def main() -> None:
 
     with mlflow.start_run():
         logged_agent_info = mlflow.pyfunc.log_model(
-            name="finance-neo4j-gds-fraud-specialist",
-            python_model="finance_graph_supervisor_agent.py",
+            name="simple-finance-agnet",
+            python_model="simple_finance_agnet.py",
             resources=resources,
             pip_requirements=pip_requirements,
         )
@@ -93,7 +93,7 @@ def main() -> None:
             "UC_CONNECTION_NAME": connection_name,
         },
         tags={
-            "endpointSource": "finance-genie-neo4j-gds-specialist",
+            "endpointSource": "simple-finance-agnet",
             "connection": connection_name,
         },
         deploy_feedback_model=False,

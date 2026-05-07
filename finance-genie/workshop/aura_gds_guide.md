@@ -1,7 +1,7 @@
 # GDS Algorithms in Neo4j Aura
 
 **This is a reference guide.** Run these commands in the **Neo4j Aura Workspace**
-(Query tab), not in Databricks. It is a standalone alternative to
+Query tab rather than Databricks. It is a standalone alternative to
 `03_gds_enrichment.ipynb` for readers who prefer to follow along outside a
 Databricks notebook.
 
@@ -13,25 +13,28 @@ When finished, return to Databricks and run `04_pull_gold_tables`.
 | Algorithm | Property Written | Fraud Signal |
 |-----------|-----------------|--------------|
 | **PageRank** | `Account.risk_score` | Central accounts in money-flow networks |
-| **Louvain** | `Account.community_id` | Tightly connected clusters (fraud rings) |
+| **Louvain** | `Account.community_id` | Tightly connected fraud-ring clusters |
 | **Node Similarity** | `Account.similarity_score` | Accounts sharing the same merchants |
 
 ---
 
 ## How the Fraud Signal Gets In
 
-Each algorithm reads a different part of the synthetic graph. The signal was planted at data-generation time and the algorithms recover it without ever seeing the fraud labels.
+Each algorithm reads a different part of the synthetic graph. The signal was
+planted at data-generation time, and the algorithms recover it from structure
+alone.
 
-**PageRank and Louvain — signal source: within-ring transfers**
+**PageRank and Louvain: signal source, within-ring transfers**
 
 Each fraud ring has 100 accounts. At generation time, `WITHIN_RING_PROB` of all P2P transfers are forced to stay inside a ring: ring members send money to other ring members at a much higher rate than background accounts do. This creates a dense internal `TRANSFERRED_TO` subgraph for each ring.
 
 - **Louvain** sees that density as a tight community and assigns all members the same `community_id`.
-- **PageRank** sees ring members recursively passing centrality to each other. Because the senders are themselves well-connected ring members, the centrality compounds — ring members score higher than background accounts even though their raw transfer counts are moderate.
+- **PageRank** sees ring members recursively passing centrality to each other. Because the senders are themselves well-connected ring members, the centrality compounds. Ring members score higher than background accounts even though their raw transfer counts are moderate.
 
-Both algorithms project only Account nodes and `TRANSFERRED_TO` relationships. Merchant data plays no role.
+Both algorithms project only Account nodes and `TRANSFERRED_TO` relationships.
+Merchant data stays outside this analytic view.
 
-**NodeSimilarity — signal source: anchor merchants**
+**NodeSimilarity: signal source, anchor merchants**
 
 Each fraud ring is assigned 4 anchor merchants at generation time. Ring members direct `RING_ANCHOR_PREF` of their transactions toward those specific 4 merchants. Normal accounts visit merchants uniformly at random.
 
@@ -82,8 +85,8 @@ ORDER BY account_count DESC
 ```
 
 **What to look for:** transfer degree is fairly uniform across account types.
-No single column separates high-risk accounts from low-risk ones — that is the
-whole point. The separation lives in graph structure, not in tabular attributes.
+The separation lives in graph structure rather than tabular attributes. This is
+the point of the exercise.
 
 ### 1c. Account breakdown by balance tier
 
@@ -102,7 +105,7 @@ ORDER BY accounts DESC
 ```
 
 **What to look for:** balance tiers and age ranges overlap heavily across all
-groups. A column filter cannot isolate the fraud rings.
+groups. Column filters miss the fraud rings.
 
 ### 1d. Sample the subgraph around an account
 
@@ -123,12 +126,36 @@ Good visual primer before running the algorithms.
 
 ## Step 2: Project the Account Transfer Graph
 
-GDS algorithms run on an **in-memory graph projection**, not directly on the database.
+GDS algorithms run on an **in-memory graph projection** instead of the stored database graph.
 This projects only Account nodes and `TRANSFERRED_TO` relationships: the peer-to-peer
 money-flow graph where fraud rings live.
 
+A projection is a named, temporary analytics view of the stored graph. Neo4j
+keeps the source `Account`, `Merchant`, `TRANSFERRED_TO`, and `TRANSACTED_WITH`
+records in the database, while GDS loads only the labels, relationship types,
+and properties needed by the algorithm into its graph catalog. That separation
+matters: you can project a narrow graph for fast analytics while keeping the
+stored operational graph unchanged until an algorithm writes results back.
+
+For PageRank and Louvain, the projection deliberately excludes merchants and
+merchant transactions. The target question is: "Which accounts are structurally
+central or clustered in the peer-to-peer money flow network?" The `UNDIRECTED`
+orientation lets community detection treat a
+transfer between two accounts as evidence of connection regardless of direction,
+which is useful for finding dense rings.
+
+Run these as separate queries in the Aura Query tab. The first query clears any
+stale projection from a previous run:
+
 ```cypher
-CALL gds.graph.drop('account_transfers', false) YIELD graphName;
+CALL gds.graph.drop('account_transfers', false)
+YIELD graphName
+RETURN graphName
+```
+
+Then create the projection:
+
+```cypher
 CALL gds.graph.project(
   'account_transfers',
   'Account',
@@ -140,13 +167,48 @@ RETURN graphName, nodeCount, relationshipCount
 
 **Expected:** ~25,000 nodes, ~300,000 relationships.
 
+`nodeCount` tells you how many `Account` nodes were loaded into the analytic
+view. `relationshipCount` tells you how many `TRANSFERRED_TO` edges GDS can use.
+If either count is unexpectedly low, stop here and check the ingest before
+running algorithms. The algorithms can only find patterns in the projected graph
+they are given.
+
+Before moving on, confirm the projection is in the GDS graph catalog:
+
+```cypher
+CALL gds.graph.list()
+YIELD graphName, nodeCount, relationshipCount
+WHERE graphName = 'account_transfers'
+RETURN graphName, nodeCount, relationshipCount
+```
+
+If this returns zero rows, the current database's GDS graph catalog is missing
+the projection. Re-run the projection query above before running PageRank or
+Louvain. GDS projections are in-memory; they disappear if they are dropped, if
+the database restarts, or if you switch to a different Neo4j database.
+
 ---
 
-## Step 3: Run PageRank (Risk Centrality)
+## Step 3: Run PageRank For Risk Centrality
 
 PageRank measures how "central" an account is in the transfer network.
 Accounts that receive money from many well-connected accounts score higher.
 That is exactly how money-mule networks operate.
+
+In plain terms, PageRank asks: "Which accounts are important because they are
+connected to other important accounts?" That is more useful than counting
+transfers. A mule inside a ring can have moderate raw transaction volume and a
+high centrality score because it sits among accounts that are themselves central
+to the ring. This gives the demo a structural risk feature that SQL aggregation
+over account rows misses.
+
+This command uses `write` mode. GDS computes PageRank against the in-memory
+projection, then writes the result back to each stored `Account` node as
+`risk_score`. Databricks later reads that property into Gold as a normal column,
+so Genie can filter, group, and rank accounts by graph centrality.
+
+If PageRank reports a missing `account_transfers` graph, return to Step 2 and
+recreate the projection first.
 
 ```cypher
 CALL gds.pageRank.write(
@@ -176,11 +238,28 @@ These top accounts are the most central nodes in the transfer network. Cross-ref
 
 ---
 
-## Step 4: Run Louvain Community Detection (Fraud Rings)
+## Step 4: Run Louvain Community Detection For Fraud Rings
 
 Louvain finds clusters of densely connected accounts. In a legitimate network,
 communities are large and diffuse. Fraud rings form **small, tight clusters**
 with heavy internal transfers.
+
+Louvain is a community detection algorithm. It tries to partition the graph so
+that accounts have many connections inside their assigned community and fewer
+connections outside it. The returned `modularity` summarizes how strongly the
+graph separates into communities: higher values indicate clearer community
+structure.
+
+The value for the lakehouse is the `community_id` feature. It turns topology
+into a dimension that downstream tools can use. Instead of asking Genie to infer
+"coordinated behavior" from raw transfers every time, the pipeline gives Genie a
+stable grouping column: all accounts assigned to the same Louvain community can
+be counted, ranked, compared by balance, or joined to merchant activity.
+
+If you see `GraphNotFoundException` for `account_transfers`, Step 2 failed to
+create a projection in the current Neo4j database, or the projection was
+dropped/lost after PageRank. Run the Step 2 `gds.graph.list()` check. If it
+returns zero rows, recreate `account_transfers`, then run Louvain.
 
 ```cypher
 CALL gds.louvain.write(
@@ -203,7 +282,7 @@ ORDER BY size DESC
 LIMIT 15
 ```
 
-**Visualise a small, dense community (likely a fraud ring):**
+**Visualise a small, dense fraud-ring candidate community:**
 
 ```cypher
 MATCH (a:Account)
@@ -219,13 +298,13 @@ RETURN m, r, other
 
 The query runs in two stages separated by the intermediate `WITH community`.
 
-*Stage 1 — find the smallest community:*
+*Stage 1: find the smallest community:*
 - `MATCH (a:Account) WHERE a.community_id IS NOT NULL` collects every account Louvain has labelled.
 - `WITH a.community_id AS community, count(*) AS size` groups by community and counts members.
 - `ORDER BY size ASC LIMIT 1` picks the single smallest community. Small is the tell: the background population forms one large community of thousands of accounts; fraud rings form tight clusters of ~100.
-- The second `WITH community` discards `size` and carries only the community ID into stage 2, which is what makes the `LIMIT 1` stick — without it the next `MATCH` would re-expand and lose the single-community constraint.
+- The second `WITH community` discards `size` and carries only the community ID into stage 2. This makes the `LIMIT 1` stick and preserves the single-community constraint for the next `MATCH`.
 
-*Stage 2 — retrieve the internal transfer subgraph:*
+*Stage 2: retrieve the internal transfer subgraph:*
 - `MATCH (m:Account {community_id: community})-[r:TRANSFERRED_TO]-(other:Account {community_id: community})` finds every `TRANSFERRED_TO` relationship where **both** endpoints belong to that community. The undirected `-` (rather than `->`) returns edges in either direction, so the full internal transfer graph is captured.
 - `RETURN m, r, other` hands nodes and relationships to the Aura visual renderer, which draws them as a graph.
 
@@ -235,7 +314,14 @@ The result is a graph panel showing only the accounts inside the ring and the tr
 
 ## Step 5: Drop the Transfer Graph Projection
 
-Clean up before creating the next projection.
+Clean up before creating the next projection. Dropping a projection leaves
+`Account` nodes, `TRANSFERRED_TO` relationships, and the properties written by
+PageRank and Louvain intact. It only releases the temporary in-memory analytics
+view named `account_transfers`.
+
+This matters in a workshop environment because each algorithm family needs a
+different shape of graph. Keeping only the projection you need reduces memory
+usage and makes later `gds.graph.list()` checks easier to interpret.
 
 ```cypher
 CALL gds.graph.drop('account_transfers')
@@ -245,10 +331,21 @@ RETURN graphName
 
 ---
 
-## Step 6: Project the Bipartite Graph (Account → Merchant)
+## Step 6: Project the Bipartite Graph From Account To Merchant
 
 Node Similarity needs the bipartite graph: which accounts transact
 with which merchants.
+
+This projection has a different purpose than `account_transfers`. It includes
+both `Account` and `Merchant` nodes, connected by `TRANSACTED_WITH`
+relationships. The projected shape is bipartite: accounts connect only to
+merchants. GDS can then infer account-to-account similarity from shared merchant
+neighborhoods.
+
+The `NATURAL` orientation keeps the stored direction from account to merchant.
+That direction matches the semantic question: "Which merchants did each account
+transact with?" For this algorithm, merchant overlap is the signal, so transfer
+relationships are intentionally excluded.
 
 ```cypher
 CALL gds.graph.project(
@@ -262,10 +359,23 @@ RETURN graphName, nodeCount, relationshipCount
 
 ---
 
-## Step 7: Run Node Similarity (Shared Merchant Patterns)
+## Step 7: Run Node Similarity For Shared Merchant Patterns
 
 Two accounts are similar if they transact with the **same merchants**.
 Fraud accounts typically share a small set of high-risk merchants.
+
+Node Similarity compares each account's merchant neighborhood with other
+accounts' neighborhoods. With `JACCARD`, the score is the size of the shared
+merchant set divided by the size of the combined merchant set. A score near 1.0
+means two accounts mostly use the same merchants; a score near 0.0 means their
+merchant patterns barely overlap.
+
+This catches a different fraud signal than PageRank or Louvain. A ring may be
+visible through peer-to-peer transfers, but it may also reveal itself because
+members concentrate activity at the same anchor merchants. The `topK` and
+`similarityCutoff` settings keep only the strongest account pairs, then `write`
+mode persists those pairs as `SIMILAR_TO` relationships with a
+`similarity_score` property.
 
 ```cypher
 CALL gds.nodeSimilarity.write(
@@ -301,6 +411,13 @@ LIMIT 10
 For each account, store its **highest similarity score** as a node property.
 This makes it easy to read back as a single feature column in Databricks.
 
+Node Similarity writes pairwise relationships, which are useful for graph
+inspection but awkward as a single account-level feature. This aggregation
+compresses the relationship evidence into one scalar per account: the strongest
+merchant-overlap signal found for that account. A downstream SQL query can then
+sort or threshold `similarity_score` while avoiding expansion of the
+`SIMILAR_TO` relationship graph.
+
 ```cypher
 MATCH (a:Account)
 OPTIONAL MATCH (a)-[s:SIMILAR_TO]-()
@@ -313,6 +430,10 @@ RETURN count(a) AS accounts_updated
 
 ## Step 9: Drop the Bipartite Graph Projection
 
+As with the transfer projection, this removes only the temporary in-memory GDS
+projection. The `SIMILAR_TO` relationships and account-level
+`similarity_score` values written in Steps 7 and 8 remain in the stored graph.
+
 ```cypher
 CALL gds.graph.drop('account_merchants')
 YIELD graphName
@@ -324,6 +445,12 @@ RETURN graphName
 ## Step 10: Final Verification, All Features Written
 
 Confirm all three properties exist on Account nodes:
+
+This is the handoff check before returning to Databricks. At this point, the
+graph algorithms have converted three structural patterns into three properties:
+centrality (`risk_score`), community membership (`community_id`), and shared
+merchant behavior (`similarity_score`). The next notebook reads these properties
+back into Unity Catalog, where they become ordinary Gold columns.
 
 ```cypher
 MATCH (a:Account)
@@ -351,9 +478,14 @@ RETURN CASE WHEN size <= 150 THEN 'small (ring candidate)' ELSE 'large (backgrou
 ORDER BY community_type
 ```
 
-Small communities (fraud rings, ~100 accounts each) should show higher average
-PageRank and similarity scores than the large background community. That
+Small fraud-ring communities with about 100 accounts each should show higher
+average PageRank and similarity scores than the large background community. That
 separation is the signal.
+
+This rollup is a sanity check rather than a fraud verdict. It confirms that
+independent graph features move in the expected direction for the synthetic
+signal. Small communities should look more suspicious because the data generator
+planted dense within-ring transfers and shared merchant preferences there.
 
 ---
 
@@ -363,6 +495,12 @@ Before handing the features back to Databricks, it is worth seeing the payoff
 in Cypher alone. These two queries combine the GDS-written properties with
 the raw graph to surface fraud patterns directly.
 
+The point of these queries is to show what the features make possible. GDS does
+the expensive structural work once. After the properties are written, normal
+Cypher can combine them with business logic, time windows, merchant behavior, or
+human-review thresholds. Databricks does the same thing later in SQL over Gold
+tables.
+
 ### 11a. Identify Ring Members
 
 A fraud ring is a Louvain community where multiple accounts both send *and*
@@ -370,8 +508,7 @@ receive money within the same community. Accounts that only send or only
 receive are peripheral; accounts on both sides of a transfer are core ring
 participants. The query collects senders and receivers per community, then
 intersects them. Any account in both lists is a confirmed bidirectional
-participant. Communities with three or more such accounts are coordinated
-rings, not coincidence.
+participant. Communities with three or more such accounts are coordinated rings.
 
 ```cypher
 MATCH (s:Account)-[:TRANSFERRED_TO]->(r:Account)
@@ -389,9 +526,9 @@ RETURN community,
 ORDER BY ring_size DESC
 ```
 
-**What to look for:** small communities (tight clusters) with `ring_size >= 3`.
-The Louvain + bidirectional intersection combo finds rings without needing
-labels. Validate precision by checking the returned account IDs against
+**What to look for:** small, tight communities with `ring_size >= 3`.
+The Louvain + bidirectional intersection combo finds rings from topology alone.
+Validate precision by checking the returned account IDs against
 `account_labels` in Databricks after completing the pipeline.
 
 ### 11b. Off-Hours Transaction Detection
@@ -399,8 +536,8 @@ labels. Validate precision by checking the returned account IDs against
 Fraud accounts in this dataset skew slightly toward off-hours activity.
 Flagging accounts with three or more transactions between midnight and 5am,
 then joining the already-written `risk_score` and `community_id`, gives a
-single ranked list that combines structural (graph) and behavioural (time-of-day)
-signal.
+single ranked list that combines structural graph signal and behavioural
+time-of-day signal.
 
 ```cypher
 MATCH (a:Account)-[t:TRANSACTED_WITH]->(m:Merchant)

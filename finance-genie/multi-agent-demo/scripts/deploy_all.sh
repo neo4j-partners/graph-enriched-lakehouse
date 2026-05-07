@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
-# Deploy the Finance Genie Neo4j GDS fraud specialist end to end.
+# Deploy the simple-finance-agnet end to end.
 #
 # Usage:
 #   ./scripts/deploy_all.sh [--profile NAME] [--compute cluster|serverless]
-#                           [--replace-connection] [--skip-secrets]
-#                           [--skip-connection] [--skip-local-test]
-#                           [--skip-smoke-test]
+#                           [--skip-local-test] [--skip-smoke-test]
 #                           [--endpoint-timeout-min MINUTES]
+#
+# Prerequisite:
+#   Run finance-genie/neo4j-mcp-demo/deploy.sh first to create and validate the
+#   Neo4j MCP Unity Catalog connection referenced by UC_CONNECTION_NAME.
 
 set -euo pipefail
 
@@ -17,9 +19,6 @@ export UV_CACHE_DIR="${UV_CACHE_DIR:-${DEMO_DIR}/.uv-cache}"
 
 PROFILE=""
 COMPUTE=""
-REPLACE_CONNECTION=0
-SKIP_SECRETS=0
-SKIP_CONNECTION=0
 SKIP_LOCAL_TEST=0
 SKIP_SMOKE_TEST=0
 ENDPOINT_TIMEOUT_MIN=30
@@ -61,18 +60,6 @@ while [[ $# -gt 0 ]]; do
       esac
       shift 2
       ;;
-    --replace-connection)
-      REPLACE_CONNECTION=1
-      shift
-      ;;
-    --skip-secrets)
-      SKIP_SECRETS=1
-      shift
-      ;;
-    --skip-connection)
-      SKIP_CONNECTION=1
-      shift
-      ;;
     --skip-local-test)
       SKIP_LOCAL_TEST=1
       shift
@@ -88,7 +75,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'
+      sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
       exit 0
       ;;
     *)
@@ -114,33 +101,18 @@ if [[ -n "$COMPUTE" ]]; then
   COMPUTE_ARGS=(--compute "$COMPUTE")
 fi
 
-CONNECTION_ARGS=("${PROFILE_ARGS[@]}")
-if [[ "$REPLACE_CONNECTION" -eq 1 ]]; then
-  CONNECTION_ARGS+=(--replace)
-fi
-
 if [[ "$SKIP_LOCAL_TEST" -eq 0 ]]; then
   run_step "Run local static validation" \
     ./scripts/test_local.sh
 fi
 
-if [[ "$SKIP_SECRETS" -eq 0 ]]; then
-  run_step "Store AgentCore OAuth credentials for the MCP connection" \
-    ./setup_secrets.sh "${PROFILE_ARGS[@]}"
-fi
-
-if [[ "$SKIP_CONNECTION" -eq 0 ]]; then
-run_step "Provision or validate UC external MCP connection" \
-    uv run setup/provision_connection.py ${CONNECTION_ARGS[@]+"${CONNECTION_ARGS[@]}"}
-fi
-
 run_step "Upload Databricks job scripts and agent code" \
   uv run python -m cli upload --all
 
-run_step "Run remote precondition validation" \
+run_step "Run remote MCP precondition validation" \
   uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 00_validate_demo_preconditions.py
 
-run_step "Deploy graph-specialist Model Serving endpoint" \
+run_step "Deploy simple-finance-agnet Model Serving endpoint" \
   uv run python -m cli submit ${COMPUTE_ARGS[@]+"${COMPUTE_ARGS[@]}"} 01_deploy_agent.py
 
 CURRENT_STEP="Wait for serving endpoint readiness"

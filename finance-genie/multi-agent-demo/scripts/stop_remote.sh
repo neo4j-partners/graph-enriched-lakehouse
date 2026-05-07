@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Stop remote serving costs by deleting the graph-specialist serving endpoint.
+# Stop remote serving costs by deleting the simple-finance-agnet serving endpoint.
 #
 # Usage:
 #   ./scripts/stop_remote.sh [--profile NAME] --yes

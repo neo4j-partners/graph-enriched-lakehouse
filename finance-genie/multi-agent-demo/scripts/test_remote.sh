@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Validate and query the remote graph-specialist serving endpoint.
+# Validate and query the remote simple-finance-agnet serving endpoint.
 #
 # Usage:
 #   ./scripts/test_remote.sh [--profile NAME] [--prompt TEXT]

@@ -7,7 +7,17 @@ import sys
 from pathlib import Path
 
 
+def allow_nested_asyncio() -> None:
+    """Allow sync MCP helpers to run inside Databricks notebook job kernels."""
+    try:
+        import nest_asyncio
+    except ImportError:
+        return
+    nest_asyncio.apply()
+
+
 def inject_params() -> None:
+    allow_nested_asyncio()
     remaining: list[str] = []
     for arg in sys.argv[1:]:
         if "=" in arg and not arg.startswith("-"):

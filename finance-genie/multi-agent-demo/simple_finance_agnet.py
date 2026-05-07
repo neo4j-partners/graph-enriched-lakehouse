@@ -1,4 +1,4 @@
-"""Neo4j GDS fraud specialist for the Finance Genie multi-agent demo."""
+"""simple-finance-agnet tool-calling agent for Databricks Model Serving."""
 
 from __future__ import annotations
 
@@ -41,35 +41,16 @@ DATABRICKS_PROFILE = os.environ.get("DATABRICKS_CONFIG_PROFILE") or os.environ.g
 )
 
 SYSTEM_PROMPT = """
-You are Finance Neo4j GDS Fraud Specialist.
+You are a simple-finance-agnet.
 
-Your only data source is the Neo4j MCP server exposed through a Databricks
-Unity Catalog external MCP connection. Do not answer by calling Genie, SQL
-warehouses, Delta tables, or any non-graph tool.
+Your only external data source is the Neo4j MCP server exposed through the
+Databricks Unity Catalog external MCP connection. Use the MCP tools to inspect
+schema and run read-only Cypher. Do not mutate graph data.
 
-Use Neo4j MCP tools to retrieve graph and GDS evidence for potential fraud-ring
-candidates. Relevant evidence can include Account and Merchant nodes,
-TRANSFERRED_TO, TRANSACTED_WITH, and SIMILAR_TO relationships, GDS-derived
-properties such as risk_score, community_id, PageRank-style centrality,
-Louvain-style community membership, node similarity, transfer density, and
-shared merchant concentration.
-
-When the user asks for likely fraud rings, return a compact supervisor-friendly
-answer with:
-- a short summary of the graph evidence;
-- up to five candidate groups;
-- capped account IDs for each candidate, preferably 5 to 20 IDs;
-- the graph metrics or structural signals that made each candidate suspicious;
-- a recommended downstream Genie prompt that asks the BEFORE Genie Space to
-  analyze those account IDs against accounts, merchants, transactions, and
-  account_links.
-
-Use schema discovery before writing Cypher when graph structure is unclear.
-If a discovery tool schema requires a properties argument but no filters are
-needed, pass {"properties": {}}. Use only read-only graph queries. Never mutate
-data. Never hardcode MCP tool names; choose tools from the discovered MCP tool
-descriptions. Prefer aggregate answers and small examples over raw account
-dumps.
+Before writing Cypher, discover the schema when the relevant labels,
+relationships, or properties are unclear. Keep queries small and focused.
+Explain results directly, include the Cypher you used when useful, and say when
+the graph does not contain enough evidence to answer.
 """
 
 
@@ -140,7 +121,7 @@ class LangGraphResponsesAgent(ResponsesAgent):
         cc_msgs = to_chat_completions_input([i.model_dump() for i in request.input])
         async for event in self.agent.astream(
             {"messages": cc_msgs},
-            config={"recursion_limit": 24},
+            config={"recursion_limit": 20},
             stream_mode=["updates", "messages"],
         ):
             if event[0] == "updates":
@@ -190,23 +171,21 @@ def initialize_agent() -> LangGraphResponsesAgent:
     mcp_client = DatabricksMultiServerMCPClient(
         [
             DatabricksMCPServer(
-                name="neo4j-gds-fraud-specialist",
+                name="neo4j-mcp",
                 url=external_mcp_url,
                 workspace_client=workspace_client,
             )
         ]
     )
-    graph_tools = asyncio.run(mcp_client.get_tools())
-    if not graph_tools:
+    tools = asyncio.run(mcp_client.get_tools())
+    if not tools:
         raise RuntimeError(f"No MCP tools discovered from {external_mcp_url}")
 
     llm = ChatDatabricks(
         endpoint=LLM_ENDPOINT_NAME,
         workspace_client=workspace_client,
     )
-    return LangGraphResponsesAgent(
-        create_tool_calling_agent(llm, graph_tools, SYSTEM_PROMPT)
-    )
+    return LangGraphResponsesAgent(create_tool_calling_agent(llm, tools, SYSTEM_PROMPT))
 
 
 mlflow.langchain.autolog()

@@ -773,7 +773,6 @@ dependencies = [
     { name = "nest-asyncio" },
     { name = "pydantic" },
     { name = "python-dotenv" },
-    { name = "requests" },
 ]
 
 [package.metadata]
@@ -791,7 +790,6 @@ requires-dist = [
     { name = "nest-asyncio" },
     { name = "pydantic", specifier = ">=2" },
     { name = "python-dotenv" },
-    { name = "requests" },
 ]
 
 [[package]]

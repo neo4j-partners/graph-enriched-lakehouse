@@ -1,4 +1,4 @@
-"""Command-line entry point for the Finance Genie multi-agent demo runner."""
+"""Command-line entry point for the simple-finance-agnet runner."""
 
 from cli import runner
 
