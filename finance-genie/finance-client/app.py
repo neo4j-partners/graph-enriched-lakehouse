@@ -147,4 +147,4 @@ st.markdown(
     """
 )
 
-st.info("Open GDS Enhanced Graph Schema first to see the graph context, then continue to Executive Comparison.")
+st.info("Open Lakehouse Graph Schema first to see the graph context, then continue to Executive Comparison.")

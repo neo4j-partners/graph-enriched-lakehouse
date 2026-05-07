@@ -46,9 +46,17 @@ fi
 mkdir -p "$STATE_DIR"
 cd "$DEMO_DIR"
 
-nohup uv run python scripts/local_agent_server.py --host "$HOST" --port "$PORT" \
+nohup /usr/bin/env PYTHONUNBUFFERED=1 uv run python scripts/local_agent_server.py --host "$HOST" --port "$PORT" \
   >"$LOG_FILE" 2>&1 &
 echo $! >"$PID_FILE"
+
+sleep 2
+if ! kill -0 "$(cat "$PID_FILE")" 2>/dev/null; then
+  echo "Local server failed to start. Log follows:" >&2
+  sed -n '1,160p' "$LOG_FILE" >&2
+  rm -f "$PID_FILE"
+  exit 1
+fi
 
 echo "Started local graph specialist server:"
 echo "  URL: http://${HOST}:${PORT}"

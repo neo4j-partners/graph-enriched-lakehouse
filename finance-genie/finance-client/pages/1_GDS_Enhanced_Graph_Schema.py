@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 
-st.set_page_config(page_title="GDS Enhanced Graph Schema", layout="wide")
+st.set_page_config(page_title="Lakehouse Graph Schema", layout="wide")
 
 import backend as db
 
@@ -129,7 +129,7 @@ def sample_edge_styles() -> list:
 
 inject_styles()
 
-st.title("GDS Enhanced Graph Schema")
+st.title("Lakehouse Graph Schema")
 st.markdown(
     """
     The graph schema makes the enrichment boundary visible: Silver tables define

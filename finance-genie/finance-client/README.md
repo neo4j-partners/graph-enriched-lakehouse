@@ -42,6 +42,8 @@ Optional environment variables:
 - `MCP_SCHEMA_TOOL_ARGUMENTS`: set to `properties` for Neo4j MCP tools that
   require a `properties` wrapper, `none` for tools that take no arguments, or
   `catalog_schema` to send `catalog` and `schema`
+- `MCP_CYPHER_TOOL_NAME`: MCP read-only Cypher tool used by the sample community
+  tab, defaults to `neo4j-mcp-server-target___read-cypher`
 
 For local development, copy the sample file and fill in your warehouse ID:
 
@@ -70,12 +72,12 @@ gets `DATABRICKS_WAREHOUSE_ID` from the `sql-warehouse` resource in `app.yaml`.
 | Page | Purpose |
 | --- | --- |
 | Home | Frames the demo as the same Genie experience over an expanded catalog. |
-| GDS Enhanced Graph Schema | Shows the graph schema, GDS-added Gold features, and a bounded community sample. |
+| Lakehouse Graph Schema | Shows the graph schema, GDS-added Gold features, and a bounded community sample from Lakehouse tables. |
 | Executive Comparison | Shows curated before and after question pairs with SQL evidence. |
 | Question Surface | Shows which finance questions become answerable after graph enrichment. |
 | Business Value | Quantifies merchant concentration, review workload, book exposure, and transfer flow. |
 | Data Lineage | Explains the Silver to Neo4j GDS to Gold to Genie path. |
-| MCP Full Schema | Calls a configured MCP server and displays the full live schema response. |
+| Live Neo4j Graph Schema | Calls the Neo4j MCP server and displays live graph schema and sample community data from Neo4j. |
 
 ## Data Strategy
 
@@ -86,18 +88,20 @@ Genie runner artifacts or the Databricks Genie API.
 
 ## MCP Schema Page
 
-The MCP Full Schema page uses the Databricks SDK to call an MCP server through a
+The Live Neo4j Graph Schema page uses the Databricks SDK to call an MCP server through a
 Unity Catalog HTTP connection. The connection should point at the MCP server base
 path and the app service principal needs `USE CONNECTION` on that connection.
 
 The deployed app defaults to the Neo4j MCP demo connection
-`neo4j_agentcore_mcp` and tool `neo4j-mcp-server-target___get-schema`. That
-tool is called with `MCP_SCHEMA_TOOL_ARGUMENTS=properties`, which sends the
-required `properties` wrapper argument. For other MCP schema servers, override
-`MCP_SCHEMA_TOOL_NAME` and set `MCP_SCHEMA_TOOL_ARGUMENTS=catalog_schema` when
-the tool expects the configured `catalog` and `schema` arguments, or `none` when
-the tool expects no arguments. The page preserves the raw MCP response and also
-normalizes common schema response shapes into tables, columns, and relationships.
+`neo4j_agentcore_mcp`, schema tool `neo4j-mcp-server-target___get-schema`, and
+Cypher tool `neo4j-mcp-server-target___read-cypher`. The schema tool is called
+with `MCP_SCHEMA_TOOL_ARGUMENTS=properties`, which sends the required
+`properties` wrapper argument. The Sample Community tab uses read-only Cypher
+through MCP to retrieve live Neo4j accounts, merchants, and relationships for a
+selected community. For other MCP schema servers, override `MCP_SCHEMA_TOOL_NAME`
+and set `MCP_SCHEMA_TOOL_ARGUMENTS=catalog_schema` when the tool expects the
+configured `catalog` and `schema` arguments, or `none` when the tool expects no
+arguments.
 
 ## Local Development
 
@@ -117,6 +121,7 @@ export SCHEMA=graph-enriched-schema
 export MCP_SCHEMA_CONNECTION_NAME=neo4j_agentcore_mcp
 export MCP_SCHEMA_TOOL_NAME=neo4j-mcp-server-target___get-schema
 export MCP_SCHEMA_TOOL_ARGUMENTS=properties
+export MCP_CYPHER_TOOL_NAME=neo4j-mcp-server-target___read-cypher
 ```
 
 You can place those values in `.env.local`; `scripts/start_local.sh` and

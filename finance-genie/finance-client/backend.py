@@ -22,6 +22,10 @@ MCP_SCHEMA_CONNECTION_NAME = os.getenv("MCP_SCHEMA_CONNECTION_NAME", "")
 MCP_SCHEMA_PATH = os.getenv("MCP_SCHEMA_PATH", "/")
 MCP_SCHEMA_TOOL_NAME = os.getenv("MCP_SCHEMA_TOOL_NAME", "get_full_schema")
 MCP_SCHEMA_TOOL_ARGUMENTS = os.getenv("MCP_SCHEMA_TOOL_ARGUMENTS", "catalog_schema")
+MCP_CYPHER_TOOL_NAME = os.getenv(
+    "MCP_CYPHER_TOOL_NAME",
+    "neo4j-mcp-server-target___read-cypher",
+)
 
 
 @dataclass(frozen=True)
@@ -258,6 +262,23 @@ def list_mcp_schema_tools() -> list[dict[str, Any]]:
 
 
 @st.cache_data(ttl=300)
+def call_mcp_tool(tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    """Call a configured MCP tool by name."""
+    response = mcp_schema_request(
+        "tools/call",
+        params={"name": tool_name, "arguments": arguments},
+        request_id=f"tool-{tool_name}",
+    )
+    if response.get("error"):
+        raise RuntimeError(response["error"])
+    result = response.get("result", {})
+    if isinstance(result, dict) and result.get("isError"):
+        payload = _extract_tool_payload(response)
+        raise RuntimeError(payload if isinstance(payload, str) else result)
+    return response
+
+
+@st.cache_data(ttl=300)
 def call_mcp_schema_tool(
     tool_name: str = MCP_SCHEMA_TOOL_NAME,
     catalog: str = CATALOG,
@@ -271,17 +292,7 @@ def call_mcp_schema_tool(
         arguments = {"properties": {}}
     else:
         arguments = {"catalog": catalog, "schema": schema}
-    response = mcp_schema_request(
-        "tools/call",
-        params={
-            "name": tool_name,
-            "arguments": arguments,
-        },
-        request_id="schema-1",
-    )
-    if response.get("error"):
-        raise RuntimeError(response["error"])
-    return response
+    return call_mcp_tool(tool_name, arguments)
 
 
 def _extract_tool_payload(response: dict[str, Any]) -> Any:
@@ -303,6 +314,19 @@ def _extract_tool_payload(response: dict[str, Any]) -> Any:
                 except json.JSONDecodeError:
                     return {"text": text}
     return result
+
+
+@st.cache_data(ttl=300)
+def mcp_read_cypher(query_text: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+    """Run a read-only Cypher query through the configured Neo4j MCP server."""
+    response = call_mcp_tool(
+        MCP_CYPHER_TOOL_NAME,
+        {"query": query_text, "params": params or {}},
+    )
+    payload = _extract_tool_payload(response)
+    if isinstance(payload, list):
+        return [item for item in payload if isinstance(item, dict)]
+    raise RuntimeError(f"Unexpected read-cypher response: {str(payload)[:300]}")
 
 
 def _find_payload_list(payload: Any, names: tuple[str, ...]) -> list[Any]:
@@ -508,6 +532,206 @@ def normalize_mcp_schema_response(response: dict[str, Any]) -> dict[str, Any]:
         "tables": pd.DataFrame(table_rows),
         "columns": pd.DataFrame(column_rows),
         "relationships": pd.DataFrame(relationship_rows),
+    }
+
+
+@st.cache_data(ttl=300)
+def neo4j_mcp_communities(limit: int = 25) -> pd.DataFrame:
+    """Return Neo4j communities discovered through MCP read-cypher."""
+    limit = _limit(limit, default=25, maximum=100)
+    records = mcp_read_cypher(
+        """
+        MATCH (a:Account)
+        WHERE a.community_id IS NOT NULL
+        WITH
+            a.community_id AS community_id,
+            count(a) AS accounts,
+            avg(a.risk_score) AS avg_risk_score,
+            max(a.risk_score) AS max_risk_score,
+            avg(a.similarity_score) AS avg_similarity_score
+        RETURN
+            community_id,
+            accounts,
+            avg_risk_score,
+            max_risk_score,
+            avg_similarity_score
+        ORDER BY avg_risk_score DESC, accounts DESC
+        LIMIT $limit
+        """,
+        {"limit": limit},
+    )
+    return pd.DataFrame(records)
+
+
+def _node_id(kind: str, value: object) -> str:
+    return f"{kind}-{value}"
+
+
+@st.cache_data(ttl=300)
+def neo4j_mcp_sample_elements(
+    community_id: int,
+    account_limit: int = 60,
+    relationship_limit: int = 160,
+    merchant_limit: int = 50,
+) -> dict[str, list[dict[str, dict[str, object]]]]:
+    """Build a bounded community sample using Neo4j MCP read-cypher."""
+    community_id = int(community_id)
+    account_limit = _limit(account_limit, default=60, maximum=100)
+    relationship_limit = _limit(relationship_limit, default=160, maximum=300)
+    merchant_limit = _limit(merchant_limit, default=50, maximum=100)
+
+    params = {
+        "community_id": community_id,
+        "account_limit": account_limit,
+        "relationship_limit": relationship_limit,
+        "merchant_limit": merchant_limit,
+    }
+    accounts = mcp_read_cypher(
+        """
+        MATCH (a:Account)
+        WHERE a.community_id = $community_id
+        RETURN
+            a.account_id AS account_id,
+            a.account_hash AS account_hash,
+            a.account_type AS account_type,
+            a.region AS region,
+            a.balance AS balance,
+            a.risk_score AS risk_score,
+            a.similarity_score AS similarity_score
+        ORDER BY a.risk_score DESC, a.account_id
+        LIMIT $account_limit
+        """,
+        params,
+    )
+    if not accounts:
+        return {"nodes": [], "edges": []}
+
+    account_ids = {item["account_id"] for item in accounts if item.get("account_id") is not None}
+    account_count = len(account_ids)
+    avg_risk = sum(float(item.get("risk_score") or 0) for item in accounts) / account_count
+
+    nodes: dict[str, dict[str, object]] = {
+        _node_id("community", community_id): {
+            "id": _node_id("community", community_id),
+            "label": "COMMUNITY",
+            "name": f"Community {community_id}",
+            "account_count": account_count,
+            "avg_risk_score": round(avg_risk, 6),
+        }
+    }
+    edges: dict[str, dict[str, object]] = {}
+
+    for account in accounts:
+        account_id = account.get("account_id")
+        if account_id is None:
+            continue
+        account_node_id = _node_id("account", account_id)
+        nodes[account_node_id] = {
+            "id": account_node_id,
+            "label": "ACCOUNT",
+            "name": f"Account {account_id}",
+            "account_id": account_id,
+            "account_hash": account.get("account_hash"),
+            "region": account.get("region"),
+            "account_type": account.get("account_type"),
+            "balance": round(float(account.get("balance") or 0), 2),
+            "risk_score": round(float(account.get("risk_score") or 0), 6),
+            "similarity_score": round(float(account.get("similarity_score") or 0), 6),
+        }
+        edge_id = f"{account_node_id}-community-{community_id}"
+        edges[edge_id] = {
+            "id": edge_id,
+            "label": "IN_COMMUNITY",
+            "source": account_node_id,
+            "target": _node_id("community", community_id),
+        }
+
+    account_relationships = mcp_read_cypher(
+        """
+        MATCH (a:Account)
+        WHERE a.community_id = $community_id
+        WITH a
+        ORDER BY a.risk_score DESC, a.account_id
+        LIMIT $account_limit
+        WITH collect(a) AS accounts
+        UNWIND accounts AS a
+        MATCH (a)-[r:TRANSFERRED_TO|SIMILAR_TO]-(b:Account)
+        WHERE b IN accounts
+        WITH DISTINCT r
+        RETURN
+            startNode(r).account_id AS source_account_id,
+            endNode(r).account_id AS target_account_id,
+            type(r) AS relationship_type,
+            r.amount AS amount,
+            r.similarity_score AS similarity_score
+        LIMIT $relationship_limit
+        """,
+        params,
+    )
+    for relationship in account_relationships:
+        source = relationship.get("source_account_id")
+        target = relationship.get("target_account_id")
+        if source not in account_ids or target not in account_ids:
+            continue
+        relationship_type = str(relationship.get("relationship_type", "RELATED_TO"))
+        edge_id = f"{relationship_type}-{source}-{target}-{len(edges)}"
+        edge = {
+            "id": edge_id,
+            "label": relationship_type,
+            "source": _node_id("account", source),
+            "target": _node_id("account", target),
+        }
+        if relationship.get("amount") is not None:
+            edge["amount"] = round(float(relationship["amount"]), 2)
+        if relationship.get("similarity_score") is not None:
+            edge["similarity_score"] = round(float(relationship["similarity_score"]), 6)
+        edges[edge_id] = edge
+
+    merchant_relationships = mcp_read_cypher(
+        """
+        MATCH (a:Account)
+        WHERE a.community_id = $community_id
+        WITH a
+        ORDER BY a.risk_score DESC, a.account_id
+        LIMIT $account_limit
+        MATCH (a)-[r:TRANSACTED_WITH]->(m:Merchant)
+        RETURN
+            a.account_id AS account_id,
+            m.merchant_id AS merchant_id,
+            m.merchant_name AS merchant_name,
+            m.category AS category,
+            r.amount AS amount,
+            r.txn_id AS txn_id
+        LIMIT $merchant_limit
+        """,
+        params,
+    )
+    for relationship in merchant_relationships:
+        account_id = relationship.get("account_id")
+        merchant_id = relationship.get("merchant_id")
+        if account_id not in account_ids or merchant_id is None:
+            continue
+        merchant_node_id = _node_id("merchant", merchant_id)
+        nodes[merchant_node_id] = {
+            "id": merchant_node_id,
+            "label": "MERCHANT",
+            "name": relationship.get("merchant_name") or f"Merchant {merchant_id}",
+            "merchant_id": merchant_id,
+            "category": relationship.get("category"),
+        }
+        edge_id = f"TRANSACTED_WITH-{account_id}-{merchant_id}-{relationship.get('txn_id')}"
+        edges[edge_id] = {
+            "id": edge_id,
+            "label": "TRANSACTED_WITH",
+            "source": _node_id("account", account_id),
+            "target": merchant_node_id,
+            "amount": round(float(relationship.get("amount") or 0), 2),
+            "txn_id": relationship.get("txn_id"),
+        }
+
+    return {
+        "nodes": [{"data": item} for item in nodes.values()],
+        "edges": [{"data": item} for item in edges.values()],
     }
 
 

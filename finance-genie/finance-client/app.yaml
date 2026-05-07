@@ -18,3 +18,5 @@ env:
     value: neo4j-mcp-server-target___get-schema
   - name: MCP_SCHEMA_TOOL_ARGUMENTS
     value: properties
+  - name: MCP_CYPHER_TOOL_NAME
+    value: neo4j-mcp-server-target___read-cypher
