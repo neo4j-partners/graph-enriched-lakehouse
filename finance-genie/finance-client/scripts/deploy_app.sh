@@ -106,6 +106,10 @@ if [[ "${GRANT_APP_SP_MCP_CONNECTION_ACCESS}" == "true" ]]; then
 fi
 
 echo "Uploading source to workspace"
+if "${DBX[@]}" workspace get-status "${WORKSPACE_SOURCE_PATH}" >/dev/null 2>&1; then
+  echo "Clearing existing workspace source path"
+  "${DBX[@]}" workspace delete "${WORKSPACE_SOURCE_PATH}" --recursive
+fi
 "${DBX[@]}" workspace mkdirs "${WORKSPACE_SOURCE_PATH}"
 "${DBX[@]}" workspace import-dir "${TMP_DIR}" "${WORKSPACE_SOURCE_PATH}" --overwrite
 

@@ -148,3 +148,8 @@ Use this with a Supervisor Agent that routes first to the graph specialist, then
 **MCP setup:** see [neo4j-mcp-demo/README.md](./neo4j-mcp-demo/README.md) for Databricks external MCP connection setup and validation.
 
 **Supervisor Agent demo:** see [multi-agent-demo/README.md](./multi-agent-demo/README.md) for the graph specialist endpoint and handoff guidance.
+
+## Slides
+
+- [Full Finance Genie deck](https://neo4j-partners.github.io/graph-enriched-lakehouse/slides.html)
+- [15-minute Finance Genie deck](https://neo4j-partners.github.io/graph-enriched-lakehouse/slides-15min.html)

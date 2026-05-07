@@ -36,6 +36,9 @@ LLM_ENDPOINT_NAME = os.environ.get(
     "LLM_ENDPOINT_NAME", "databricks-claude-sonnet-4-6"
 )
 UC_CONNECTION_NAME = os.environ.get("UC_CONNECTION_NAME", "neo4j_agentcore_mcp")
+DATABRICKS_PROFILE = os.environ.get("DATABRICKS_CONFIG_PROFILE") or os.environ.get(
+    "DATABRICKS_PROFILE"
+)
 
 SYSTEM_PROMPT = """
 You are Finance Neo4j GDS Fraud Specialist.
@@ -62,9 +65,11 @@ answer with:
   account_links.
 
 Use schema discovery before writing Cypher when graph structure is unclear.
-Use only read-only graph queries. Never mutate data. Never hardcode MCP tool
-names; choose tools from the discovered MCP tool descriptions. Prefer aggregate
-answers and small examples over raw account dumps.
+If a discovery tool schema requires a properties argument but no filters are
+needed, pass {"properties": {}}. Use only read-only graph queries. Never mutate
+data. Never hardcode MCP tool names; choose tools from the discovered MCP tool
+descriptions. Prefer aggregate answers and small examples over raw account
+dumps.
 """
 
 
@@ -175,7 +180,11 @@ class LangGraphResponsesAgent(ResponsesAgent):
 
 
 def initialize_agent() -> LangGraphResponsesAgent:
-    workspace_client = WorkspaceClient()
+    workspace_client = (
+        WorkspaceClient(profile=DATABRICKS_PROFILE)
+        if DATABRICKS_PROFILE
+        else WorkspaceClient()
+    )
     host = workspace_client.config.host.rstrip("/")
     external_mcp_url = f"{host}/api/2.0/mcp/external/{UC_CONNECTION_NAME}"
     mcp_client = DatabricksMultiServerMCPClient(
@@ -191,7 +200,10 @@ def initialize_agent() -> LangGraphResponsesAgent:
     if not graph_tools:
         raise RuntimeError(f"No MCP tools discovered from {external_mcp_url}")
 
-    llm = ChatDatabricks(endpoint=LLM_ENDPOINT_NAME)
+    llm = ChatDatabricks(
+        endpoint=LLM_ENDPOINT_NAME,
+        workspace_client=workspace_client,
+    )
     return LangGraphResponsesAgent(
         create_tool_calling_agent(llm, graph_tools, SYSTEM_PROMPT)
     )

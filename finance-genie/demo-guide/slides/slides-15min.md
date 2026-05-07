@@ -167,11 +167,11 @@ account ID; a graph database needs only the shape.
 
 ---
 
-## Better Data for Better Genie Answers
+## Graph Columns Change What Genie Finds
 
 - **Graph results enrich the Gold tables:** `risk_score`, `community_id`, `similarity_score`, `fraud_risk_tier`
 - **Genie treats them like any other dimension:** `GROUP BY fraud_risk_tier`, `WHERE is_ring_candidate = true`
-- **New questions unlocked:** candidate-population sizing, regional review workload, merchant concentration by community
+- **New questions available:** candidate-population sizing, regional review workload, merchant concentration by community
 - **Change the columns. Change what Genie finds.**
 
 <!--
@@ -266,7 +266,7 @@ by community. That is the workflow.
 ## The Analyst's Toolkit, Expanded
 
 - **`community_id` and `fraud_risk_tier`** sit alongside region, product, and balance as ordinary dimensions
-- **New questions unlocked:** candidate-population sizing, regional review workload, merchant concentration by community
+- **New questions available:** candidate-population sizing, regional review workload, merchant concentration by community
 - **`GROUP BY fraud_risk_tier`,** not "find the ring"
 
 **Same Genie. More answers.**
@@ -281,11 +281,11 @@ derived columns are now available as ordinary dimensions.
 
 ## Where This Pattern Applies
 
-- **Fraud-ring surfacing:** tight-community trading, shared merchant preferences that do not fit the background distribution
-- **Entity resolution:** collapsing customer, device, and household records that refer to the same real-world entity based on shared attributes and topology
-- **Supplier-network risk:** tiers of supplier exposure, single points of failure, concentrations of risk in multi-tier supply graphs
-- **Recommendation structure:** communities of users, products, or content with shared consumption patterns as features for downstream recommenders
-- **Compliance network review:** counterparty clusters and beneficial-ownership paths that require human review under regulatory frameworks
+- **Fraud-ring surfacing:** tight-community trading, shared merchant preferences outside the background distribution
+- **Entity resolution:** collapsing customer, device, and household records by shared attributes and topology
+- **Supplier-network risk:** supplier exposure tiers, single points of failure, multi-tier supply concentrations
+- **Recommendation structure:** user and product communities with shared consumption patterns as features
+- **Compliance network review:** counterparty clusters and beneficial-ownership paths requiring regulatory review
 
 <!--
 Generalize the pattern. Anywhere the answer lives in
@@ -316,12 +316,10 @@ The following slides apply when running the demo live or fielding detailed quest
 
 ## Genie in Action on the Existing Catalog
 
-Two questions from the base catalog, Genie answering what it's built for:
-
-- **Q1:** "What are the top 10 accounts by total amount spent across merchants?" Clean ranked list; standard aggregation over `transactions`
-- **Q2:** "Show accounts with above-average spend and more than 20% of transactions at night." Join and conditional aggregate; correct top-15 with night ratio and balance
-- **Genie doing its designed job** on the catalog the customer already runs
-- **The SQL shapes are standard:** all dimensions live in the base tables
+- **Q1:** "Top 10 accounts by total spend": standard aggregation over `transactions`; clean ranked list
+- **Q2:** "Above-average spend, 20%+ transactions at night": join and conditional aggregate; correct top-15
+- **Standard SQL shapes:** all dimensions in the base tables
+- **Genie doing its designed job** before enrichment changes anything
 
 <!--
 Use this slide if the audience wants to see Genie on the raw

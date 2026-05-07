@@ -9,11 +9,11 @@ from decimal import Decimal
 from typing import Any, Callable
 
 import pandas as pd
+import requests
 import streamlit as st
 from databricks import sql
 from databricks.sdk import WorkspaceClient
 from databricks.sdk.core import Config
-from databricks.sdk.service.serving import ExternalFunctionRequestHttpMethod
 
 
 CATALOG = os.getenv("CATALOG", "graph-enriched-lakehouse")
@@ -184,53 +184,45 @@ def mcp_schema_is_configured() -> bool:
     return bool(MCP_SCHEMA_CONNECTION_NAME)
 
 
-def _response_header(response: Any, header_name: str) -> str | None:
-    headers = getattr(response, "headers", None)
-    if not headers:
-        return None
-    return headers.get(header_name) or headers.get(header_name.lower())
-
-
-def _response_json(response: Any) -> dict[str, Any]:
-    if isinstance(response, dict):
-        return response
-    if hasattr(response, "json"):
+def _parse_mcp_http_response(response: requests.Response) -> dict[str, Any]:
+    content_type = response.headers.get("Content-Type", "")
+    if "event-stream" not in content_type:
         return response.json()
-    if hasattr(response, "as_dict"):
-        return response.as_dict()
-    raise TypeError(f"Unsupported MCP response type: {type(response).__name__}")
+    data_lines = [
+        line.removeprefix("data: ")
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    if not data_lines:
+        raise RuntimeError(f"SSE response did not include data: {response.text[:300]}")
+    return json.loads(data_lines[-1])
 
 
 def _mcp_http_request(
     connection_name: str,
     payload: dict[str, Any],
-    headers: dict[str, str] | None = None,
-) -> Any:
-    return get_workspace_client().serving_endpoints.http_request(
-        conn=connection_name,
-        method=ExternalFunctionRequestHttpMethod.POST,
-        path=MCP_SCHEMA_PATH,
-        headers=headers or {"Content-Type": "application/json"},
+    timeout: int = 30,
+) -> dict[str, Any]:
+    workspace_client = get_workspace_client()
+    proxy_url = (
+        f"{workspace_client.config.host.rstrip('/')}"
+        f"/api/2.0/mcp/external/{connection_name}"
+    )
+    headers = workspace_client.config.authenticate()
+    headers["Content-Type"] = "application/json"
+
+    response = requests.post(
+        proxy_url,
         json=payload,
+        headers=headers,
+        timeout=timeout,
     )
-
-
-def init_mcp_schema_session(connection_name: str | None = None) -> str | None:
-    """Initialize an MCP JSON-RPC session through a UC HTTP connection."""
-    connection = connection_name or MCP_SCHEMA_CONNECTION_NAME
-    if not connection:
-        raise RuntimeError("MCP_SCHEMA_CONNECTION_NAME is not set.")
-
-    response = _mcp_http_request(
-        connection,
-        {
-            "jsonrpc": "2.0",
-            "id": "init-1",
-            "method": "initialize",
-            "params": {},
-        },
-    )
-    return _response_header(response, "mcp-session-id")
+    if response.status_code != 200:
+        raise RuntimeError(
+            "Databricks MCP proxy request failed: "
+            f"HTTP {response.status_code} {response.text[:300]}"
+        )
+    return _parse_mcp_http_response(response)
 
 
 def mcp_schema_request(
@@ -244,12 +236,7 @@ def mcp_schema_request(
     if not connection:
         raise RuntimeError("MCP_SCHEMA_CONNECTION_NAME is not set.")
 
-    session_id = init_mcp_schema_session(connection)
-    headers = {"Content-Type": "application/json"}
-    if session_id:
-        headers["Mcp-Session-Id"] = session_id
-
-    response = _mcp_http_request(
+    return _mcp_http_request(
         connection,
         {
             "jsonrpc": "2.0",
@@ -257,9 +244,7 @@ def mcp_schema_request(
             "method": method,
             **({"params": params} if params is not None else {}),
         },
-        headers=headers,
     )
-    return _response_json(response)
 
 
 @st.cache_data(ttl=300)

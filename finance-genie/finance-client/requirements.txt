@@ -2,5 +2,6 @@ databricks-sdk
 databricks-sql-connector
 pandas
 plotly>=5.18
+requests
 st-link-analysis>=0.4
 streamlit>=1.38
