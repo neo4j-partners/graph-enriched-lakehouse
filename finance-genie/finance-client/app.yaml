@@ -1,0 +1,16 @@
+command:
+  - streamlit
+  - run
+  - app.py
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: CATALOG
+    value: graph-enriched-lakehouse
+  - name: SCHEMA
+    value: graph-enriched-schema
+  - name: MCP_SCHEMA_PATH
+    value: /
+  - name: MCP_SCHEMA_TOOL_NAME
+    value: get_full_schema

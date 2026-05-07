@@ -169,7 +169,7 @@ account ID; a graph database needs only the shape.
 
 ## Better Data for Better Genie Answers
 
-- **Graph results land as Delta columns:** `risk_score`, `community_id`, `similarity_score`, `fraud_risk_tier`
+- **Graph results enrich the Gold tables:** `risk_score`, `community_id`, `similarity_score`, `fraud_risk_tier`
 - **Genie treats them like any other dimension:** `GROUP BY fraud_risk_tier`, `WHERE is_ring_candidate = true`
 - **New questions unlocked:** candidate-population sizing, regional review workload, merchant concentration by community
 - **Change the columns. Change what Genie finds.**
@@ -188,7 +188,7 @@ Delta columns, Genie queries them like any other column.
 
 ## What Graph Analysis Adds to Genie
 
-Three new kinds of answers that don't exist as row-level properties:
+Examples of enrichment:
 
 - **Centrality:** how central an account is in the flow of money. A network position.
 - **Community:** which accounts cluster tightly together. A density across many edges.
@@ -236,42 +236,13 @@ Four steps convert a network of account relationships into plain columns that Ge
 
 - **Load:** Silver tables into Neo4j Aura as a property graph
 - **Run GDS:** PageRank, Louvain, Node Similarity against the graph
-- **Enrich:** pull scores via Spark Connector, join with Silver, write to Gold
-- **Query:** GDS outputs are plain Delta columns; audit trail is the table
+- **Enrich:** pull scores via Neo4j Spark Connector, join with Silver, write to Gold
+- **Query:** enriched columns sit alongside all base data in the Gold table
 
 <!--
 Four steps. Structural analysis runs once per pipeline cycle;
 every downstream consumer reads the results as columns. The
 graph analysis is invisible to the query layer.
--->
-
----
-
-## Sample GDS Algorithms
-
-- **PageRank → `risk_score`:** centrality in the account transfer network; which accounts the most-connected accounts route flow through
-- **Louvain → `community_id` / `fraud_risk_tier`:** community membership by transaction density; accounts that trade more tightly with each other than with the rest of the network
-- **Node Similarity → `similarity_score`:** overlap of shared merchant connections; two accounts that never transacted directly can score high if they route through the same merchants
-
-<!--
-GDS output is deterministic given a fixed graph projection: same
-projection, same scores, every time. That reproducibility matters
-because these scores become columns in a catalog that a
-non-deterministic translator queries.
-
-PageRank: eigenvector centrality over the account-to-account transfer graph.
-Fraud population averages 3.65× the centrality of non-fraud accounts on the
-demo dataset.
-
-Louvain: modularity-optimal partition. Each of the ten synthetic rings lands
-in its own community with 100% ring coverage; average community purity is 70%,
-with roughly 100 ring members and 44 non-ring accounts per ring-candidate
-community. fraud_risk_tier is a derived column, not a direct GDS output.
-
-Node Similarity: Jaccard overlap of shared-merchant sets over the bipartite
-account-merchant graph. Fraud ring members score 1.98× higher than non-fraud
-on average. Degree cutoff: accounts with fewer than five unique merchant visits
-are excluded; 3.2% of ring members fall below.
 -->
 
 ---
@@ -295,10 +266,10 @@ by community. That is the workflow.
 ## The Analyst's Toolkit, Expanded
 
 - **`community_id` and `fraud_risk_tier`** sit alongside region, product, and balance as ordinary dimensions
-- **Questions that had no handle before:** candidate-population sizing, regional review workload, merchant concentration by community
+- **New questions unlocked:** candidate-population sizing, regional review workload, merchant concentration by community
 - **`GROUP BY fraud_risk_tier`,** not "find the ring"
 
-**Same Genie, same SQL. New dimensions. Strictly more answers.**
+**Same Genie. More answers.**
 
 <!--
 Expansion, not limitation recovery. The analyst works in Genie

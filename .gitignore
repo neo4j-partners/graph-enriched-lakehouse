@@ -120,3 +120,13 @@ finance-genie/demo-guide/slides/*.html
 # Generated data files
 finance-genie/automated/data/
 finance-genie/automated/logs/
+.mcp-credentials.json
+
+# Local Codex / Databricks AI Dev Kit config
+.codex/
+.ai-dev-kit/
+
+# Keep repo-scoped Codex skills versionable, ignore other local agent state.
+.agents/*
+!.agents/skills/
+!.agents/skills/**

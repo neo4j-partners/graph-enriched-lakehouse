@@ -68,6 +68,22 @@ The notebooks under `workshop/` push Delta Lake tables into Neo4j and pull enric
 
 ## Prerequisites
 
+- **Databricks CLI** authenticated against your workspace. The shell scripts call the CLI directly, so an expired or missing token will cause the `failed during request visitor` error. Authenticate before running any script:
+
+  ```bash
+  # Install the CLI if needed
+  brew install databricks/tap/databricks   # macOS
+  # or: pip install databricks-cli
+
+  # Log in (opens browser for OAuth)
+  databricks auth login --host https://<your-workspace>.azuredatabricks.net --profile  <profile-name>
+
+  # Verify the token is valid
+  databricks auth status
+  ```
+
+  If you use a named profile (e.g. `--profile my-profile`), pass `DATABRICKS_CONFIG_PROFILE=my-profile` in `.env` or export it in your shell before running the scripts.
+
 - **Neo4j Spark Connector JAR** installed as a cluster library:
   `org.neo4j:neo4j-connector-apache-spark_2.12:5.3.1_for_spark_3`
 - **graphdatascience** installed as a cluster library (PyPI)

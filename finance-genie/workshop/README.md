@@ -1,12 +1,13 @@
 # Workshop Guide
 
-This workshop is the executable version of the `demo-guide/` deck. Each
-notebook maps to a section of the slides: the **Anchor** (one fraud question,
-two answers) runs live in Genie; the **Pipeline** (load, enrich, land in Gold)
-runs as three Databricks notebooks. Same Databricks catalog, same Genie, new
-dimensions. The enrichment pipeline runs Neo4j GDS as a silver-to-gold stage
-that writes community membership, risk centrality, and structural similarity
-back as scalar columns.
+This workshop is the hands-on notebook path for the Finance Genie graph
+enrichment demo. It is aligned with the `demo-guide/` narrative, but it is a
+separate executable asset. Each notebook maps to a live demo stage: the
+**Anchor** (one fraud question, two answers) runs in Genie; the **Pipeline**
+(load, enrich, land in Gold) runs as three Databricks notebooks. Same
+Databricks catalog, same Genie, new dimensions. The enrichment pipeline runs
+Neo4j GDS as a silver-to-gold stage that writes community membership, risk
+centrality, and structural similarity back as scalar columns.
 
 **Same Databricks spend. Strictly more answers.**
 
