@@ -17,4 +17,4 @@ env:
   - name: MCP_SCHEMA_TOOL_NAME
     value: neo4j-mcp-server-target___get-schema
   - name: MCP_SCHEMA_TOOL_ARGUMENTS
-    value: none
+    value: properties

@@ -39,8 +39,9 @@ Optional environment variables:
 - `MCP_SCHEMA_PATH`: MCP JSON-RPC path for the HTTP connection, defaults to `/`
 - `MCP_SCHEMA_TOOL_NAME`: MCP tool used by the full schema page, defaults to
   `get_full_schema`
-- `MCP_SCHEMA_TOOL_ARGUMENTS`: set to `none` for MCP tools that take no
-  arguments, or `catalog_schema` to send `catalog` and `schema`
+- `MCP_SCHEMA_TOOL_ARGUMENTS`: set to `properties` for Neo4j MCP tools that
+  require a `properties` wrapper, `none` for tools that take no arguments, or
+  `catalog_schema` to send `catalog` and `schema`
 
 For local development, copy the sample file and fill in your warehouse ID:
 
@@ -91,11 +92,12 @@ path and the app service principal needs `USE CONNECTION` on that connection.
 
 The deployed app defaults to the Neo4j MCP demo connection
 `neo4j_agentcore_mcp` and tool `neo4j-mcp-server-target___get-schema`. That
-tool is called with no arguments. For other MCP schema servers, override
+tool is called with `MCP_SCHEMA_TOOL_ARGUMENTS=properties`, which sends the
+required `properties` wrapper argument. For other MCP schema servers, override
 `MCP_SCHEMA_TOOL_NAME` and set `MCP_SCHEMA_TOOL_ARGUMENTS=catalog_schema` when
-the tool expects the configured `catalog` and `schema` arguments. The page
-preserves the raw MCP response and also normalizes common schema response shapes
-into tables, columns, and relationships.
+the tool expects the configured `catalog` and `schema` arguments, or `none` when
+the tool expects no arguments. The page preserves the raw MCP response and also
+normalizes common schema response shapes into tables, columns, and relationships.
 
 ## Local Development
 
@@ -114,7 +116,7 @@ export CATALOG=graph-enriched-lakehouse
 export SCHEMA=graph-enriched-schema
 export MCP_SCHEMA_CONNECTION_NAME=neo4j_agentcore_mcp
 export MCP_SCHEMA_TOOL_NAME=neo4j-mcp-server-target___get-schema
-export MCP_SCHEMA_TOOL_ARGUMENTS=none
+export MCP_SCHEMA_TOOL_ARGUMENTS=properties
 ```
 
 You can place those values in `.env.local`; `scripts/start_local.sh` and

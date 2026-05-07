@@ -113,31 +113,6 @@ function outputFile(deckKey, variantKey) {
 }
 
 function renderIndex() {
-  const sections = Object.entries(decks)
-    .map(([deckKey, deck]) => {
-      const cards = Object.entries(variants)
-        .map(
-          ([variantKey, variant]) => `
-            <a class="card" href="./${outputFile(deckKey, variantKey)}">
-              <span class="label">${escapeHtml(variant.title)}</span>
-              <span class="description">${escapeHtml(variant.description)}</span>
-            </a>`,
-        )
-        .join("");
-
-      return `
-        <section class="deck">
-          <div class="deck-heading">
-            <h2>${escapeHtml(deck.title)}</h2>
-            <p>${escapeHtml(deck.description)}</p>
-          </div>
-          <div class="grid">
-            ${cards}
-          </div>
-        </section>`;
-    })
-    .join("");
-
   return `<!doctype html>
 <html lang="en">
   <head>
@@ -153,7 +128,7 @@ function renderIndex() {
         --accent: #0f766e;
         --accent-2: #2563eb;
         --surface: #ffffff;
-        --bg: #f7fafc;
+        --bg: #f8fafc;
       }
 
       * {
@@ -162,10 +137,8 @@ function renderIndex() {
 
       body {
         background:
-          linear-gradient(90deg, rgba(15, 118, 110, 0.08) 0 1px, transparent 1px),
-          linear-gradient(rgba(37, 99, 235, 0.06) 0 1px, transparent 1px),
+          linear-gradient(90deg, var(--accent) 0 10px, transparent 10px),
           var(--bg);
-        background-size: 32px 32px;
         color: var(--ink);
         font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         margin: 0;
@@ -174,7 +147,7 @@ function renderIndex() {
       main {
         margin: 0 auto;
         max-width: 1080px;
-        padding: 64px 24px;
+        padding: 72px 24px 64px 42px;
       }
 
       h1 {
@@ -204,11 +177,11 @@ function renderIndex() {
         display: grid;
         gap: 16px;
         grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-        margin: 36px 0 44px;
+        margin: 36px 0 0;
       }
 
       .summary-card {
-        background: rgba(255, 255, 255, 0.76);
+        background: var(--surface);
         border: 1px solid var(--line);
         border-radius: 8px;
         padding: 18px;
@@ -226,12 +199,6 @@ function renderIndex() {
         display: block;
         font-size: 15px;
         line-height: 1.45;
-      }
-
-      h2 {
-        font-size: 28px;
-        line-height: 1.1;
-        margin: 0 0 8px;
       }
 
       .actions {
@@ -260,53 +227,6 @@ function renderIndex() {
       .button.tertiary {
         background: var(--accent-2);
       }
-
-      .deck {
-        border-top: 1px solid var(--line);
-        padding: 32px 0 0;
-      }
-
-      .deck + .deck {
-        margin-top: 40px;
-      }
-
-      .deck-heading {
-        margin-bottom: 18px;
-      }
-
-      .grid {
-        display: grid;
-        gap: 16px;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-      }
-
-      .card {
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 8px;
-        color: inherit;
-        display: flex;
-        flex-direction: column;
-        gap: 10px;
-        min-height: 150px;
-        padding: 20px;
-        text-decoration: none;
-      }
-
-      .card:hover {
-        border-color: var(--accent-2);
-      }
-
-      .label {
-        font-size: 22px;
-        font-weight: 800;
-      }
-
-      .description {
-        color: var(--muted);
-        font-size: 15px;
-        line-height: 1.45;
-      }
     </style>
   </head>
   <body>
@@ -333,9 +253,6 @@ function renderIndex() {
           <span>The graph features land back in Gold Delta tables as scalar columns that Genie, SQL, dashboards, and ML can use directly.</span>
         </div>
       </section>
-      <h2>Theme previews</h2>
-      <p>Use these links to compare the same decks rendered with built-in and custom Marp themes.</p>
-      ${sections}
     </main>
   </body>
 </html>

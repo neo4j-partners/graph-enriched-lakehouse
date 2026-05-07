@@ -13,7 +13,17 @@ from mlflow.types.responses import ResponsesAgentRequest
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config import load_settings  # noqa: E402
-from finance_graph_supervisor_agent import AGENT  # noqa: E402
+
+_AGENT = None
+
+
+def get_agent():
+    global _AGENT
+    if _AGENT is None:
+        from finance_graph_supervisor_agent import AGENT
+
+        _AGENT = AGENT
+    return _AGENT
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -40,7 +50,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             payload = json.loads(raw)
             request = ResponsesAgentRequest.model_validate(payload)
-            response = AGENT.predict(request)
+            response = get_agent().predict(request)
         except Exception as exc:
             self._send_json(500, {"error": f"{type(exc).__name__}: {exc}"})
             return

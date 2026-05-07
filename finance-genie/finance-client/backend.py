@@ -265,11 +265,12 @@ def call_mcp_schema_tool(
     argument_mode: str = MCP_SCHEMA_TOOL_ARGUMENTS,
 ) -> dict[str, Any]:
     """Call the configured MCP tool that returns the lakehouse schema."""
-    arguments = (
-        {}
-        if argument_mode == "none"
-        else {"catalog": catalog, "schema": schema}
-    )
+    if argument_mode == "none":
+        arguments = {}
+    elif argument_mode == "properties":
+        arguments = {"properties": {}}
+    else:
+        arguments = {"catalog": catalog, "schema": schema}
     response = mcp_schema_request(
         "tools/call",
         params={
@@ -327,6 +328,92 @@ def _record_value(record: dict[str, Any], *names: str, default: Any = "") -> Any
     return default
 
 
+def _normalize_neo4j_schema_entries(entries: list[Any]) -> dict[str, pd.DataFrame] | None:
+    schema_items = [
+        item
+        for item in entries
+        if isinstance(item, dict)
+        and isinstance(item.get("value"), dict)
+        and item["value"].get("type") in {"node", "relationship"}
+    ]
+    if not schema_items:
+        return None
+
+    table_rows: list[dict[str, Any]] = []
+    column_rows: list[dict[str, Any]] = []
+    relationship_rows: list[dict[str, Any]] = []
+    relationship_types: set[str] = set()
+
+    for item in schema_items:
+        name = str(item.get("key", ""))
+        value = item["value"]
+        item_type = str(value.get("type", ""))
+        properties = value.get("properties", {})
+        relationships = value.get("relationships", {})
+
+        table_rows.append(
+            {
+                "Catalog": "Neo4j",
+                "Schema": item_type,
+                "Table": name,
+                "Type": item_type,
+                "Comment": "",
+                "Column count": len(properties) if isinstance(properties, dict) else 0,
+            }
+        )
+
+        if isinstance(properties, dict):
+            for property_name, property_type in properties.items():
+                column_rows.append(
+                    {
+                        "Catalog": "Neo4j",
+                        "Schema": item_type,
+                        "Table": name,
+                        "Column": property_name,
+                        "Type": property_type,
+                        "Nullable": "",
+                        "Comment": "",
+                    }
+                )
+
+        if item_type == "relationship":
+            relationship_types.add(name)
+
+        if isinstance(relationships, dict):
+            for relationship_name, relationship in relationships.items():
+                if not isinstance(relationship, dict):
+                    continue
+                targets = relationship.get("labels", [])
+                target_text = ", ".join(str(target) for target in targets)
+                relationship_rows.append(
+                    {
+                        "Source": name,
+                        "Relationship": relationship_name,
+                        "Direction": relationship.get("direction", ""),
+                        "Target labels": target_text,
+                        "Property count": len(relationship.get("properties", {})),
+                    }
+                )
+
+    for relationship_type in sorted(relationship_types):
+        if not any(row.get("Relationship") == relationship_type for row in relationship_rows):
+            relationship_rows.append(
+                {
+                    "Source": "",
+                    "Relationship": relationship_type,
+                    "Direction": "",
+                    "Target labels": "",
+                    "Property count": "",
+                }
+            )
+
+    return {
+        "tables": pd.DataFrame(table_rows),
+        "columns": pd.DataFrame(column_rows),
+        "relationships": pd.DataFrame(relationship_rows),
+    }
+
+
 def _split_table_name(table: dict[str, Any]) -> tuple[str, str, str]:
     full_name = str(_record_value(table, "full_name", "fullName", default=""))
     if full_name.count(".") >= 2:
@@ -342,6 +429,16 @@ def _split_table_name(table: dict[str, Any]) -> tuple[str, str, str]:
 def normalize_mcp_schema_response(response: dict[str, Any]) -> dict[str, Any]:
     """Convert common MCP schema payload shapes into display-ready frames."""
     payload = _extract_tool_payload(response)
+    if isinstance(payload, list):
+        neo4j_schema = _normalize_neo4j_schema_entries(payload)
+        if neo4j_schema is not None:
+            return {
+                "payload": payload,
+                "tables": neo4j_schema["tables"],
+                "columns": neo4j_schema["columns"],
+                "relationships": neo4j_schema["relationships"],
+            }
+
     tables = _find_payload_list(payload, ("tables", "table_schema", "objects"))
     top_level_columns = _find_payload_list(payload, ("columns",))
     relationships = _find_payload_list(
