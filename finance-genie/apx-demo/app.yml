@@ -17,6 +17,6 @@ env:
   - name: FRAUD_ANALYST_GENIE_SPACE_ID
     valueFrom: "genie"
   - name: FRAUD_ANALYST_CATALOG
-    value: "graph_enriched_lakehouse"
+    value: "graph-enriched-lakehouse"
   - name: FRAUD_ANALYST_SCHEMA
-    value: "graph_enriched_schema"
+    value: "graph-enriched-schema"

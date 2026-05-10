@@ -14,8 +14,11 @@ from ..._metadata import app_name, app_slug
 # --- Config ---
 
 project_root = Path(__file__).parent.parent.parent.parent.parent
+shared_env_file = project_root.parent / ".env"
 env_file = project_root / ".env"
 
+if shared_env_file.exists():
+    load_dotenv(dotenv_path=shared_env_file)
 if env_file.exists():
     load_dotenv(dotenv_path=env_file)
 
@@ -36,10 +39,12 @@ class AppConfig(BaseSettings):
     warehouse_id: str = Field(default="")
     """SQL warehouse ID for statement execution against gold tables."""
 
-    catalog: str = Field(default="graph_enriched_lakehouse")
-    """Unity Catalog catalog name holding the gold tables."""
+    catalog: str = Field(default="graph-enriched-lakehouse")
+    """Unity Catalog catalog name holding the gold tables. Matches the names
+    produced by the automated/ pipeline (hyphens, quoted with backticks in
+    SQL)."""
 
-    schema_: str = Field(default="graph_enriched_schema", alias="schema")
+    schema_: str = Field(default="graph-enriched-schema", alias="schema")
     """Unity Catalog schema name holding the gold tables. Aliased from `schema`
     because BaseSettings reserves the `schema` attribute name."""
 

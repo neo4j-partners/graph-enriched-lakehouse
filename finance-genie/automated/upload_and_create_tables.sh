@@ -23,9 +23,15 @@
 
 set -euo pipefail
 
-# ── Load .env if present ──────────────────────────────────────────────────────
+# ── Load root .env, with automated/.env as a compatibility fallback ───────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-if [[ -f "${SCRIPT_DIR}/.env" ]]; then
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+if [[ -f "${ROOT_DIR}/.env" ]]; then
+  set -o allexport
+  # shellcheck source=/dev/null
+  source "${ROOT_DIR}/.env"
+  set +o allexport
+elif [[ -f "${SCRIPT_DIR}/.env" ]]; then
   set -o allexport
   # shellcheck source=/dev/null
   source "${SCRIPT_DIR}/.env"
@@ -34,7 +40,7 @@ fi
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 if [[ -z "${DATABRICKS_PROFILE:-}" ]]; then
-  echo "Error: DATABRICKS_PROFILE is not set. Add it to automated/.env." >&2
+  echo "Error: DATABRICKS_PROFILE is not set. Add it to finance-genie/.env." >&2
   exit 1
 fi
 PROFILE="${DATABRICKS_PROFILE}"

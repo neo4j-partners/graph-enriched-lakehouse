@@ -1,10 +1,10 @@
 """Provision the BEFORE and AFTER Genie Spaces idempotently.
 
-Reads `GENIE_SPACE_ID_BEFORE` / `GENIE_SPACE_ID_AFTER` from `automated/.env`,
+Reads `GENIE_SPACE_ID_BEFORE` / `GENIE_SPACE_ID_AFTER` from `finance-genie/.env`,
 then — for each space — replaces its table_identifiers, sample_questions, and
 text instructions with the contract declared at the top of this file.
 
-Usage (from finance-genie/automated/ with .env in place):
+Usage (from finance-genie/automated/ with ../.env in place):
     uv run setup/provision_genie_spaces.py
 
 Exits 0 on success, 1 if any space fails the post-update assertion.
@@ -245,11 +245,14 @@ def provision(
 # Entry point                                                                  #
 # --------------------------------------------------------------------------- #
 def main() -> None:
-    env_path = Path(__file__).parent.parent / ".env"
-    if not env_path.is_file():
-        print(f"FAIL  .env not found at {env_path}")
+    automated_dir = Path(__file__).parent.parent
+    root_env_path = automated_dir.parent / ".env"
+    local_env_path = automated_dir / ".env"
+    if not root_env_path.is_file() and not local_env_path.is_file():
+        print(f"FAIL  .env not found at {root_env_path} or {local_env_path}")
         sys.exit(1)
-    load_dotenv(env_path, override=True)
+    load_dotenv(root_env_path, override=True)
+    load_dotenv(local_env_path, override=False)
 
     profile = os.environ.get("DATABRICKS_PROFILE", "").strip()
     if profile:

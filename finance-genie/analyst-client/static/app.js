@@ -25,7 +25,7 @@ function riskBarHtml(score, label) {
   const squares = Array.from({ length: 5 }, (_, i) =>
     `<span class="risk-sq" style="background:${i < filled ? color : '#e0e0e0'}"></span>`
   ).join('');
-  return `<span class="risk-bar">${squares}</span><span class="risk-label">${label}</span>`;
+  return `<span class="risk-bar">${squares}</span><span class="risk-label">${escHtml(label)}</span>`;
 }
 
 // ── Topology SVG icon (for table column) ─────────────────────────────────────
@@ -107,10 +107,10 @@ function buildRingCard(ring, idx) {
   const vol = ring.volume ? `$${ring.volume.toLocaleString()}` : '';
   card.innerHTML = `
     <div class="ring-card-header">
-      <span>${ring.ring_id}</span>
-      <span class="ring-card-meta">${ring.node_count} nodes${vol ? ' · ' + vol : ''}</span>
+      <span>${escHtml(ring.ring_id)}</span>
+      <span class="ring-card-meta">${escHtml(ring.node_count)} nodes${vol ? ' · ' + escHtml(vol) : ''}</span>
     </div>
-    <div class="ring-card-canvas" id="cy-card-${idx}" data-testid="ring-graph-${ring.ring_id}"></div>
+    <div class="ring-card-canvas" id="cy-card-${idx}" data-testid="ring-graph-${escHtml(ring.ring_id)}"></div>
   `;
 
   card.addEventListener('click', () => toggleRing(ring.ring_id));
@@ -219,14 +219,11 @@ document.getElementById('search-form').addEventListener('submit', async e => {
   btn.disabled = true;
 
   try {
-    const resp = await fetch('/api/search', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ signal_type: signalType, filters }),
-    });
-    state.rings = await resp.json();
+    state.rings = await postJson('/api/search', { signal_type: signalType, filters });
     state.selected.clear();
     renderResults(state.rings);
+  } catch (error) {
+    showError(error);
   } finally {
     btn.textContent = 'Search Neo4j →';
     btn.disabled = false;
@@ -266,13 +263,14 @@ function renderResults(rings) {
     const tr = document.createElement('tr');
     tr.dataset.ringId = ring.ring_id;
     tr.dataset.testid = `ring-row-${ring.ring_id}`;
+    const sharedIds = Array.isArray(ring.shared_ids) ? ring.shared_ids.map(escHtml).join(', ') : '';
     tr.innerHTML = `
       <td><input type="checkbox" data-ring-id="${escHtml(ring.ring_id)}" data-testid="ring-checkbox-${escHtml(ring.ring_id)}"></td>
       <td>${topologyIcon(ring)}</td>
       <td style="font-weight:600">${escHtml(ring.ring_id)}</td>
-      <td>${ring.node_count.toLocaleString()}</td>
-      <td>${ring.volume ? '$' + ring.volume.toLocaleString() : '—'}</td>
-      <td style="color:#555">${ring.shared_ids.join(', ') || '—'}</td>
+      <td>${escHtml(ring.node_count.toLocaleString())}</td>
+      <td>${ring.volume ? '$' + escHtml(ring.volume.toLocaleString()) : '—'}</td>
+      <td style="color:#555">${sharedIds || '—'}</td>
       <td>${riskBarHtml(ring.risk_score, ring.risk_label)}</td>
     `;
     tbody.appendChild(tr);
@@ -320,11 +318,7 @@ async function startLoad(ringIds) {
   document.getElementById('progress-bar').style.width = '0%';
   document.getElementById('progress-pct').textContent = '0%';
 
-  const fetchPromise = fetch('/api/load', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ring_ids: ringIds }),
-  }).then(r => r.json());
+  const fetchPromise = postJson('/api/load', { ring_ids: ringIds });
 
   // animate steps optimistically while fetch is in flight
   const stepLabels = [
@@ -338,7 +332,7 @@ async function startLoad(ringIds) {
   ];
   const stepsEl = document.getElementById('progress-steps');
   stepsEl.innerHTML = stepLabels.map(l =>
-    `<div class="step-row"><span class="step-icon">○</span><span>${l}</span><span class="step-count"></span></div>`
+    `<div class="step-row"><span class="step-icon">○</span><span>${escHtml(l)}</span><span class="step-count"></span></div>`
   ).join('');
   const stepRows = stepsEl.querySelectorAll('.step-row');
 
@@ -353,7 +347,13 @@ async function startLoad(ringIds) {
   });
 
   const animAll = Promise.all(stepLabels.map((_, i) => animStep(i)));
-  const [result] = await Promise.all([fetchPromise, animAll]);
+  let result;
+  try {
+    [result] = await Promise.all([fetchPromise, animAll]);
+  } catch (error) {
+    showError(error);
+    return;
+  }
   state.loadResult = result;
 
   // fill in actual counts from API
@@ -371,7 +371,7 @@ async function startLoad(ringIds) {
     table.innerHTML = `
       <thead><tr>${cols.map(c => `<th>${c}</th>`).join('')}</tr></thead>
       <tbody>${result.preview.map(row =>
-        `<tr>${cols.map(c => `<td>${row[c] ?? ''}</td>`).join('')}</tr>`
+        `<tr>${cols.map(c => `<td>${escHtml(row[c] ?? '')}</td>`).join('')}</tr>`
       ).join('')}</tbody>
     `;
   }
@@ -381,7 +381,7 @@ async function startLoad(ringIds) {
   qbody.innerHTML = (result.quality_checks || []).map(qc => {
     const cls = qc.status === 'pass' ? 'quality-status-pass' : qc.status === 'fail' ? 'quality-status-fail' : 'quality-status-pending';
     const label = qc.status === 'pass' ? '✓ Pass' : qc.status === 'fail' ? '✗ Fail' : 'Pending';
-    return `<tr><td>${qc.check}</td><td class="${cls}">${label}</td></tr>`;
+    return `<tr><td>${escHtml(qc.check)}</td><td class="${cls}">${escHtml(label)}</td></tr>`;
   }).join('');
 
   // summary counts
@@ -416,9 +416,9 @@ function buildDataPanel() {
 
   document.getElementById('data-tables-list').innerHTML = tables.map(t => `
     <div class="data-table-entry">
-      <div class="data-table-name">${t.name}</div>
-      <div class="data-table-rows">${t.rows.toLocaleString()} rows</div>
-      <ul class="data-table-cols">${t.cols.map(c => `<li>${c}</li>`).join('')}</ul>
+      <div class="data-table-name">${escHtml(t.name)}</div>
+      <div class="data-table-rows">${escHtml(t.rows.toLocaleString())} rows</div>
+      <ul class="data-table-cols">${t.cols.map(c => `<li>${escHtml(c)}</li>`).join('')}</ul>
     </div>
   `).join('');
 
@@ -430,7 +430,7 @@ function buildDataPanel() {
     'Are there merchants receiving funds from both rings?',
   ];
   document.getElementById('sample-q-list').innerHTML = samples.map(q =>
-    `<div class="sample-q" data-testid="sample-question">${q}</div>`
+    `<div class="sample-q" data-testid="sample-question">${escHtml(q)}</div>`
   ).join('');
 
   document.querySelectorAll('.sample-q').forEach(el => {
@@ -455,18 +455,15 @@ document.getElementById('ask-form').addEventListener('submit', async e => {
   btn.textContent = '…';
 
   try {
-    const resp = await fetch('/api/genie', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question, conversation_id: state.conversationId }),
-    });
-    const data = await resp.json();
+    const data = await postJson('/api/genie', { question, conversation_id: state.conversationId });
     state.conversationId = data.conversation_id;
     appendChat('Genie', data.answer, data.table_cols ? { cols: data.table_cols, rows: data.table_rows } : null);
     state.askedCount++;
     if (state.askedCount === 1) {
       document.getElementById('export-bar').classList.remove('hidden');
     }
+  } catch (error) {
+    appendChat('System', error.message || 'Request failed.', null);
   } finally {
     btn.disabled = false;
     btn.textContent = 'Ask →';
@@ -486,7 +483,7 @@ function appendChat(speaker, text, table) {
 
   const q = document.createElement('div');
   q.className = 'chat-q';
-  q.innerHTML = `<strong>${speaker}:</strong> ${escHtml(text || '')}`;
+  q.innerHTML = `<strong>${escHtml(speaker)}:</strong> ${escHtml(text || '')}`;
   history.appendChild(q);
 
   if (table && table.cols && table.rows) {
@@ -513,13 +510,14 @@ document.getElementById('report-close').addEventListener('click', () =>
   document.getElementById('report-modal').classList.add('hidden'));
 document.getElementById('report-close-2').addEventListener('click', () =>
   document.getElementById('report-modal').classList.add('hidden'));
+document.getElementById('report-print').addEventListener('click', () => window.print());
 
 function showReport() {
   const rings = state.rings.filter(r => state.selected.has(r.ring_id));
   const now = new Date().toLocaleString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
   document.getElementById('report-date').textContent = now;
 
-  const ringList = rings.map(r => `${r.ring_id} (${r.node_count} accounts)`).join(' · ');
+  const ringList = rings.map(r => `${escHtml(r.ring_id)} (${escHtml(r.node_count)} accounts)`).join(' · ');
   const highRisk = rings.flatMap(r =>
     (r.nodes || []).filter(n => (n.data.risk_score || 0) >= 0.8)
       .map(n => ({ ...n.data, ring_id: r.ring_id }))
@@ -536,9 +534,9 @@ function showReport() {
         <thead><tr><th>Account ID</th><th>Ring ID</th><th>Risk Score</th><th>Flag</th></tr></thead>
         <tbody>${highRisk.map(a => `
           <tr>
-            <td>${a.id}</td>
-            <td>${a.ring_id}</td>
-            <td>${(a.risk_score || 0).toFixed(2)}</td>
+            <td>${escHtml(a.id)}</td>
+            <td>${escHtml(a.ring_id)}</td>
+            <td>${escHtml((a.risk_score || 0).toFixed(2))}</td>
             <td style="color:#888">High risk score</td>
           </tr>`).join('')}
         </tbody>
@@ -564,6 +562,28 @@ function showScreen(n) {
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
-function escHtml(str) {
-  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+async function postJson(url, payload) {
+  const resp = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data.error || `Request failed with status ${resp.status}`);
+  }
+  return data;
+}
+
+function showError(error) {
+  window.alert(error.message || 'Request failed.');
+}
+
+function escHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }

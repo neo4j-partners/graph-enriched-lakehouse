@@ -1,0 +1,14 @@
+.env
+**/.env
+.env.local
+**/.env.local
+.mcp-credentials.json
+**/.mcp-credentials.json
+__pycache__/
+**/__pycache__/
+.pytest_cache/
+**/.pytest_cache/
+.DS_Store
+**/.DS_Store
+test-results/
+**/test-results/

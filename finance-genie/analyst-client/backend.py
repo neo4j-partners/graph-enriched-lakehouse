@@ -191,7 +191,7 @@ class RealBackend:
             from neo4j import GraphDatabase
             RealBackend._neo4j_driver = GraphDatabase.driver(
                 os.environ["NEO4J_URI"],
-                auth=(os.environ["NEO4J_USER"], os.environ["NEO4J_PASSWORD"]),
+                auth=(os.environ["NEO4J_USERNAME"], os.environ["NEO4J_PASSWORD"]),
             )
         return RealBackend._neo4j_driver
 
@@ -338,10 +338,12 @@ class RealBackend:
                     RETURN a.account_id AS src, m.merchant_id AS tgt, r.amount AS amount, r.date AS date
                 """, cid=ring_id):
                     txns.append((ring_id, rec["src"], rec["tgt"], rec["amount"], str(rec["date"] or "")))
-                    merchants.append(rec["tgt"])
+                    if rec["tgt"]:
+                        merchants.append((ring_id, rec["tgt"]))
                     edges.append((ring_id, rec["src"], rec["tgt"], "TRANSACTED_WITH", 1.0))
 
-        unique_merchant_count = len(set(merchants))
+        unique_merchants = sorted(set(merchants))
+        unique_merchant_count = len({merchant_id for _, merchant_id in unique_merchants})
 
         try:
             with conn.cursor() as cur:
@@ -366,6 +368,11 @@ class RealBackend:
                     cur.execute(
                         "INSERT INTO fraud_signals.transactions VALUES (%s, %s, %s, %s, %s)",
                         [r, src, tgt, float(amt or 0), d],
+                    )
+                for r, merchant_id in unique_merchants:
+                    cur.execute(
+                        "INSERT INTO fraud_signals.merchants VALUES (%s, %s)",
+                        [r, merchant_id],
                     )
                 for r, src, tgt, et, w in edges:
                     cur.execute(

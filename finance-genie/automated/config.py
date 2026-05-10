@@ -1,13 +1,8 @@
-"""
-config.py — Central configuration for the finance-genie generator and verifier.
+"""Central configuration for the finance-genie generator and verifier.
 
-All constants are read from a .env file located in the same directory as this
-file. If no .env file is present, values fall back to the defaults listed here
-so existing workflows are unaffected.
-
-To override any value, copy automated/.env.sample to automated/.env and edit
-the relevant lines. Environment variables already set in the shell take
-precedence over the .env file.
+Configuration is loaded from finance-genie/.env first. automated/.env remains a
+compatibility fallback for older local workflows. Environment variables already
+set in the shell take precedence over either file.
 """
 
 import os
@@ -15,8 +10,9 @@ from pathlib import Path
 
 try:
     from dotenv import load_dotenv
-    _env_path = Path(__file__).resolve().parent / ".env"
-    load_dotenv(_env_path)
+    _automated_dir = Path(__file__).resolve().parent
+    load_dotenv(_automated_dir.parent / ".env", override=False)
+    load_dotenv(_automated_dir / ".env", override=False)
 except ImportError:
     pass  # python-dotenv not installed; use shell environment or defaults
 

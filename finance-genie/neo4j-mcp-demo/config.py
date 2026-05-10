@@ -15,7 +15,9 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 DEMO_DIR = Path(__file__).resolve().parent
 ENV_PATH = DEMO_DIR / ".env"
+ROOT_ENV_PATH = DEMO_DIR.parent / ".env"
 
+load_dotenv(ROOT_ENV_PATH, override=False)
 load_dotenv(ENV_PATH, override=False)
 
 

@@ -26,6 +26,7 @@ node_modules/
 .env
 .env.local
 .env.*
+!.env.sample
 
 # mac
 .DS_Store

@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { KeyboardEvent } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import {
+  AlertTriangle,
   ArrowLeft,
   Database,
   Download,
@@ -182,6 +183,19 @@ function AnalyzeRoute() {
 
         {/* Transcript */}
         <div className="flex-1 space-y-4 mb-4 max-h-[60vh] overflow-y-auto pr-2">
+          {askMutation.isError ? (
+            <div className="flex items-start gap-2 rounded-md border border-risk-high/40 bg-risk-high/5 px-3 py-2 text-xs text-ink">
+              <AlertTriangle className="h-3.5 w-3.5 mt-0.5 text-risk-high shrink-0" />
+              <div>
+                <div className="font-medium">Genie failed to respond</div>
+                <div className="text-muted-ink mt-0.5">
+                  {askMutation.error instanceof Error
+                    ? askMutation.error.message
+                    : "Unknown error"}
+                </div>
+              </div>
+            </div>
+          ) : null}
           {transcript.length === 0 && !loading ? (
             <div className="flex flex-col items-center justify-center text-center py-12 text-ink-2">
               <MessageSquare className="h-8 w-8 mb-2 text-muted-ink" />

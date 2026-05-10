@@ -43,7 +43,8 @@ resources:
             permission: "CAN_USE"
         - name: "genie"
           genie_space:
-            id: ${var.genie_space_id}
+            name: "fraud-analyst-genie"
+            space_id: ${var.genie_space_id}
             permission: "CAN_RUN"
         - name: "db"
           database:
