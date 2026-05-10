@@ -63,7 +63,7 @@ Optional environment variables:
 
 | Env var | Default | Effect |
 |---|---|---|
-| `APP_NAME` | `finance-genie-client` | Databricks App name passed as the required positional `APP_NAME` |
+| `APP_NAME` | `finance-genie-analyst-client` | Databricks App name passed as the required positional `APP_NAME` |
 | `WORKSPACE_SOURCE_PATH` | `/Workspace/Users/<current-user>/apps/<app-name>` | Workspace Files path uploaded before deployment |
 | `DATABRICKS_CONFIG_PROFILE` | unset | Passed to the Databricks CLI as `--profile` |
 
@@ -71,8 +71,8 @@ The Databricks CLI direct deploy form requires both an app name and a workspace
 source path. A local path such as `analyst-client` is rejected by the API:
 
 ```bash
-databricks apps deploy finance-genie-client \
-  --source-code-path /Workspace/Users/<user>/apps/finance-genie-client
+databricks apps deploy finance-genie-analyst-client \
+  --source-code-path /Workspace/Users/<user>/apps/finance-genie-analyst-client
 ```
 
 Configure the app resources in Databricks Apps so `app.yaml` can resolve

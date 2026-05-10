@@ -6,7 +6,7 @@
 
 All Finance Genie subprojects now use a shared environment file at the repo
 root. Create it once, then reuse it for `automated/`, `analyst-client/`,
-`finance-client/`, `neo4j-mcp-demo/`, `multi-agent-demo/`, and `apx-demo/`.
+`simple-finance-analyst/`, `neo4j-mcp-demo/`, `multi-agent-demo/`, and `apx-demo/`.
 
 ```bash
 cd finance-genie

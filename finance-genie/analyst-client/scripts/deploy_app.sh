@@ -17,7 +17,7 @@ elif [[ -f "${APP_DIR}/.env.local" ]]; then
   set +a
 fi
 
-APP_NAME="${APP_NAME:-finance-genie-client}"
+APP_NAME="${APP_NAME:-finance-genie-analyst-client}"
 WORKSPACE_SOURCE_PATH="${WORKSPACE_SOURCE_PATH:-}"
 TMP_DIR="$(mktemp -d -t analyst-client-deploy.XXXXXX)"
 
