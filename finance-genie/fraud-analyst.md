@@ -73,7 +73,7 @@ The analyst defines what kind of pattern they are hunting. Kept intentionally mi
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│  FRAUD SIGNAL EXPLORER                                    [Profile ▾]│
+│  SIMPLE FINANCE ANALYST                                   [Profile ▾]│
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                      │
 │  What are you looking for?                                           │

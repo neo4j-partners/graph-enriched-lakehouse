@@ -70,7 +70,7 @@ echo "Using Databricks profile: $DATABRICKS_CONFIG_PROFILE"
 : "${GENIE_SPACE_ID_AFTER:?GENIE_SPACE_ID_AFTER is not set in $ENV_FILE}"
 
 NEO4J_SECRET_SCOPE="${NEO4J_SECRET_SCOPE:-neo4j-graph-engineering}"
-ANALYST_CLIENT_SECRET_SCOPE="${ANALYST_CLIENT_SECRET_SCOPE:-finance-genie-analyst-client}"
+SIMPLE_FINANCE_ANALYST_SECRET_SCOPE="${SIMPLE_FINANCE_ANALYST_SECRET_SCOPE:-simple-finance-analyst}"
 GENIE_SPACE_ID="${GENIE_SPACE_ID:-$GENIE_SPACE_ID_AFTER}"
 
 ensure_scope() {
@@ -110,12 +110,12 @@ put_secret "$NEO4J_SECRET_SCOPE" "genie_space_id_after" "$GENIE_SPACE_ID_AFTER"
 put_secret "$NEO4J_SECRET_SCOPE" "genie_space_id" "$GENIE_SPACE_ID_BEFORE"
 
 echo
-echo "Writing analyst-client real-backend secrets"
-ensure_scope "$ANALYST_CLIENT_SECRET_SCOPE"
-put_secret "$ANALYST_CLIENT_SECRET_SCOPE" "neo4j_uri" "$NEO4J_URI"
-put_secret "$ANALYST_CLIENT_SECRET_SCOPE" "neo4j_username" "$NEO4J_USERNAME"
-put_secret "$ANALYST_CLIENT_SECRET_SCOPE" "neo4j_password" "$NEO4J_PASSWORD"
-put_secret "$ANALYST_CLIENT_SECRET_SCOPE" "genie_space_id" "$GENIE_SPACE_ID"
+echo "Writing simple-finance-analyst real-backend secrets"
+ensure_scope "$SIMPLE_FINANCE_ANALYST_SECRET_SCOPE"
+put_secret "$SIMPLE_FINANCE_ANALYST_SECRET_SCOPE" "neo4j_uri" "$NEO4J_URI"
+put_secret "$SIMPLE_FINANCE_ANALYST_SECRET_SCOPE" "neo4j_username" "$NEO4J_USERNAME"
+put_secret "$SIMPLE_FINANCE_ANALYST_SECRET_SCOPE" "neo4j_password" "$NEO4J_PASSWORD"
+put_secret "$SIMPLE_FINANCE_ANALYST_SECRET_SCOPE" "genie_space_id" "$GENIE_SPACE_ID"
 
 store_agentcore_secrets() {
   local credentials_path="${AGENTCORE_CREDENTIALS_PATH:-}"

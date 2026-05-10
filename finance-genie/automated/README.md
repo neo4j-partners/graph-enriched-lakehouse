@@ -147,8 +147,9 @@ The three gold tables (`gold_accounts`, `gold_account_similarity_pairs`, `gold_f
 
 The wrapper delegates to `../setup_secrets.sh`, which reads `finance-genie/.env`
 by default. It writes Neo4j and Genie values into `neo4j-graph-engineering`,
-writes analyst-client real-backend values into `finance-genie-analyst-client`,
-and writes MCP OAuth values into `mcp-neo4j-secrets` when an AgentCore
+writes simple-finance-analyst real-backend values into
+`simple-finance-analyst`, and writes MCP OAuth values into `mcp-neo4j-secrets`
+when an AgentCore
 credential file is available. Workshop participants can also store their own
 credentials interactively by running `workshop/00_required_setup.ipynb`.
 

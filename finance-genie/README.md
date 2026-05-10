@@ -5,8 +5,9 @@
 ## Quick Start: Shared Environment
 
 All Finance Genie subprojects now use a shared environment file at the repo
-root. Create it once, then reuse it for `automated/`, `analyst-client/`,
-`simple-finance-analyst/`, `neo4j-mcp-demo/`, `multi-agent-demo/`, and `apx-demo/`.
+root. Create it once, then reuse it for `automated/`,
+`simple-finance-analyst/`, `neo4j-mcp-demo/`, `multi-agent-demo/`, and
+`apx-demo/`.
 
 ```bash
 cd finance-genie
@@ -27,7 +28,7 @@ every secret:
 | Scope | Used by | Contents |
 |---|---|---|
 | `neo4j-graph-engineering` | `automated/` jobs and workshop notebooks | Neo4j URI, username, password, before/after Genie Space IDs |
-| `finance-genie-analyst-client` | `analyst-client` real backend | Neo4j URI, username, password, analyst Genie Space ID |
+| `simple-finance-analyst` | `simple-finance-analyst` real backend | Neo4j URI, username, password, analyst Genie Space ID |
 | `mcp-neo4j-secrets` | `neo4j-mcp-demo` and MCP-backed agents | AgentCore OAuth gateway/client credentials, when `.mcp-credentials.json` is available |
 
 Existing per-project `.env` files remain fallback-only for compatibility. New

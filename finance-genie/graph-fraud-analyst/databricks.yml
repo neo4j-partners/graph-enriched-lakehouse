@@ -1,0 +1,49 @@
+bundle:
+  name: "graph-fraud-analyst"
+
+# Variables filled at deploy time. Pass via --var or set in a target's
+# variables block. Both must be valid IDs from the target workspace.
+#
+#   databricks bundle deploy \
+#     --profile <your-databricks-profile> \
+#     --var "warehouse_id=abc123..." \
+#     --var "genie_space_id=xyz789..."
+#
+# Find values via:
+#   databricks warehouses list --profile <your-databricks-profile>
+#   databricks api get /api/2.0/genie/spaces --profile <your-databricks-profile>
+variables:
+  warehouse_id:
+    description: "SQL warehouse ID used to query gold_accounts and gold_fraud_ring_communities."
+  genie_space_id:
+    description: "Genie Space ID for the AFTER-GDS conversational analyst experience."
+
+sync:
+  include:
+    - .build
+
+artifacts:
+  default:
+    build: apx build
+
+resources:
+  apps:
+    graph-fraud-analyst-app:
+      name: "graph-fraud-analyst"
+      description: "Fraud Signal Workbench, the apx-driven Databricks App built on the graph-enriched lakehouse"
+      source_code_path: ./.build
+      resources:
+        - name: "warehouse"
+          sql_warehouse:
+            id: ${var.warehouse_id}
+            permission: "CAN_USE"
+        - name: "genie"
+          genie_space:
+            name: "graph-fraud-analyst-genie"
+            space_id: ${var.genie_space_id}
+            permission: "CAN_RUN"
+
+targets:
+  dev:
+    mode: development
+    default: true
