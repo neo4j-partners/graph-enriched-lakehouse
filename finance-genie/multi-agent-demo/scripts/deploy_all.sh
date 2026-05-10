@@ -14,7 +14,10 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-ENV_FILE="${DEMO_DIR}/.env"
+ENV_FILE="${DEMO_DIR}/../.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  ENV_FILE="${DEMO_DIR}/.env"
+fi
 export UV_CACHE_DIR="${UV_CACHE_DIR:-${DEMO_DIR}/.uv-cache}"
 
 PROFILE=""
@@ -84,7 +87,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-[[ -f "$ENV_FILE" ]] || fail "${ENV_FILE} not found. Copy .env.sample to .env first."
+[[ -f "$ENV_FILE" ]] || fail "${ENV_FILE} not found. Copy ../.env.sample to ../.env first."
 command -v uv >/dev/null 2>&1 || fail "uv not found. Install uv before running deploy."
 
 cd "$DEMO_DIR"

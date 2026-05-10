@@ -94,15 +94,18 @@ Run `validation/validate_cluster.py` to confirm the cluster is ready before subm
 
 ## One-time admin setup
 
-Run these steps from inside `automated/` before workshop participants use the notebooks.
+Run these steps before workshop participants use the notebooks.
 
-### 1. Configure `.env`
+### 1. Configure shared `.env`
 
 ```bash
+cd finance-genie
 cp .env.sample .env
+cd automated
 ```
 
-Edit `.env` and fill in all placeholder values. `.env.sample` documents every key.
+Edit `finance-genie/.env` and fill in all placeholder values. Existing
+`automated/.env` files are fallback-only for compatibility.
 
 ### 2. Generate synthetic data
 
@@ -127,7 +130,7 @@ Regression diagnostic for the four structural fraud properties (within-ring dens
 ./upload_and_create_tables.sh
 ```
 
-Uploads the five CSVs and `ground_truth.json` to the Unity Catalog Volume, applies `sql/schema.sql` to create all five base tables with Unity Catalog column-level comments, then loads data via `INSERT OVERWRITE`. Requires `DATABRICKS_WAREHOUSE_ID` in `automated/.env`.
+Uploads the five CSVs and `ground_truth.json` to the Unity Catalog Volume, applies `sql/schema.sql` to create all five base tables with Unity Catalog column-level comments, then loads data via `INSERT OVERWRITE`. Requires `DATABRICKS_WAREHOUSE_ID` in `finance-genie/.env`.
 
 Schema and data are separate by design:
 - `sql/schema.sql` defines column types and Unity Catalog column descriptions (the contract Genie reads)
@@ -142,7 +145,12 @@ The three gold tables (`gold_accounts`, `gold_account_similarity_pairs`, `gold_f
 ./setup_secrets.sh --profile <USER-PROFILE>
 ```
 
-Reads `automated/.env` and writes four secrets into the `neo4j-graph-engineering` scope: `uri`, `username`, `password`, and `genie_space_id` (from `GENIE_SPACE_ID_BEFORE`). Workshop participants can also store their own credentials interactively by running `workshop/00_required_setup.ipynb`.
+The wrapper delegates to `../setup_secrets.sh`, which reads `finance-genie/.env`
+by default. It writes Neo4j and Genie values into `neo4j-graph-engineering`,
+writes analyst-client real-backend values into `finance-genie-analyst-client`,
+and writes MCP OAuth values into `mcp-neo4j-secrets` when an AgentCore
+credential file is available. Workshop participants can also store their own
+credentials interactively by running `workshop/00_required_setup.ipynb`.
 
 ### 5. Provision Genie Spaces
 
@@ -150,7 +158,7 @@ Reads `automated/.env` and writes four secrets into the `neo4j-graph-engineering
 uv run setup/provision_genie_spaces.py
 ```
 
-Idempotently configures both Genie Spaces defined in `automated/.env` (`GENIE_SPACE_ID_BEFORE` and `GENIE_SPACE_ID_AFTER`). For each space it replaces table identifiers, sample questions, and text instructions with the contract declared at the top of the script. Exits 1 if any space fails the post-update assertion.
+Idempotently configures both Genie Spaces defined in `finance-genie/.env` (`GENIE_SPACE_ID_BEFORE` and `GENIE_SPACE_ID_AFTER`). For each space it replaces table identifiers, sample questions, and text instructions with the contract declared at the top of the script. Exits 1 if any space fails the post-update assertion.
 
 ### 6. Run BEFORE Genie
 
@@ -314,15 +322,16 @@ uv run validation/verify_gds.py
 uv run validation/diagnose_similarity.py
 ```
 
-All validation scripts read credentials from `automated/.env`.
+All validation scripts read credentials from `finance-genie/.env`, with
+`automated/.env` retained as a fallback.
 
 ## Project structure
 
 ```
 automated/
 ├── pyproject.toml              # uv project; all dependencies
-├── .env.sample                 # config template; copy to .env, never commit .env
-├── config.py                   # loads .env, exposes all tuning constants
+├── .env.sample                 # compatibility template; prefer ../.env.sample
+├── config.py                   # loads ../.env, exposes all tuning constants
 ├── upload_and_create_tables.sh # applies sql/schema.sql, uploads CSVs, loads Delta tables
 ├── setup_secrets.sh            # stores Neo4j credentials in Databricks secrets
 ├── genie_instructions.md       # instructions text embedded in Genie Spaces

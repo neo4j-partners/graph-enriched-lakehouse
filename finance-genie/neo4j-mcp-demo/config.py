@@ -81,7 +81,8 @@ class Settings(BaseModel):
             return DEMO_DIR / ".mcp-credentials.json"
         path = Path(str(value)).expanduser()
         if not path.is_absolute():
-            path = DEMO_DIR / path
+            root_relative = DEMO_DIR.parent / path
+            path = root_relative if root_relative.exists() else DEMO_DIR / path
         return path
 
     @property

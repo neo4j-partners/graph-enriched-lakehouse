@@ -5,8 +5,10 @@ A Databricks App for fraud analysts to discover rings in Neo4j, load signals int
 ## Quick Start (local, mock backend)
 
 ```bash
-cd finance-genie/analyst-client
-cp env.sample .env
+cd finance-genie
+cp .env.sample .env
+# Edit .env. Leave USE_MOCK_BACKEND=true for mock local runs.
+cd analyst-client
 uv sync
 uv run python app.py
 ```
@@ -18,9 +20,10 @@ Open http://localhost:8000.
 Set credentials in `.env`, then run:
 
 ```bash
-cd finance-genie/analyst-client
-cp env.sample .env
+cd finance-genie
+cp .env.sample .env
 # Edit .env and set USE_MOCK_BACKEND=false plus Neo4j/Databricks credentials.
+cd analyst-client
 uv sync
 uv run python app.py
 ```
@@ -89,7 +92,7 @@ analyst-client/
   app.yaml        # Databricks Apps resource config
   pyproject.toml  # uv project dependencies
   uv.lock
-  env.sample      # copy to .env for local config
+  env.sample      # compatibility-only; prefer ../.env.sample
   scripts/
     deploy_app.sh # uploads clean source to Workspace Files, then deploys
   static/
@@ -107,5 +110,5 @@ analyst-client/
 
 `app.yaml` currently sets `USE_MOCK_BACKEND=true` for demo-safe deployment. For
 real backend use, set it to `false`, configure the SQL warehouse and Genie
-resources, and provide `NEO4J_URI`, `NEO4J_USER`, and `NEO4J_PASSWORD` from
+resources, and provide `NEO4J_URI`, `NEO4J_USERNAME`, and `NEO4J_PASSWORD` from
 Databricks secret resources or environment configuration.

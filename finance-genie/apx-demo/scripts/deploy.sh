@@ -16,7 +16,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+ROOT_DIR="$(cd "${APP_DIR}/.." && pwd)"
 ENV_FILE="${APP_DIR}/.env"
+ROOT_ENV_FILE="${ROOT_DIR}/.env"
 
 show_help() {
   awk '/^[^#]/{exit} NR>2{sub(/^# ?/,""); print}' "${BASH_SOURCE[0]}"
@@ -32,9 +34,11 @@ if [[ "${1:-}" == "--log" ]]; then
   LOG_AFTER_DEPLOY=true
 fi
 
-if [[ ! -f "${ENV_FILE}" ]]; then
-  echo "❌ Missing ${ENV_FILE}"
-  echo "   cp ${APP_DIR}/.env.sample ${ENV_FILE} and fill in values."
+if [[ -f "${ROOT_ENV_FILE}" ]]; then
+  ENV_FILE="${ROOT_ENV_FILE}"
+elif [[ ! -f "${ENV_FILE}" ]]; then
+  echo "❌ Missing ${ROOT_ENV_FILE}"
+  echo "   cp ${ROOT_DIR}/.env.sample ${ROOT_ENV_FILE} and fill in values."
   exit 1
 fi
 

@@ -28,7 +28,9 @@ From this directory:
 
 ```bash
 cd finance-genie/neo4j-mcp-demo
+cd ..
 cp .env.sample .env
+cd neo4j-mcp-demo
 ```
 
 Copy the AgentCore-generated credentials file into this directory:

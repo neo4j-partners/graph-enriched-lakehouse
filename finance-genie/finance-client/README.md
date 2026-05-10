@@ -48,10 +48,13 @@ Optional environment variables:
 For local development, copy the sample file and fill in your warehouse ID:
 
 ```bash
-cp .env.local.sample .env.local
+cd ..
+cp .env.sample .env
+cd finance-client
 ```
 
-This file is intentionally much smaller than `finance-genie/automated/.env`.
+Project-local `.env.local` files are still supported as a fallback, but new
+setup should use `finance-genie/.env`.
 The app does not need Neo4j credentials, cluster IDs, Genie space IDs, synthetic
 data generation settings, or job-runner parameters.
 

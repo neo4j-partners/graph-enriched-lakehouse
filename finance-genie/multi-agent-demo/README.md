@@ -25,7 +25,9 @@ default is `neo4j_agentcore_mcp`.
 From this directory:
 
 ```bash
+cd ..
 cp .env.sample .env
+cd multi-agent-demo
 ```
 
 Set the Databricks profile, workspace path, Unity Catalog model location, LLM

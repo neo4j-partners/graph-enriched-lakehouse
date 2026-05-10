@@ -14,6 +14,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ENV_FILE="${ROOT_DIR}/.env"
 PROFILE="${DATABRICKS_CONFIG_PROFILE:-${DATABRICKS_PROFILE:-}}"
 
+usage() {
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     -p|--profile)
@@ -21,7 +25,7 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
+      usage
       exit 0
       ;;
     *)

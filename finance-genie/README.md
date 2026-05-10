@@ -2,6 +2,37 @@
 
 [Project website and slides](https://neo4j-partners.github.io/graph-enriched-lakehouse/)
 
+## Quick Start: Shared Environment
+
+All Finance Genie subprojects now use a shared environment file at the repo
+root. Create it once, then reuse it for `automated/`, `analyst-client/`,
+`finance-client/`, `neo4j-mcp-demo/`, `multi-agent-demo/`, and `apx-demo/`.
+
+```bash
+cd finance-genie
+cp .env.sample .env
+# Edit .env and fill in Databricks, Neo4j, Genie, and MCP values.
+```
+
+Provision Databricks secrets from the same root env file:
+
+```bash
+./setup_secrets.sh --profile <databricks-profile>
+```
+
+The root setup writes separate Databricks secret scopes for separate runtime
+surfaces. This keeps one operator workflow without giving every app access to
+every secret:
+
+| Scope | Used by | Contents |
+|---|---|---|
+| `neo4j-graph-engineering` | `automated/` jobs and workshop notebooks | Neo4j URI, username, password, before/after Genie Space IDs |
+| `finance-genie-analyst-client` | `analyst-client` real backend | Neo4j URI, username, password, analyst Genie Space ID |
+| `mcp-neo4j-secrets` | `neo4j-mcp-demo` and MCP-backed agents | AgentCore OAuth gateway/client credentials, when `.mcp-credentials.json` is available |
+
+Existing per-project `.env` files remain fallback-only for compatibility. New
+setup should use `finance-genie/.env`.
+
 ## Graph-Enriched Lakehouse Path
 
 This is the original before/after demo path. Neo4j GDS runs as a silver-to-gold enrichment stage, and Databricks Genie queries graph-derived features after they have been materialized as ordinary Gold Delta columns.

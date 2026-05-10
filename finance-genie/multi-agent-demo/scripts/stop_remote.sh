@@ -9,7 +9,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DEMO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 export UV_CACHE_DIR="${UV_CACHE_DIR:-${DEMO_DIR}/.uv-cache}"
-ENV_FILE="${DEMO_DIR}/.env"
+ENV_FILE="${DEMO_DIR}/../.env"
+if [[ ! -f "$ENV_FILE" ]]; then
+  ENV_FILE="${DEMO_DIR}/.env"
+fi
 PROFILE=""
 YES=0
 
@@ -38,7 +41,7 @@ done
 cd "$DEMO_DIR"
 
 [[ -f "$ENV_FILE" ]] || {
-  echo "Error: ${ENV_FILE} not found. Copy .env.sample to .env first." >&2
+  echo "Error: ${ENV_FILE} not found. Copy ../.env.sample to ../.env first." >&2
   exit 1
 }
 
