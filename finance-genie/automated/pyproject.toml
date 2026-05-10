@@ -9,6 +9,7 @@ dependencies = [
     "databricks-tools-core",
     "neo4j",
     "faker>=24.0.0",
+    "graphdatascience>=1.12",
     "pandas",
     "python-dotenv",
     "rich",

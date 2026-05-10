@@ -124,6 +124,30 @@ uv run diagnostics/verify_fraud_patterns.py
 
 Regression diagnostic for the four structural fraud properties (within-ring density, anchor-merchant visit rate, PageRank separation, Node Similarity ratio). Runs locally against the raw CSVs before any GDS run, so the checks are structural approximations derived from the graph topology of the generated data. Run this when tuning generator parameters or investigating a suspected data-generation regression. It is not part of the required setup sequence; downstream GDS checks in `validation/verify_gds.py` cover the same properties after the algorithms have executed.
 
+### Optional: run the full pipeline with existing data
+
+Use this when `automated/data/` already contains the six expected files and
+you want to rerun the pipeline without regenerating synthetic data:
+
+```bash
+./run_existing_data_pipeline.py
+```
+
+The runner skips `setup/generate_data.py`, validates that the existing data
+files are present and non-empty, then runs each remaining stage sequentially
+with explicit step headers and heartbeat output. Override the per-step timeout
+when needed:
+
+```bash
+PIPELINE_STEP_TIMEOUT_SECONDS=10800 ./run_existing_data_pipeline.py
+```
+
+Resume from a later numbered step after a transient failure:
+
+```bash
+PIPELINE_START_STEP=11 ./run_existing_data_pipeline.py
+```
+
 ### 3. Upload data and create tables
 
 ```bash

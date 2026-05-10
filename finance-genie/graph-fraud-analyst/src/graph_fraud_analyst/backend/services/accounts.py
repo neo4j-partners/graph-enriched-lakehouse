@@ -63,7 +63,7 @@ def list_risky_accounts(
         LIMIT :row_limit
     """
     parameters = [
-        StatementParameterListItem(name="row_limit", value=str(limit), type="BIGINT"),
+        StatementParameterListItem(name="row_limit", value=str(limit), type="INT"),
     ]
     rows = sql.execute(ws, config.warehouse_id, statement, parameters=parameters)
 
@@ -115,7 +115,7 @@ def list_central_accounts(
         LIMIT :row_limit
     """
     parameters = [
-        StatementParameterListItem(name="row_limit", value=str(limit), type="BIGINT"),
+        StatementParameterListItem(name="row_limit", value=str(limit), type="INT"),
     ]
     rows = sql.execute(ws, config.warehouse_id, statement, parameters=parameters)
 
