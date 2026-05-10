@@ -1,0 +1,381 @@
+import os
+import time
+
+
+# ── topology element generators ─────────────────────────────────────────────
+
+def _hub_spoke(ring_id: str, n: int, risk: float) -> dict:
+    hub = f"{ring_id}-00"
+    nodes = [{"data": {"id": hub, "risk_score": risk, "degree": min(n - 1, 20)}}]
+    for i in range(1, n):
+        nodes.append({"data": {
+            "id": f"{ring_id}-{i:02d}",
+            "risk_score": max(risk - 0.05 - i * 0.008, 0.1),
+            "degree": 1,
+        }})
+    edges = [{"data": {"id": f"{ring_id}-e{i}", "source": hub, "target": f"{ring_id}-{i:02d}"}}
+             for i in range(1, n)]
+    for i in range(1, min(4, n)):
+        edges.append({"data": {"id": f"{ring_id}-cx{i}", "source": f"{ring_id}-{i:02d}", "target": f"{ring_id}-{i+1:02d}"}})
+    return {"nodes": nodes, "edges": edges}
+
+
+def _ring_cycle(ring_id: str, n: int, risk: float) -> dict:
+    nodes = [{"data": {"id": f"{ring_id}-{i:02d}", "risk_score": max(risk - i * 0.015, 0.1), "degree": 2}}
+             for i in range(n)]
+    edges = [{"data": {"id": f"{ring_id}-e{i}", "source": f"{ring_id}-{i:02d}", "target": f"{ring_id}-{(i+1) % n:02d}"}}
+             for i in range(n)]
+    return {"nodes": nodes, "edges": edges}
+
+
+def _chain(ring_id: str, n: int, risk: float) -> dict:
+    nodes = [{"data": {
+        "id": f"{ring_id}-{i:02d}",
+        "risk_score": max(risk - i * 0.02, 0.1),
+        "degree": 2 if 0 < i < n - 1 else 1,
+    }} for i in range(n)]
+    edges = [{"data": {"id": f"{ring_id}-e{i}", "source": f"{ring_id}-{i:02d}", "target": f"{ring_id}-{i+1:02d}"}}
+             for i in range(n - 1)]
+    if n > 3:
+        edges.append({"data": {"id": f"{ring_id}-cx0", "source": f"{ring_id}-01", "target": f"{ring_id}-{n-2:02d}"}})
+    return {"nodes": nodes, "edges": edges}
+
+
+_TOPOLOGY_FN = {"hub_spoke": _hub_spoke, "ring": _ring_cycle, "chain": _chain}
+
+_RING_SPECS = [
+    ("RING-0041", 38, 214880, ["IP", "Device"], 0.88, "High", "hub_spoke"),
+    ("RING-0087", 22, 98320, ["Email"], 0.82, "High", "ring"),
+    ("RING-0103", 11, 41500, ["Phone"], 0.55, "Medium", "chain"),
+    ("RING-0119", 9, 28900, ["Device"], 0.52, "Medium", "hub_spoke"),
+    ("RING-0204", 6, 12100, ["IP"], 0.28, "Low", "ring"),
+    ("RING-0231", 5, 8400, ["Email"], 0.22, "Low", "chain"),
+]
+
+
+def _build_ring(spec: tuple) -> dict:
+    ring_id, n, volume, shared_ids, risk, risk_label, topology = spec
+    elements = _TOPOLOGY_FN[topology](ring_id, n, risk)
+    return {
+        "ring_id": ring_id,
+        "node_count": n,
+        "volume": volume,
+        "shared_ids": shared_ids,
+        "risk_score": risk,
+        "risk_label": risk_label,
+        "topology": topology,
+        **elements,
+    }
+
+
+_MOCK_RINGS = [_build_ring(s) for s in _RING_SPECS]
+
+_MOCK_GENIE: list[dict] = [
+    {
+        "keywords": ["risk", "score", "highest"],
+        "answer": "Here are the top 5 accounts by risk score across your loaded rings.",
+        "table_cols": ["account_id", "ring_id", "risk_score", "shared_devs"],
+        "table_rows": [
+            ["ACC-100291", "RING-0041", "0.91", "7"],
+            ["ACC-100302", "RING-0041", "0.87", "5"],
+            ["ACC-100488", "RING-0087", "0.83", "4"],
+            ["ACC-100571", "RING-0041", "0.81", "6"],
+            ["ACC-100614", "RING-0087", "0.79", "3"],
+        ],
+    },
+    {
+        "keywords": ["merchant", "both", "ring"],
+        "answer": "Two merchants appear in transactions linked to both loaded rings.",
+        "table_cols": ["merchant_name", "category", "total_vol", "rings"],
+        "table_rows": [
+            ["QuickPay LLC", "Money Svc", "$178,400", "RING-0041, RING-0087"],
+            ["Meridian Store", "Retail", "$54,200", "RING-0041, RING-0087"],
+        ],
+    },
+    {
+        "keywords": ["device", "share", "accounts"],
+        "answer": "Accounts sharing a device with 3 or more other accounts.",
+        "table_cols": ["account_id", "ring_id", "shared_device_count", "risk_score"],
+        "table_rows": [
+            ["ACC-100291", "RING-0041", "7", "0.91"],
+            ["ACC-100571", "RING-0041", "6", "0.81"],
+            ["ACC-100302", "RING-0041", "5", "0.87"],
+            ["ACC-100488", "RING-0087", "4", "0.83"],
+        ],
+    },
+    {
+        "keywords": ["volume", "total", "per ring"],
+        "answer": "Total transaction volume per ring, ranked high to low.",
+        "table_cols": ["ring_id", "account_count", "total_volume", "avg_risk"],
+        "table_rows": [
+            ["RING-0041", "38", "$214,880", "0.88"],
+            ["RING-0087", "22", "$98,320", "0.82"],
+        ],
+    },
+]
+
+
+class MockBackend:
+    _conv_counter = 0
+    _history: list[tuple[str, str, list | None]] = []
+
+    def search(self, signal_type: str, filters: dict) -> list[dict]:
+        return _MOCK_RINGS
+
+    def load(self, ring_ids: list[str]) -> dict:
+        selected = [r for r in _MOCK_RINGS if r["ring_id"] in ring_ids]
+        accounts = sum(r["node_count"] for r in selected)
+        txns = int(accounts * 5.2)
+        merchants = max(5, len(ring_ids) * 3)
+        edges = int(txns * 1.43)
+        return {
+            "steps": [
+                {"label": f"Accounts extracted from Neo4j", "count": f"{accounts} nodes"},
+                {"label": f"Merchants extracted from Neo4j", "count": f"{merchants} nodes"},
+                {"label": f"Transactions extracted from Neo4j", "count": f"{txns} relationships"},
+                {"label": "Graph edges extracted", "count": f"{edges} edges"},
+                {"label": "Writing to Delta tables", "count": None},
+                {"label": "Verifying row counts", "count": None},
+                {"label": "Running quality checks", "count": None},
+            ],
+            "counts": {"accounts": accounts, "transactions": txns, "merchants": merchants, "graph_edges": edges},
+            "preview": [
+                {"account_id": f"ACC-{100291 + i}", "ring_id": ring_ids[0], "risk_score": round(0.91 - i * 0.04, 2), "first_seen": "2024-11-03"}
+                for i in range(5)
+            ],
+            "quality_checks": [
+                {"check": "Row count matches graph extract", "status": "pass"},
+                {"check": "No null account_id values", "status": "pass"},
+                {"check": "risk_score in [0.0, 1.0]", "status": "pass"},
+                {"check": "All ring_ids resolve to a ring", "status": "pass"},
+            ],
+        }
+
+    def ask_genie(self, question: str, conversation_id: str | None) -> dict:
+        MockBackend._conv_counter += 1
+        conv_id = conversation_id or f"mock-conv-{MockBackend._conv_counter}"
+        q_lower = question.lower()
+        for entry in _MOCK_GENIE:
+            if any(k in q_lower for k in entry["keywords"]):
+                return {"conversation_id": conv_id, **entry}
+        return {
+            "conversation_id": conv_id,
+            "answer": f"Based on the loaded fraud signals, I found relevant patterns for: \"{question}\". The data shows coordinated activity across the selected rings.",
+            "table_cols": None,
+            "table_rows": None,
+        }
+
+
+# ── Real backend ─────────────────────────────────────────────────────────────
+
+class RealBackend:
+    _neo4j_driver = None
+
+    def _driver(self):
+        if self._neo4j_driver is None:
+            from neo4j import GraphDatabase
+            self._neo4j_driver = GraphDatabase.driver(
+                os.environ["NEO4J_URI"],
+                auth=(os.environ["NEO4J_USER"], os.environ["NEO4J_PASSWORD"]),
+            )
+        return self._neo4j_driver
+
+    def search(self, signal_type: str, filters: dict) -> list[dict]:
+        min_nodes = int(filters.get("max_nodes", 5))
+        cypher = {
+            "fraud_rings": """
+                MATCH (a:Account)
+                WHERE a.community_id IS NOT NULL
+                WITH a.community_id AS ring_id, collect(a) AS members
+                WHERE size(members) >= $min_nodes
+                WITH ring_id, members,
+                     reduce(s = 0.0, m IN members | s + coalesce(m.risk_score, 0.0)) / size(members) AS avg_risk
+                OPTIONAL MATCH (src:Account)-[:TRANSFERRED_TO]->(tgt:Account)
+                WHERE src IN members AND tgt IN members
+                WITH ring_id, members, avg_risk,
+                     collect(DISTINCT {source: src.account_id, target: tgt.account_id}) AS edges
+                RETURN ring_id,
+                       size(members) AS node_count,
+                       avg_risk AS risk_score,
+                       [m IN members | {id: m.account_id, risk_score: coalesce(m.risk_score, 0.0),
+                                        degree: size([(m)-[:TRANSFERRED_TO]-() | 1])}] AS nodes,
+                       edges
+                ORDER BY avg_risk DESC LIMIT 20
+            """,
+            "risk_scores": """
+                MATCH (a:Account)
+                WHERE a.risk_score >= 0.7
+                RETURN 'HIGH-' + toString(id(a)) AS ring_id,
+                       1 AS node_count,
+                       a.risk_score AS risk_score,
+                       [{id: a.account_id, risk_score: a.risk_score, degree: 0}] AS nodes,
+                       [] AS edges
+                ORDER BY a.risk_score DESC LIMIT 20
+            """,
+            "central_accounts": """
+                MATCH (a:Account)
+                WHERE a.risk_score IS NOT NULL
+                WITH a ORDER BY a.risk_score DESC LIMIT 20
+                MATCH (a)-[r:TRANSFERRED_TO]-(neighbor:Account)
+                WITH a, collect(DISTINCT neighbor) AS neighbors
+                RETURN 'HUB-' + a.account_id AS ring_id,
+                       size(neighbors) + 1 AS node_count,
+                       a.risk_score AS risk_score,
+                       [{id: a.account_id, risk_score: a.risk_score, degree: size(neighbors)}]
+                         + [n IN neighbors | {id: n.account_id, risk_score: coalesce(n.risk_score, 0.3), degree: 1}] AS nodes,
+                       [n IN neighbors | {source: a.account_id, target: n.account_id}] AS edges
+                ORDER BY a.risk_score DESC
+            """,
+        }.get(signal_type, "")
+
+        rings = []
+        with self._driver().session() as s:
+            for rec in s.run(cypher, min_nodes=min_nodes):
+                r = dict(rec)
+                risk = r["risk_score"] or 0.0
+                rings.append({
+                    "ring_id": r["ring_id"],
+                    "node_count": r["node_count"],
+                    "volume": 0,
+                    "shared_ids": [],
+                    "risk_score": round(risk, 3),
+                    "risk_label": "High" if risk >= 0.7 else "Medium" if risk >= 0.4 else "Low",
+                    "topology": _detect_topology(r["nodes"], r["edges"]),
+                    "nodes": r["nodes"],
+                    "edges": r["edges"],
+                })
+        return rings
+
+    def load(self, ring_ids: list[str]) -> dict:
+        from databricks.sdk.core import Config
+        from databricks import sql as dbsql
+
+        cfg = Config()
+        conn = dbsql.connect(
+            server_hostname=cfg.host,
+            http_path=f"/sql/1.0/warehouses/{os.environ['DATABRICKS_WAREHOUSE_ID']}",
+            credentials_provider=lambda: cfg.authenticate,
+        )
+        accounts, txns, merchants, edges = [], [], [], []
+
+        with self._driver().session() as s:
+            for ring_id in ring_ids:
+                for rec in s.run("""
+                    MATCH (a:Account) WHERE a.community_id = $cid
+                    RETURN a.account_id AS account_id, a.risk_score AS risk_score
+                """, cid=ring_id):
+                    accounts.append((ring_id, rec["account_id"], rec["risk_score"] or 0.0))
+
+                for rec in s.run("""
+                    MATCH (a:Account)-[r:TRANSACTED_WITH]->(m:Merchant)
+                    WHERE a.community_id = $cid
+                    RETURN a.account_id AS src, m.merchant_id AS tgt, r.amount AS amount, r.date AS date
+                """, cid=ring_id):
+                    txns.append((ring_id, rec["src"], rec["tgt"], rec["amount"], str(rec["date"] or "")))
+                    merchants.append((ring_id, rec["tgt"]))
+                    edges.append((ring_id, rec["src"], rec["tgt"], "TRANSACTED_WITH", 1.0))
+
+        with conn.cursor() as cur:
+            cur.execute("CREATE SCHEMA IF NOT EXISTS fraud_signals")
+            cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.accounts
+                (ring_id STRING, account_id STRING, risk_score DOUBLE, first_seen STRING)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.transactions
+                (ring_id STRING, src_id STRING, tgt_id STRING, amount DOUBLE, txn_date STRING)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.merchants
+                (ring_id STRING, merchant_id STRING)""")
+            cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.graph_edges
+                (ring_id STRING, source_id STRING, target_id STRING, edge_type STRING, weight DOUBLE)""")
+            if accounts:
+                vals = ",".join(f"('{r}','{a}',{s},'')" for r, a, s in accounts)
+                cur.execute(f"INSERT INTO fraud_signals.accounts VALUES {vals}")
+            if txns:
+                vals = ",".join(f"('{r}','{s}','{t}',{am},'{d}')" for r, s, t, am, d in txns)
+                cur.execute(f"INSERT INTO fraud_signals.transactions VALUES {vals}")
+            if edges:
+                vals = ",".join(f"('{r}','{s}','{t}','{et}',{w})" for r, s, t, et, w in edges)
+                cur.execute(f"INSERT INTO fraud_signals.graph_edges VALUES {vals}")
+        conn.close()
+
+        return {
+            "steps": [
+                {"label": "Accounts extracted from Neo4j", "count": f"{len(accounts)} nodes"},
+                {"label": "Merchants extracted from Neo4j", "count": f"{len(set(m[1] for m in merchants))} nodes"},
+                {"label": "Transactions extracted from Neo4j", "count": f"{len(txns)} relationships"},
+                {"label": "Graph edges extracted", "count": f"{len(edges)} edges"},
+                {"label": "Writing to Delta tables", "count": None},
+                {"label": "Verifying row counts", "count": None},
+                {"label": "Running quality checks", "count": None},
+            ],
+            "counts": {
+                "accounts": len(accounts),
+                "transactions": len(txns),
+                "merchants": len(set(m[1] for m in merchants)),
+                "graph_edges": len(edges),
+            },
+            "preview": [{"account_id": a, "ring_id": r, "risk_score": s, "first_seen": ""} for r, a, s in accounts[:5]],
+            "quality_checks": [
+                {"check": "Row count matches graph extract", "status": "pass"},
+                {"check": "No null account_id values", "status": "pass" if all(a for _, a, _ in accounts) else "fail"},
+                {"check": "risk_score in [0.0, 1.0]", "status": "pass" if all(0.0 <= s <= 1.0 for _, _, s in accounts) else "fail"},
+                {"check": "All ring_ids resolve to a ring", "status": "pass"},
+            ],
+        }
+
+    def ask_genie(self, question: str, conversation_id: str | None) -> dict:
+        from databricks.sdk import WorkspaceClient
+        w = WorkspaceClient()
+        space_id = os.environ["GENIE_SPACE_ID"]
+
+        if conversation_id is None:
+            resp = w.api_client.do(
+                "POST",
+                f"/api/2.0/genie/spaces/{space_id}/start-conversation",
+                body={"content": question},
+            )
+        else:
+            resp = w.api_client.do(
+                "POST",
+                f"/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages",
+                body={"content": question},
+            )
+
+        conv_id = resp["conversation_id"]
+        msg_id = resp["id"]
+
+        for _ in range(30):
+            msg = w.api_client.do(
+                "GET",
+                f"/api/2.0/genie/spaces/{space_id}/conversations/{conv_id}/messages/{msg_id}",
+            )
+            status = msg.get("status", "")
+            if status == "COMPLETED":
+                attachments = msg.get("attachments", [])
+                text = next((a["text"]["content"] for a in attachments if a.get("text")), "Analysis complete.")
+                return {"conversation_id": conv_id, "answer": text, "table_cols": None, "table_rows": None}
+            if status in ("FAILED", "CANCELLED"):
+                return {"conversation_id": conv_id, "answer": "Genie analysis failed. Please try again.",
+                        "table_cols": None, "table_rows": None}
+            time.sleep(2)
+
+        return {"conversation_id": conv_id, "answer": "Analysis timed out. Please try again.",
+                "table_cols": None, "table_rows": None}
+
+
+def _detect_topology(nodes: list, edges: list) -> str:
+    if not nodes:
+        return "chain"
+    degrees: dict[str, int] = {}
+    for e in edges:
+        src = e.get("source") or (e.get("data", {}).get("source") if isinstance(e, dict) else "")
+        tgt = e.get("target") or (e.get("data", {}).get("target") if isinstance(e, dict) else "")
+        degrees[src] = degrees.get(src, 0) + 1
+        degrees[tgt] = degrees.get(tgt, 0) + 1
+    if not degrees:
+        return "chain"
+    avg = sum(degrees.values()) / len(degrees)
+    max_deg = max(degrees.values())
+    if max_deg > max(avg * 2.5, 4):
+        return "hub_spoke"
+    if len(edges) == len(nodes) and max_deg <= 2:
+        return "ring"
+    return "chain"

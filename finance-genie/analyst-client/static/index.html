@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fraud Signal Explorer</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.27.0/cytoscape.min.js"></script>
+</head>
+<body>
+
+<header>
+  <span class="app-title">FRAUD SIGNAL EXPLORER</span>
+  <span class="profile">Analyst ▾</span>
+</header>
+
+<!-- ── Screen 1: Search ── -->
+<div id="screen-1" class="screen active">
+  <div class="container">
+    <div class="signal-card">
+      <h2>What are you looking for?</h2>
+      <form id="search-form">
+        <div class="signal-options">
+          <label class="signal-option" id="opt-fraud-rings">
+            <input type="radio" name="signal_type" value="fraud_rings" checked>
+            <div>
+              <strong>Fraud Rings</strong>
+              <p>Find clusters of accounts with shared identifiers (device, IP, email) cycling funds</p>
+            </div>
+          </label>
+          <label class="signal-option" id="opt-risk-scores">
+            <input type="radio" name="signal_type" value="risk_scores">
+            <div>
+              <strong>Risk Scores</strong>
+              <p>Surface accounts and merchants above a risk threshold based on graph centrality</p>
+            </div>
+          </label>
+          <label class="signal-option" id="opt-central-accounts">
+            <input type="radio" name="signal_type" value="central_accounts">
+            <div>
+              <strong>Central Accounts</strong>
+              <p>Identify high-betweenness nodes — accounts that sit on many shortest paths</p>
+            </div>
+          </label>
+        </div>
+
+        <div class="filters">
+          <h3>Filters <span class="optional">(optional)</span></h3>
+          <div class="filter-row">
+            <label>Date range
+              <select name="date_range">
+                <option>Last 30 days</option>
+                <option>Last 90 days</option>
+                <option>Last 365 days</option>
+              </select>
+            </label>
+            <label>Min amount ($)
+              <input type="number" name="min_amount" placeholder="500" min="0">
+            </label>
+            <label>Max nodes
+              <input type="number" name="max_nodes" placeholder="500" min="1">
+            </label>
+          </div>
+        </div>
+
+        <button type="submit" class="btn-primary search-btn" id="search-btn">Search Neo4j →</button>
+      </form>
+    </div>
+
+    <!-- Results panel (hidden until search completes) -->
+    <div id="results-panel" class="results-panel hidden">
+      <div class="results-header">
+        <span class="section-title">RESULTS</span>
+        <span id="ring-count" class="count-badge"></span>
+      </div>
+
+      <!-- Graph view -->
+      <div class="graph-view-panel">
+        <div class="graph-view-header" id="graph-view-toggle">
+          ▸ GRAPH VIEW &nbsp;<span id="graph-summary"></span>
+        </div>
+        <div id="graph-grid" class="graph-grid"></div>
+        <div class="graph-legend">
+          <span class="legend-item high">High risk</span>
+          <span class="legend-item medium">Medium</span>
+          <span class="legend-item low">Low</span>
+          <span class="legend-hint">Click a cluster to select · larger nodes are hubs</span>
+        </div>
+      </div>
+
+      <!-- Results table -->
+      <table class="results-table">
+        <thead>
+          <tr>
+            <th style="width:36px"></th>
+            <th style="width:56px">TOPOLOGY</th>
+            <th>RING ID</th>
+            <th>NODES</th>
+            <th>VOLUME</th>
+            <th>SHARED IDENTIFIERS</th>
+            <th>RISK</th>
+          </tr>
+        </thead>
+        <tbody id="results-tbody"></tbody>
+      </table>
+
+      <div class="load-bar">
+        <span class="selected-count" id="selected-count">0 selected</span>
+        <button id="load-btn" class="btn-primary" disabled>Load Selected to Lakehouse →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Screen 2: Load ── -->
+<div id="screen-2" class="screen">
+  <div class="container">
+    <a href="#" class="back-link" id="back-to-search">← Back to Search</a>
+
+    <div class="load-card">
+      <h2 id="load-title">Loading fraud rings into Databricks Lakehouse</h2>
+      <p class="ring-list" id="load-rings"></p>
+
+      <div class="section-label">Target Tables</div>
+      <div class="target-tables">
+        <span>fraud_signals.accounts</span>
+        <span>fraud_signals.transactions</span>
+        <span>fraud_signals.merchants</span>
+        <span>fraud_signals.graph_edges</span>
+      </div>
+
+      <div class="section-label">Ingestion Progress</div>
+      <div id="progress-steps" class="progress-steps"></div>
+      <div class="progress-bar-wrap">
+        <div id="progress-bar" class="progress-bar" style="width:0%"></div>
+      </div>
+      <span id="progress-pct" class="progress-pct">0%</span>
+
+      <div id="preview-section" class="hidden">
+        <div class="section-label" style="margin-top:20px">Data Preview — fraud_signals.accounts</div>
+        <div class="preview-table-wrap">
+          <table id="preview-table" class="results-table"></table>
+        </div>
+
+        <div class="section-label">Quality Checks</div>
+        <table class="results-table">
+          <thead><tr><th>Check</th><th>Status</th></tr></thead>
+          <tbody id="quality-tbody"></tbody>
+        </table>
+
+        <div id="counts-summary" class="counts-summary"></div>
+        <button id="continue-btn" class="btn-primary" style="margin-top:16px">Continue to Analysis →</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Screen 3: Analyze ── -->
+<div id="screen-3" class="screen">
+  <div class="container-wide">
+    <a href="#" class="back-link" id="back-to-load">← Back to Load</a>
+    <div class="analysis-layout">
+
+      <!-- Left panel -->
+      <div class="data-panel">
+        <h3>Data Available</h3>
+        <div id="data-tables-list"></div>
+        <div class="sample-questions">
+          <h4>Sample Questions</h4>
+          <div id="sample-q-list"></div>
+        </div>
+      </div>
+
+      <!-- Right panel -->
+      <div class="genie-panel">
+        <h3>Genie Analysis</h3>
+        <div id="chat-history" class="chat-history">
+          <p class="chat-placeholder">Ask a question about the loaded fraud signals.</p>
+        </div>
+        <form id="ask-form" class="ask-form">
+          <input id="ask-input" type="text" placeholder="Ask anything about the data..." autocomplete="off">
+          <button type="submit" class="btn-primary">Ask →</button>
+        </form>
+        <div id="export-bar" class="export-bar hidden">
+          <button class="btn-secondary" id="export-btn">Export Report ▾</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Export Report modal ── -->
+<div id="report-modal" class="modal hidden">
+  <div class="modal-content">
+    <div class="report-header">
+      <span>INVESTIGATION REPORT</span>
+      <span id="report-date"></span>
+      <button class="close-btn" id="report-close">✕</button>
+    </div>
+    <div id="report-body"></div>
+    <div class="report-actions">
+      <button class="btn-secondary" id="report-close-2">Cancel</button>
+      <button class="btn-primary" onclick="window.print()">Download PDF</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+command:
+  - gunicorn
+  - app:app
+  - -w
+  - "2"
+  - -b
+  - 0.0.0.0:${DATABRICKS_APP_PORT:-8000}
+
+resources:
+  - name: sql-warehouse
+    sql_warehouse:
+      id: ${WAREHOUSE_ID}
+      permission: CAN_USE
+
+env:
+  - name: DATABRICKS_WAREHOUSE_ID
+    valueFrom: sql-warehouse
+  - name: USE_MOCK_BACKEND
+    value: "true"
+  # Set these via Databricks secrets when USE_MOCK_BACKEND=false:
+  # NEO4J_URI, NEO4J_USER, NEO4J_PASSWORD, GENIE_SPACE_ID
