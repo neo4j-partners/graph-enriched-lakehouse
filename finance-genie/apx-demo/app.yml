@@ -1,0 +1,1 @@
+command: ["uvicorn", "fraud_analyst.backend.app:app", "--workers", "2"]

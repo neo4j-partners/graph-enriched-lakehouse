@@ -28,6 +28,94 @@ The trade is roughly +1 day of scaffolding for a stack that scales to richer int
 
 ---
 
+## Build Status
+
+> Living section. As files are implemented, items move from `[ ]` to `[x]` and their full code blocks below get replaced with a one-line pointer to the source file.
+
+### Tools available
+
+| Tool | Status | Notes |
+|---|---|---|
+| `apx` CLI v0.3.8 | ✅ Installed | `/Users/ryanknight/.local/bin/apx`, runs locally |
+| apx MCP server | ✅ Registered | `apx-demo/.mcp.json`, exposes `start`, `stop`, `restart`, `routes`, `get_route_info`, `check`, `refresh_openapi`, `add_component`, `search_registry_components`, `list_registry_components`, `logs`, `docs`, `databricks_apps_logs` |
+| Playwright MCP server | ✅ Registered | `apx-demo/.mcp.json`, for browser automation during dev |
+| Databricks MCP server | ✅ Running | Project root `.mcp.json`, separate from apx |
+| `databricks-app-apx` skill | ✅ Installed | `/Users/ryanknight/.claude/skills/databricks-app-apx/`, plus `backend-patterns.md` and `frontend-patterns.md` |
+| `databricks-app-python` skill | ✅ Installed | Reference for Databricks app patterns (OAuth, resources, model serving) |
+| `databricks-python-sdk` skill | ✅ Installed | Reference for `WorkspaceClient` and SDK methods |
+
+### Scaffold in place
+
+Project lives at `finance-genie/apx-demo/`. App name is `fraud-analyst`, app slug `fraud_analyst`. The proposal below still uses the placeholder `finance_genie` package name in code blocks, all paths should be read as `fraud_analyst` instead until the proposal is updated in place during implementation.
+
+```
+apx-demo/
+  app.yml                                 # ✅ command: uvicorn fraud_analyst.backend.app:app --workers 2
+  databricks.yml                          # ✅ Databricks Apps bundle config
+  pyproject.toml                          # ✅ FastAPI, uvicorn, pydantic-settings, databricks-sdk, sqlmodel, psycopg
+  package.json + bun.lock                 # ✅ Frontend deps locked
+  tsconfig.json                           # ✅
+  AGENTS.md, CLAUDE.md, README.md         # ✅ apx-generated docs
+  .mcp.json                               # ✅ apx + playwright MCP servers
+  src/fraud_analyst/
+    __init__.py, _version.pyi, _metadata.pyi    # ✅
+    backend/
+      app.py                              # ✅ FastAPI entry (apx-generated)
+      router.py                           # ✅ Route file (apx-generated, empty)
+      models.py                           # ✅ Models file (apx-generated, empty)
+      core/                               # ✅ DI, config, lakebase, headers, factory
+    ui/
+      main.tsx, index.html                # ✅ Vite entry
+      routes/__root.tsx, routes/index.tsx # ✅ TanStack Router scaffold
+      lib/utils.ts, lib/selector.ts       # ✅
+      hooks/use-mobile.ts                 # ✅
+      styles/globals.css                  # ✅
+      types/vite-env.d.ts                 # ✅
+      public/logo.svg                     # ✅
+```
+
+### App-specific work, status checklist
+
+Backend (`src/fraud_analyst/backend/`):
+- [ ] `models.py`, port the 3-model Pydantic shapes from the proposal (`SearchIn`, `RingOut`, `RiskAccountOut`, `HubAccountOut`, `LoadIn`, `LoadOut`, `LoadStep`, `QualityCheck`, `AskIn`, `AskOut`, `AnswerTable`)
+- [ ] `router.py`, define routes: `POST /api/search/rings`, `POST /api/search/risk`, `POST /api/search/hubs`, `POST /api/load`, `POST /api/genie/ask`, all with `response_model`
+- [ ] `services/neo4j_signals.py`, mock first (returns the 6 wireframe rings), real Neo4j after
+- [ ] `services/delta_loader.py`, mock first (synthesizes the 7-step `LoadOut`), real Databricks SDK after
+- [ ] `services/genie_client.py`, mock first (canned `ANSWERS` dict from `app.jsx`), real Genie Conversation API after
+
+Frontend (`src/fraud_analyst/ui/`):
+- [ ] Tailwind theme tokens, port `tailwind.config.ts` from proposal so design tokens match the wireframe
+- [ ] IBM Plex font links in `index.html`
+- [ ] Add shadcn primitives via `add_component`: `button`, `card`, `table`, `checkbox`, `select`, `input`, `badge`, `dialog`, `textarea`, `skeleton`, `tooltip`
+- [ ] `lib/ringLayout.ts`, deterministic seed-based layout port of `app.jsx`
+- [ ] `components/RingThumb.tsx`, SVG thumbnail
+- [ ] `components/NetworkPreview.tsx`, SVG cluster grid
+- [ ] `components/RiskBar.tsx`, `Pill.tsx`, `Stepper.tsx`, `Shell.tsx`
+- [ ] `routes/index.tsx`, replace scaffold with stepper-driven 3-screen flow
+- [ ] `routes/_search.tsx` (Screen 1), `routes/_load.tsx` (Screen 2), `routes/_analyze.tsx` (Screen 3), `components/ReportModal.tsx`
+- [ ] After backend routes land, run `refresh_openapi` so the generated client at `ui/lib/api.ts` updates
+
+Operational:
+- [ ] `app.yml`, add `env:` resource bindings for `DATABRICKS_WAREHOUSE_ID`, `GENIE_SPACE_ID`, and Neo4j secrets (currently only has the `command:` line)
+- [ ] `databricks.yml`, confirm bundle deploy targets are correct
+- [ ] First `apx dev start`, verify both servers come up clean
+- [ ] First `apx dev check`, baseline type-check pass
+- [ ] First end-to-end smoke walk through Screens 1 to 3
+
+### Next steps, in order
+
+1. Run `apx dev start` once via the apx MCP server to confirm the scaffold boots and grab the dev URL.
+2. Implement `models.py` first, this is the contract the rest of the work hangs off.
+3. Implement `router.py` with mock service responses inline (or thin stubs in `services/`) so the OpenAPI surface stabilizes immediately.
+4. Run `refresh_openapi` and `check` to confirm the generated client compiles.
+5. Drop the Tailwind theme tokens and IBM Plex fonts in next, the design system check happens once and protects everything that follows.
+6. Build the bespoke SVG components (`RingThumb`, `NetworkPreview`) before the screens, since the screens consume them.
+7. Build screens 1 to 3 in order, each one moves through the API stubs and gets verified in the browser via Playwright MCP before moving to the next.
+8. Swap mock services for real Neo4j, Databricks SDK, and Genie API. Confirm secrets are wired through `app.yml` resource bindings.
+9. `apx build`, then `apx deploy` (or `databricks bundle deploy`) into the workspace.
+
+---
+
 ## File Structure
 
 APX scaffolds this layout. Folders marked `*` are where the wireframe gets implemented.

@@ -117,7 +117,6 @@ _MOCK_GENIE: list[dict] = [
 
 class MockBackend:
     _conv_counter = 0
-    _history: list[tuple[str, str, list | None]] = []
 
     def search(self, signal_type: str, filters: dict) -> list[dict]:
         return _MOCK_RINGS
@@ -130,9 +129,9 @@ class MockBackend:
         edges = int(txns * 1.43)
         return {
             "steps": [
-                {"label": f"Accounts extracted from Neo4j", "count": f"{accounts} nodes"},
-                {"label": f"Merchants extracted from Neo4j", "count": f"{merchants} nodes"},
-                {"label": f"Transactions extracted from Neo4j", "count": f"{txns} relationships"},
+                {"label": "Accounts extracted from Neo4j", "count": f"{accounts} nodes"},
+                {"label": "Merchants extracted from Neo4j", "count": f"{merchants} nodes"},
+                {"label": "Transactions extracted from Neo4j", "count": f"{txns} relationships"},
                 {"label": "Graph edges extracted", "count": f"{edges} edges"},
                 {"label": "Writing to Delta tables", "count": None},
                 {"label": "Verifying row counts", "count": None},
@@ -170,24 +169,32 @@ class MockBackend:
 
 class RealBackend:
     _neo4j_driver = None
+    _workspace_client = None
+    _schema_created = False
 
     def _driver(self):
-        if self._neo4j_driver is None:
+        if RealBackend._neo4j_driver is None:
             from neo4j import GraphDatabase
-            self._neo4j_driver = GraphDatabase.driver(
+            RealBackend._neo4j_driver = GraphDatabase.driver(
                 os.environ["NEO4J_URI"],
                 auth=(os.environ["NEO4J_USER"], os.environ["NEO4J_PASSWORD"]),
             )
-        return self._neo4j_driver
+        return RealBackend._neo4j_driver
+
+    def _ws_client(self):
+        if RealBackend._workspace_client is None:
+            from databricks.sdk import WorkspaceClient
+            RealBackend._workspace_client = WorkspaceClient()
+        return RealBackend._workspace_client
 
     def search(self, signal_type: str, filters: dict) -> list[dict]:
-        min_nodes = int(filters.get("max_nodes", 5))
-        cypher = {
+        min_ring_size = int(filters.get("max_nodes", 5))
+        queries = {
             "fraud_rings": """
                 MATCH (a:Account)
                 WHERE a.community_id IS NOT NULL
                 WITH a.community_id AS ring_id, collect(a) AS members
-                WHERE size(members) >= $min_nodes
+                WHERE size(members) >= $min_ring_size
                 WITH ring_id, members,
                      reduce(s = 0.0, m IN members | s + coalesce(m.risk_score, 0.0)) / size(members) AS avg_risk
                 OPTIONAL MATCH (src:Account)-[:TRANSFERRED_TO]->(tgt:Account)
@@ -226,13 +233,16 @@ class RealBackend:
                        [n IN neighbors | {source: a.account_id, target: n.account_id}] AS edges
                 ORDER BY a.risk_score DESC
             """,
-        }.get(signal_type, "")
+        }
+        cypher = queries.get(signal_type, queries["fraud_rings"])
 
         rings = []
         with self._driver().session() as s:
-            for rec in s.run(cypher, min_nodes=min_nodes):
+            for rec in s.run(cypher, min_ring_size=min_ring_size):
                 r = dict(rec)
                 risk = r["risk_score"] or 0.0
+                nodes = [{"data": n} for n in r["nodes"]]
+                edges = [{"data": {"id": f"e{i}", **e}} for i, e in enumerate(r["edges"])]
                 rings.append({
                     "ring_id": r["ring_id"],
                     "node_count": r["node_count"],
@@ -240,9 +250,9 @@ class RealBackend:
                     "shared_ids": [],
                     "risk_score": round(risk, 3),
                     "risk_label": "High" if risk >= 0.7 else "Medium" if risk >= 0.4 else "Low",
-                    "topology": _detect_topology(r["nodes"], r["edges"]),
-                    "nodes": r["nodes"],
-                    "edges": r["edges"],
+                    "topology": _detect_topology(nodes, edges),
+                    "nodes": nodes,
+                    "edges": edges,
                 })
         return rings
 
@@ -272,34 +282,47 @@ class RealBackend:
                     RETURN a.account_id AS src, m.merchant_id AS tgt, r.amount AS amount, r.date AS date
                 """, cid=ring_id):
                     txns.append((ring_id, rec["src"], rec["tgt"], rec["amount"], str(rec["date"] or "")))
-                    merchants.append((ring_id, rec["tgt"]))
+                    merchants.append(rec["tgt"])
                     edges.append((ring_id, rec["src"], rec["tgt"], "TRANSACTED_WITH", 1.0))
 
-        with conn.cursor() as cur:
-            cur.execute("CREATE SCHEMA IF NOT EXISTS fraud_signals")
-            cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.accounts
-                (ring_id STRING, account_id STRING, risk_score DOUBLE, first_seen STRING)""")
-            cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.transactions
-                (ring_id STRING, src_id STRING, tgt_id STRING, amount DOUBLE, txn_date STRING)""")
-            cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.merchants
-                (ring_id STRING, merchant_id STRING)""")
-            cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.graph_edges
-                (ring_id STRING, source_id STRING, target_id STRING, edge_type STRING, weight DOUBLE)""")
-            if accounts:
-                vals = ",".join(f"('{r}','{a}',{s},'')" for r, a, s in accounts)
-                cur.execute(f"INSERT INTO fraud_signals.accounts VALUES {vals}")
-            if txns:
-                vals = ",".join(f"('{r}','{s}','{t}',{am},'{d}')" for r, s, t, am, d in txns)
-                cur.execute(f"INSERT INTO fraud_signals.transactions VALUES {vals}")
-            if edges:
-                vals = ",".join(f"('{r}','{s}','{t}','{et}',{w})" for r, s, t, et, w in edges)
-                cur.execute(f"INSERT INTO fraud_signals.graph_edges VALUES {vals}")
-        conn.close()
+        unique_merchant_count = len(set(merchants))
+
+        try:
+            with conn.cursor() as cur:
+                if not RealBackend._schema_created:
+                    cur.execute("CREATE SCHEMA IF NOT EXISTS fraud_signals")
+                    cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.accounts
+                        (ring_id STRING, account_id STRING, risk_score DOUBLE, first_seen STRING)""")
+                    cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.transactions
+                        (ring_id STRING, src_id STRING, tgt_id STRING, amount DOUBLE, txn_date STRING)""")
+                    cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.merchants
+                        (ring_id STRING, merchant_id STRING)""")
+                    cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.graph_edges
+                        (ring_id STRING, source_id STRING, target_id STRING, edge_type STRING, weight DOUBLE)""")
+                    RealBackend._schema_created = True
+
+                for r, a, s in accounts:
+                    cur.execute(
+                        "INSERT INTO fraud_signals.accounts VALUES (%s, %s, %s, '')",
+                        [r, a, float(s)],
+                    )
+                for r, src, tgt, amt, d in txns:
+                    cur.execute(
+                        "INSERT INTO fraud_signals.transactions VALUES (%s, %s, %s, %s, %s)",
+                        [r, src, tgt, float(amt or 0), d],
+                    )
+                for r, src, tgt, et, w in edges:
+                    cur.execute(
+                        "INSERT INTO fraud_signals.graph_edges VALUES (%s, %s, %s, %s, %s)",
+                        [r, src, tgt, et, float(w)],
+                    )
+        finally:
+            conn.close()
 
         return {
             "steps": [
                 {"label": "Accounts extracted from Neo4j", "count": f"{len(accounts)} nodes"},
-                {"label": "Merchants extracted from Neo4j", "count": f"{len(set(m[1] for m in merchants))} nodes"},
+                {"label": "Merchants extracted from Neo4j", "count": f"{unique_merchant_count} nodes"},
                 {"label": "Transactions extracted from Neo4j", "count": f"{len(txns)} relationships"},
                 {"label": "Graph edges extracted", "count": f"{len(edges)} edges"},
                 {"label": "Writing to Delta tables", "count": None},
@@ -309,7 +332,7 @@ class RealBackend:
             "counts": {
                 "accounts": len(accounts),
                 "transactions": len(txns),
-                "merchants": len(set(m[1] for m in merchants)),
+                "merchants": unique_merchant_count,
                 "graph_edges": len(edges),
             },
             "preview": [{"account_id": a, "ring_id": r, "risk_score": s, "first_seen": ""} for r, a, s in accounts[:5]],
@@ -322,8 +345,7 @@ class RealBackend:
         }
 
     def ask_genie(self, question: str, conversation_id: str | None) -> dict:
-        from databricks.sdk import WorkspaceClient
-        w = WorkspaceClient()
+        w = self._ws_client()
         space_id = os.environ["GENIE_SPACE_ID"]
 
         if conversation_id is None:
@@ -342,6 +364,8 @@ class RealBackend:
         conv_id = resp["conversation_id"]
         msg_id = resp["id"]
 
+        # Polls synchronously; Flask worker is blocked up to 60s.
+        # Acceptable for a single-analyst demo; replace with SSE for concurrent use.
         for _ in range(30):
             msg = w.api_client.do(
                 "GET",
@@ -366,10 +390,12 @@ def _detect_topology(nodes: list, edges: list) -> str:
         return "chain"
     degrees: dict[str, int] = {}
     for e in edges:
-        src = e.get("source") or (e.get("data", {}).get("source") if isinstance(e, dict) else "")
-        tgt = e.get("target") or (e.get("data", {}).get("target") if isinstance(e, dict) else "")
-        degrees[src] = degrees.get(src, 0) + 1
-        degrees[tgt] = degrees.get(tgt, 0) + 1
+        src = e.get("data", {}).get("source", "")
+        tgt = e.get("data", {}).get("target", "")
+        if src:
+            degrees[src] = degrees.get(src, 0) + 1
+        if tgt:
+            degrees[tgt] = degrees.get(tgt, 0) + 1
     if not degrees:
         return "chain"
     avg = sum(degrees.values()) / len(degrees)

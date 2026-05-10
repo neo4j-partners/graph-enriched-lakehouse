@@ -1,0 +1,32 @@
+bundle:
+  name: "fraud-analyst"
+
+sync:
+  include:
+    - .build
+
+artifacts:
+  default:
+    build: apx build
+
+resources:
+  database_instances:
+    fraud-analyst-db:
+      name: "fraud-analyst"
+      capacity: "CU_1"
+  apps:
+    fraud-analyst-app:
+      name: "fraud-analyst"
+      description: "fraud-analyst created with apx"
+      source_code_path: ./.build
+      resources:
+        - name: "db"
+          database:
+            database_name: "databricks_postgres"
+            instance_name: ${resources.database_instances.fraud-analyst-db.name}
+            permission: "CAN_CONNECT_AND_CREATE"
+
+targets:
+  dev:
+    mode: development
+    default: true

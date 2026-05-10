@@ -1,6 +1,10 @@
 import os
+from pathlib import Path
 
+from dotenv import load_dotenv
 from flask import Flask, jsonify, request, send_from_directory
+
+load_dotenv(Path(__file__).with_name(".env"), override=False)
 
 USE_MOCK = os.getenv("USE_MOCK_BACKEND", "true").lower() == "true"
 if USE_MOCK:

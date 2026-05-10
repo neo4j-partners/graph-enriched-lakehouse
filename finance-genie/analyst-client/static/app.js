@@ -250,9 +250,9 @@ function renderResults(rings) {
     const tr = document.createElement('tr');
     tr.dataset.ringId = ring.ring_id;
     tr.innerHTML = `
-      <td><input type="checkbox" data-ring-id="${ring.ring_id}"></td>
+      <td><input type="checkbox" data-ring-id="${escHtml(ring.ring_id)}"></td>
       <td>${topologyIcon(ring)}</td>
-      <td style="font-weight:600">${ring.ring_id}</td>
+      <td style="font-weight:600">${escHtml(ring.ring_id)}</td>
       <td>${ring.node_count.toLocaleString()}</td>
       <td>${ring.volume ? '$' + ring.volume.toLocaleString() : '—'}</td>
       <td style="color:#555">${ring.shared_ids.join(', ') || '—'}</td>
@@ -401,7 +401,6 @@ function buildDataPanel() {
     </div>
   `).join('');
 
-  const ringLabels = [...state.selected].join(', ');
   const samples = [
     'Which accounts have the highest risk scores?',
     `Show me all merchants linked to ${[...state.selected][0] || 'RING-0041'}`,
@@ -444,7 +443,7 @@ document.getElementById('ask-form').addEventListener('submit', async e => {
     state.conversationId = data.conversation_id;
     appendChat('Genie', data.answer, data.table_cols ? { cols: data.table_cols, rows: data.table_rows } : null);
     state.askedCount++;
-    if (state.askedCount >= 1) {
+    if (state.askedCount === 1) {
       document.getElementById('export-bar').classList.remove('hidden');
     }
   } finally {
@@ -500,7 +499,7 @@ function showReport() {
   document.getElementById('report-date').textContent = now;
 
   const ringList = rings.map(r => `${r.ring_id} (${r.node_count} accounts)`).join(' · ');
-  const highRisk = state.rings.flatMap(r =>
+  const highRisk = rings.flatMap(r =>
     (r.nodes || []).filter(n => (n.data.risk_score || 0) >= 0.8)
       .map(n => ({ ...n.data, ring_id: r.ring_id }))
   ).sort((a, b) => b.risk_score - a.risk_score).slice(0, 5);
