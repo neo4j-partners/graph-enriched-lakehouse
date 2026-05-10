@@ -102,6 +102,7 @@ function buildRingCard(ring, idx) {
   const card = document.createElement('div');
   card.className = 'ring-card';
   card.dataset.ringId = ring.ring_id;
+  card.dataset.testid = `ring-card-${ring.ring_id}`;
 
   const vol = ring.volume ? `$${ring.volume.toLocaleString()}` : '';
   card.innerHTML = `
@@ -109,7 +110,7 @@ function buildRingCard(ring, idx) {
       <span>${ring.ring_id}</span>
       <span class="ring-card-meta">${ring.node_count} nodes${vol ? ' · ' + vol : ''}</span>
     </div>
-    <div class="ring-card-canvas" id="cy-card-${idx}"></div>
+    <div class="ring-card-canvas" id="cy-card-${idx}" data-testid="ring-graph-${ring.ring_id}"></div>
   `;
 
   card.addEventListener('click', () => toggleRing(ring.ring_id));
@@ -249,8 +250,9 @@ function renderResults(rings) {
   rings.forEach(ring => {
     const tr = document.createElement('tr');
     tr.dataset.ringId = ring.ring_id;
+    tr.dataset.testid = `ring-row-${ring.ring_id}`;
     tr.innerHTML = `
-      <td><input type="checkbox" data-ring-id="${escHtml(ring.ring_id)}"></td>
+      <td><input type="checkbox" data-ring-id="${escHtml(ring.ring_id)}" data-testid="ring-checkbox-${escHtml(ring.ring_id)}"></td>
       <td>${topologyIcon(ring)}</td>
       <td style="font-weight:600">${escHtml(ring.ring_id)}</td>
       <td>${ring.node_count.toLocaleString()}</td>
@@ -409,7 +411,7 @@ function buildDataPanel() {
     'Are there merchants receiving funds from both rings?',
   ];
   document.getElementById('sample-q-list').innerHTML = samples.map(q =>
-    `<div class="sample-q">${q}</div>`
+    `<div class="sample-q" data-testid="sample-question">${q}</div>`
   ).join('');
 
   document.querySelectorAll('.sample-q').forEach(el => {

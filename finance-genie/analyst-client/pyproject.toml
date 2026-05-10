@@ -13,5 +13,18 @@ dependencies = [
     "python-dotenv>=1.0.0",
 ]
 
+[dependency-groups]
+dev = [
+    "playwright>=1.50",
+    "pytest>=8.0",
+    "pytest-playwright>=0.7",
+]
+
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "real_backend: tests that require configured Neo4j and Databricks services",
+]

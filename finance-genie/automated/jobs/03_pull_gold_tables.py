@@ -6,7 +6,7 @@ match in phase 11e.
 
 Writes three tables into `graph-enriched-lakehouse.graph-enriched-schema`:
   gold_accounts                   account metadata + GDS features + community
-                                  aggregates + fraud_risk_tier (16 cols)
+                                  aggregates + fraud_risk_tier (20 cols)
   gold_account_similarity_pairs   pair-level similarity + same_community flag
   gold_fraud_ring_communities     per-community summary for ring-level queries
 
@@ -115,6 +115,7 @@ def main() -> None:
         .select(
             F.col("account_id").cast("long"),
             F.col("risk_score").cast("double"),
+            F.col("betweenness_centrality").cast("double"),
             F.col("community_id").cast("long"),
             F.col("similarity_score").cast("double"),
         )
@@ -134,10 +135,54 @@ def main() -> None:
     # ----------------------------------------------------------------------- #
     GOLD_ACCOUNTS_TABLE = f"`{CATALOG}`.`{SCHEMA}`.gold_accounts"
 
+    account_links_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.account_links").cache()
+    transactions_df = spark.table(f"`{CATALOG}`.`{SCHEMA}`.transactions").cache()
+
     inbound_counts = (
-        spark.table(f"`{CATALOG}`.`{SCHEMA}`.account_links")
+        account_links_df
         .groupBy(F.col("dst_account_id").alias("account_id"))
         .agg(F.count("*").alias("inbound_transfer_events"))
+    )
+
+    max_txn_timestamp = transactions_df.agg(
+        F.max("txn_timestamp").alias("max_txn_timestamp")
+    ).collect()[0]["max_txn_timestamp"]
+    recent_transactions = (
+        transactions_df
+        .filter(
+            F.col("txn_timestamp")
+            >= F.lit(max_txn_timestamp).cast("timestamp") - F.expr("INTERVAL 30 DAYS")
+        )
+    )
+    transaction_metrics = (
+        recent_transactions
+        .groupBy("account_id")
+        .agg(
+            F.count("*").cast("long").alias("txn_count_30d"),
+            F.countDistinct("merchant_id").cast("long").alias(
+                "distinct_merchant_count_30d"
+            ),
+        )
+    )
+
+    counterparty_counts = (
+        account_links_df
+        .select(
+            F.col("src_account_id").alias("account_id"),
+            F.col("dst_account_id").alias("counterparty_account_id"),
+        )
+        .unionByName(
+            account_links_df.select(
+                F.col("dst_account_id").alias("account_id"),
+                F.col("src_account_id").alias("counterparty_account_id"),
+            )
+        )
+        .groupBy("account_id")
+        .agg(
+            F.countDistinct("counterparty_account_id")
+            .cast("long")
+            .alias("distinct_counterparty_count")
+        )
     )
 
     # Unscored accounts land in a single null-community partition; their
@@ -155,7 +200,16 @@ def main() -> None:
         spark.table(f"`{CATALOG}`.`{SCHEMA}`.accounts")
         .join(graph_features_df, "account_id", "left")
         .join(inbound_counts, "account_id", "left")
-        .fillna({"inbound_transfer_events": 0})
+        .join(transaction_metrics, "account_id", "left")
+        .join(counterparty_counts, "account_id", "left")
+        .fillna(
+            {
+                "inbound_transfer_events": 0,
+                "txn_count_30d": 0,
+                "distinct_merchant_count_30d": 0,
+                "distinct_counterparty_count": 0,
+            }
+        )
         .withColumn("community_size", F.count("*").over(w_community))
         .withColumn("community_avg_risk_score", F.avg("risk_score").over(w_community))
         .withColumn("community_risk_rank", F.row_number().over(w_community_rank))
@@ -177,12 +231,16 @@ def main() -> None:
             "opened_date",
             "holder_age",
             "risk_score",
+            "betweenness_centrality",
             "community_id",
             "similarity_score",
             "community_size",
             "community_avg_risk_score",
             "community_risk_rank",
             "inbound_transfer_events",
+            "txn_count_30d",
+            "distinct_merchant_count_30d",
+            "distinct_counterparty_count",
             "is_ring_community",
             "fraud_risk_tier",
         )
@@ -197,7 +255,7 @@ def main() -> None:
         .option("overwriteSchema", "false")
         .saveAsTable(GOLD_ACCOUNTS_TABLE)
     )
-    print(f"Written {GOLD_ACCOUNTS_TABLE} ({n_gold:,} rows, 16 columns)")
+    print(f"Written {GOLD_ACCOUNTS_TABLE} ({n_gold:,} rows, 20 columns)")
 
     # ----------------------------------------------------------------------- #
     # Build gold_account_similarity_pairs with same_community flag             #
@@ -315,7 +373,187 @@ def main() -> None:
         )
     )
 
-    ring_communities_df = ring_aggregates.join(top_accounts, "community_id", "left").cache()
+    community_members = (
+        gold_df
+        .filter(F.col("community_id").isNotNull())
+        .select("community_id", "account_id")
+    )
+
+    within_community_links = (
+        account_links_df
+        .join(
+            community_lookup
+            .withColumnRenamed("account_id", "src_account_id")
+            .withColumnRenamed("community_id", "src_community_id"),
+            "src_account_id",
+            "left",
+        )
+        .join(
+            community_lookup
+            .withColumnRenamed("account_id", "dst_account_id")
+            .withColumnRenamed("community_id", "dst_community_id"),
+            "dst_account_id",
+            "left",
+        )
+        .filter(
+            F.col("src_community_id").isNotNull()
+            & F.col("dst_community_id").isNotNull()
+            & (F.col("src_community_id") == F.col("dst_community_id"))
+        )
+        .select(
+            F.col("src_community_id").alias("community_id"),
+            "src_account_id",
+            "dst_account_id",
+            "amount",
+        )
+        .cache()
+    )
+
+    community_volume = (
+        within_community_links
+        .groupBy("community_id")
+        .agg(F.round(F.sum("amount"), 2).alias("total_volume_usd"))
+    )
+
+    undirected_edges = (
+        within_community_links
+        .select(
+            "community_id",
+            F.least("src_account_id", "dst_account_id").alias("account_id_a"),
+            F.greatest("src_account_id", "dst_account_id").alias("account_id_b"),
+        )
+        .filter(F.col("account_id_a") != F.col("account_id_b"))
+        .dropDuplicates(["community_id", "account_id_a", "account_id_b"])
+        .cache()
+    )
+
+    edge_counts = (
+        undirected_edges
+        .groupBy("community_id")
+        .agg(F.count("*").cast("double").alias("edge_count"))
+    )
+    degree_counts = (
+        undirected_edges
+        .select("community_id", F.col("account_id_a").alias("account_id"))
+        .unionByName(
+            undirected_edges.select(
+                "community_id", F.col("account_id_b").alias("account_id")
+            )
+        )
+        .groupBy("community_id", "account_id")
+        .agg(F.count("*").cast("double").alias("degree"))
+    )
+    degree_stats = (
+        community_members
+        .join(degree_counts, ["community_id", "account_id"], "left")
+        .fillna({"degree": 0.0})
+        .groupBy("community_id")
+        .agg(
+            F.max("degree").alias("max_degree"),
+            F.avg("degree").alias("avg_degree"),
+        )
+    )
+    topology = (
+        ring_aggregates
+        .select("community_id", "member_count")
+        .join(degree_stats, "community_id", "left")
+        .join(edge_counts, "community_id", "left")
+        .fillna({"max_degree": 0.0, "avg_degree": 0.0, "edge_count": 0.0})
+        .withColumn(
+            "degree_skew",
+            F.when(F.col("avg_degree") > 0, F.col("max_degree") / F.col("avg_degree"))
+            .otherwise(F.lit(0.0)),
+        )
+        .withColumn(
+            "max_possible_edges",
+            (F.col("member_count") * (F.col("member_count") - 1) / F.lit(2.0)),
+        )
+        .withColumn(
+            "edge_density",
+            F.when(
+                F.col("max_possible_edges") > 0,
+                F.col("edge_count") / F.col("max_possible_edges"),
+            ).otherwise(F.lit(0.0)),
+        )
+        .withColumn(
+            "topology",
+            F.when(F.col("degree_skew") > 3.0, F.lit("star"))
+            .when(F.col("edge_density") > 0.15, F.lit("mesh"))
+            .otherwise(F.lit("chain")),
+        )
+        .select("community_id", "topology")
+    )
+
+    # Build the same ring-to-community map that is emitted as an artifact, then
+    # use it to attach ground-truth anchor categories to every mapped community.
+    GROUND_TRUTH_PATH = os.environ.get("GROUND_TRUTH_PATH")
+    ring_community_map: dict[str, list[int]] = {}
+    anchor_categories = None
+    if GROUND_TRUTH_PATH:
+        with open(GROUND_TRUTH_PATH) as _f:
+            _gt = json.load(_f)
+
+        _ring_acct_rows = [
+            (str(ring["ring_id"]), int(acct_id))
+            for ring in _gt["rings"]
+            for acct_id in ring["account_ids"]
+        ]
+        _ring_acct_df = spark.createDataFrame(_ring_acct_rows, ["ring_id", "account_id"])
+
+        _ring_community_df = (
+            _ring_acct_df
+            .join(gold_df.select("account_id", "community_id"), "account_id", "left")
+            .filter(F.col("community_id").isNotNull())
+            .select("ring_id", "community_id")
+            .distinct()
+        )
+
+        for _row in _ring_community_df.collect():
+            ring_community_map.setdefault(_row["ring_id"], []).append(
+                int(_row["community_id"])
+            )
+        ring_community_map = {k: sorted(v) for k, v in ring_community_map.items()}
+
+        _ring_categories = {
+            str(ring["ring_id"]): [
+                str(merchant["category"]) for merchant in ring["anchor_merchants"]
+            ]
+            for ring in _gt["rings"]
+        }
+        _community_to_categories: dict[int, list[str]] = {}
+        for ring_id in sorted(ring_community_map, key=int):
+            if ring_id not in _ring_categories:
+                continue
+            for community_id in ring_community_map[ring_id]:
+                _community_to_categories.setdefault(
+                    int(community_id), _ring_categories[ring_id]
+                )
+        _anchor_rows = sorted(_community_to_categories.items())
+        if _anchor_rows:
+            anchor_categories = (
+                spark.createDataFrame(
+                    _anchor_rows,
+                    "community_id long, anchor_merchant_categories array<string>",
+                )
+                .dropDuplicates(["community_id"])
+            )
+
+    ring_communities_df = (
+        ring_aggregates
+        .join(top_accounts, "community_id", "left")
+        .join(community_volume, "community_id", "left")
+        .join(topology, "community_id", "left")
+        .fillna({"total_volume_usd": 0.0, "topology": "chain"})
+    )
+    if anchor_categories is not None:
+        ring_communities_df = ring_communities_df.join(
+            anchor_categories, "community_id", "left"
+        )
+    else:
+        ring_communities_df = ring_communities_df.withColumn(
+            "anchor_merchant_categories", F.lit(None).cast("array<string>")
+        )
+    ring_communities_df = ring_communities_df.cache()
 
     ring_counts = ring_communities_df.agg(
         F.count("*").alias("total"),
@@ -342,45 +580,25 @@ def main() -> None:
     # on every gold table rebuild so it stays in sync with community_id        #
     # assignments, which change whenever the GDS graph is re-projected.        #
     # ----------------------------------------------------------------------- #
-    GROUND_TRUTH_PATH = os.environ.get("GROUND_TRUTH_PATH")
     if GROUND_TRUTH_PATH:
-        with open(GROUND_TRUTH_PATH) as _f:
-            _gt = json.load(_f)
-
-        _ring_acct_rows = [
-            (str(ring["ring_id"]), int(acct_id))
-            for ring in _gt["rings"]
-            for acct_id in ring["account_ids"]
-        ]
-        _ring_acct_df = spark.createDataFrame(_ring_acct_rows, ["ring_id", "account_id"])
-
-        _ring_community_df = (
-            _ring_acct_df
-            .join(gold_df.select("account_id", "community_id"), "account_id", "left")
-            .filter(F.col("community_id").isNotNull())
-            .select("ring_id", "community_id")
-            .distinct()
-        )
-
-        _ring_community_map: dict[str, list[int]] = {}
-        for _row in _ring_community_df.collect():
-            _ring_community_map.setdefault(_row["ring_id"], []).append(int(_row["community_id"]))
-        _ring_community_map = {k: sorted(v) for k, v in _ring_community_map.items()}
-
         _map_path = str(Path(GROUND_TRUTH_PATH).parent / "ring_community_map.json")
         with open(_map_path, "w") as _f:
             json.dump(
                 {
                     "generated_at": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-                    "ring_community_map": _ring_community_map,
+                    "ring_community_map": ring_community_map,
                 },
                 _f,
                 indent=2,
             )
-        print(f"Written {_map_path} ({len(_ring_community_map)} rings)")
+        print(f"Written {_map_path} ({len(ring_community_map)} rings)")
 
+    undirected_edges.unpersist()
+    within_community_links.unpersist()
     ring_communities_df.unpersist()
     gold_df.unpersist()
+    transactions_df.unpersist()
+    account_links_df.unpersist()
     graph_features_df.unpersist()
 
     print("Done.")

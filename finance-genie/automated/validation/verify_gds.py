@@ -9,7 +9,7 @@
 # ///
 """Verify GDS outputs against ground truth.
 
-Run after run_gds.py completes. Connects to Neo4j, runs five signal checks,
+Run after run_gds.py completes. Connects to Neo4j, runs signal checks,
 and prints a summary report. Exits 0 if all checks pass, 1 if any fail.
 
 Run from automated/:
@@ -31,6 +31,7 @@ from _common import fail, header, load_env, ok
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "jobs"))
 from _gold_constants import (  # noqa: E402
+    GDS_BETWEENNESS_RATIO_MIN as BETWEENNESS_RATIO_MIN,
     GDS_COMMUNITY_PURITY_MIN as COMMUNITY_PURITY_MIN,
     GDS_PR_RATIO_MIN as PR_RATIO_MIN,
     GDS_RING_EXCLUSION_MAX as RING_EXCLUSION_MAX,
@@ -81,23 +82,39 @@ def check_feature_completeness(gds: GraphDataScience) -> tuple[list[str], str]:
         RETURN count(a) AS total,
                sum(CASE WHEN a.risk_score       IS NOT NULL THEN 1 ELSE 0 END) AS has_pr,
                sum(CASE WHEN a.community_id     IS NOT NULL THEN 1 ELSE 0 END) AS has_cid,
-               sum(CASE WHEN a.similarity_score IS NOT NULL THEN 1 ELSE 0 END) AS has_sim
+               sum(CASE
+                     WHEN a.betweenness_centrality IS NOT NULL THEN 1 ELSE 0
+                   END) AS has_betweenness,
+               sum(CASE WHEN a.similarity_score IS NOT NULL THEN 1 ELSE 0 END) AS has_sim,
+               sum(CASE
+                     WHEN (a.risk_score IS NULL) <> (a.betweenness_centrality IS NULL)
+                     THEN 1 ELSE 0
+                   END) AS risk_betweenness_mismatch
         """
     ).iloc[0]
     print(
         f"      {row['total']:,} accounts | risk_score={row['has_pr']:,}  "
-        f"community_id={row['has_cid']:,}  similarity_score={row['has_sim']:,}"
+        f"community_id={row['has_cid']:,}  "
+        f"betweenness_centrality={row['has_betweenness']:,}  "
+        f"similarity_score={row['has_sim']:,}"
     )
     for name, label in (
         ("has_pr", "risk_score"),
         ("has_cid", "community_id"),
+        ("has_betweenness", "betweenness_centrality"),
         ("has_sim", "similarity_score"),
     ):
         if int(row[name]) < int(row["total"]):
             problems.append(
                 f"{label} set on only {int(row[name]):,}/{int(row['total']):,} accounts"
             )
-    detail = "all 3 properties set" if not problems else f"{len(problems)} property gap(s)"
+    mismatch = int(row["risk_betweenness_mismatch"] or 0)
+    if mismatch:
+        problems.append(
+            "betweenness_centrality is not populated on the same node set as risk_score "
+            f"({mismatch:,} mismatches)"
+        )
+    detail = "all 4 properties set" if not problems else f"{len(problems)} property gap(s)"
     return problems, detail
 
 
@@ -150,6 +167,59 @@ def check_pagerank(gds: GraphDataScience, fraud_ids: list[int]) -> tuple[list[st
     if ratio < PR_RATIO_MIN:
         problems.append(f"fraud/normal PageRank ratio {ratio:.2f}× < {PR_RATIO_MIN}×")
     return problems, f"ratio={ratio:.2f}×  (min {PR_RATIO_MIN}×)"
+
+
+def check_betweenness(
+    gds: GraphDataScience, fraud_ids: list[int]
+) -> tuple[list[str], str]:
+    problems: list[str] = []
+    stats = gds.run_cypher(
+        """
+        MATCH (a:Account) WHERE a.betweenness_centrality IS NOT NULL
+        RETURN min(a.betweenness_centrality) AS mn,
+               max(a.betweenness_centrality) AS mx,
+               avg(a.betweenness_centrality) AS av
+        """
+    ).iloc[0]
+    print(
+        f"      betweenness_centrality: min={stats['mn']:.4f}  "
+        f"max={stats['mx']:.4f}  avg={stats['av']:.4f}"
+    )
+    if stats["mx"] == stats["mn"]:
+        problems.append(
+            "betweenness_centrality is constant — Betweenness did not differentiate nodes"
+        )
+        return problems, "constant (no signal)"
+
+    averages = gds.run_cypher(
+        """
+        MATCH (a:Account) WHERE a.betweenness_centrality IS NOT NULL
+        RETURN
+          avg(CASE
+                WHEN a.account_id IN $fraud_ids
+                THEN a.betweenness_centrality
+              END) AS fraud_avg,
+          avg(CASE
+                WHEN NOT a.account_id IN $fraud_ids
+                THEN a.betweenness_centrality
+              END) AS normal_avg
+        """,
+        params={"fraud_ids": fraud_ids},
+    ).iloc[0]
+    fraud_avg = float(averages["fraud_avg"] or 0.0)
+    normal_avg = float(averages["normal_avg"] or 0.0)
+    ratio = fraud_avg / normal_avg if normal_avg else float("inf")
+    print(
+        f"      fraud avg={fraud_avg:.4f}  normal avg={normal_avg:.4f}  "
+        f"ratio={ratio:.2f}×  (min {BETWEENNESS_RATIO_MIN}×)"
+    )
+
+    if ratio <= BETWEENNESS_RATIO_MIN:
+        problems.append(
+            "fraud/normal betweenness ratio "
+            f"{ratio:.2f}× <= {BETWEENNESS_RATIO_MIN}×"
+        )
+    return problems, f"ratio={ratio:.2f}×  (min > {BETWEENNESS_RATIO_MIN}×)"
 
 
 def check_louvain_per_ring(
@@ -420,29 +490,33 @@ def main() -> None:
     try:
         results: list[tuple[str, list[str], str]] = []
 
-        header("[1/6] Feature completeness")
+        header("[1/7] Feature completeness")
         problems, detail = check_feature_completeness(gds)
-        results.append(("[1/6] Feature completeness", problems, detail))
+        results.append(("[1/7] Feature completeness", problems, detail))
 
-        header("[2/6] PageRank (risk_score)")
+        header("[2/7] PageRank (risk_score)")
         problems, detail = check_pagerank(gds, fraud_ids)
-        results.append(("[2/6] PageRank (risk_score)", problems, detail))
+        results.append(("[2/7] PageRank (risk_score)", problems, detail))
 
-        header("[3/6] Louvain (community_id) — per-ring coverage")
+        header("[3/7] Betweenness (betweenness_centrality)")
+        problems, detail = check_betweenness(gds, fraud_ids)
+        results.append(("[3/7] Betweenness", problems, detail))
+
+        header("[4/7] Louvain (community_id) — per-ring coverage")
         problems, detail = check_louvain_per_ring(gds, rings)
-        results.append(("[3/6] Louvain (community_id)", problems, detail))
+        results.append(("[4/7] Louvain (community_id)", problems, detail))
 
-        header("[4/6] Node Similarity (similarity_score)")
+        header("[5/7] Node Similarity (similarity_score)")
         problems, detail = check_similarity(gds, fraud_ids)
-        results.append(("[4/6] Node Similarity", problems, detail))
+        results.append(("[5/7] Node Similarity", problems, detail))
 
-        header("[5/6] Ring-member NodeSim exclusion (degreeCutoff)")
+        header("[6/7] Ring-member NodeSim exclusion (degreeCutoff)")
         problems, detail = check_ring_member_nodesim_exclusion(gds, fraud_ids)
-        results.append(("[5/6] Ring-member exclusion", problems, detail))
+        results.append(("[6/7] Ring-member exclusion", problems, detail))
 
-        header("[6/6] Ring-candidate population precision (diagnostic)")
+        header("[7/7] Ring-candidate population precision (diagnostic)")
         problems, detail = check_ring_candidate_precision(gds, rings, fraud_ids)
-        results.append(("[6/6] Ring-candidate precision", problems, detail))
+        results.append(("[7/7] Ring-candidate precision", problems, detail))
 
         all_problems = print_summary(results)
         if all_problems:

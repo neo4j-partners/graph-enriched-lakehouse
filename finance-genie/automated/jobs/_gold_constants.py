@@ -21,6 +21,7 @@ TIER_LOW = "low"
 # the ring-candidate thresholds so changes to the signal targets are tracked
 # in one place and both files see the update.
 GDS_PR_RATIO_MIN = 3.0
+GDS_BETWEENNESS_RATIO_MIN = 1.0
 GDS_COMMUNITY_PURITY_MIN = 0.65
 GDS_SIM_RATIO_MIN = 1.9
 GDS_RING_EXCLUSION_MAX = 0.20

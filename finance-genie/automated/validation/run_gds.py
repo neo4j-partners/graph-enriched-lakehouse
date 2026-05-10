@@ -10,8 +10,9 @@
 """Run the GDS pipeline against Neo4j Aura.
 
 Mirrors the algorithm steps in workshop/02_aura_gds_guide.ipynb — writes
-risk_score, community_id, and similarity_score to every :Account node, and
-creates :SIMILAR_TO relationships. Exits 0 on success, 1 on failure.
+risk_score, betweenness_centrality, community_id, and similarity_score to every
+:Account node, and creates :SIMILAR_TO relationships. Exits 0 on success, 1 on
+failure.
 
 Run from automated/:
 
@@ -39,6 +40,11 @@ EXPECTED_ACCOUNTS = 25_000
 # the bipartite projection and land with similarity_score=0. Keep this value
 # synchronized with verify_gds.py and the writeRelationship call below.
 NODESIM_DEGREE_CUTOFF = 5
+
+# Exact betweenness is expensive on the 25k-node workshop graph. A fixed sample
+# keeps demo runs predictable while preserving the "broker account" signal.
+BETWEENNESS_SAMPLING_SIZE = 1_000
+BETWEENNESS_SAMPLING_SEED = 42
 
 
 def connect(uri: str, user: str, password: str) -> GraphDataScience:
@@ -103,6 +109,34 @@ def run_pipeline(gds: GraphDataScience) -> None:
         f"      communityCount={int(louvain['communityCount']):,}  "
         f"modularity={float(louvain['modularity']):.4f}  "
         f"propertiesWritten={int(louvain['nodePropertiesWritten']):,}"
+    )
+
+    header("Step 4.5: Betweenness.write → betweenness_centrality")
+    betweenness = gds.run_cypher(
+        """
+        CALL gds.betweenness.write($graph_name, {
+          writeProperty: 'betweenness_centrality',
+          samplingSize: $sampling_size,
+          samplingSeed: $sampling_seed
+        })
+        YIELD nodePropertiesWritten, computeMillis, centralityDistribution
+        RETURN nodePropertiesWritten, computeMillis,
+               centralityDistribution.min AS min_score,
+               centralityDistribution.mean AS mean_score,
+               centralityDistribution.max AS max_score
+        """,
+        params={
+            "graph_name": G.name(),
+            "sampling_size": BETWEENNESS_SAMPLING_SIZE,
+            "sampling_seed": BETWEENNESS_SAMPLING_SEED,
+        },
+    ).iloc[0]
+    print(
+        f"      propertiesWritten={int(betweenness['nodePropertiesWritten']):,}  "
+        f"computeMillis={int(betweenness['computeMillis']):,}  "
+        f"min={float(betweenness['min_score'] or 0.0):.4f}  "
+        f"mean={float(betweenness['mean_score'] or 0.0):.4f}  "
+        f"max={float(betweenness['max_score'] or 0.0):.4f}"
     )
 
     gds.graph.drop(G)
