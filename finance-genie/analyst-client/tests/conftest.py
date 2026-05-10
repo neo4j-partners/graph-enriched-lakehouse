@@ -18,6 +18,9 @@ from playwright.sync_api import ConsoleMessage, Page, Request, Response
 APP_DIR = Path(__file__).resolve().parents[1]
 SERVER_READY_TIMEOUT_SECONDS = 15
 
+if str(APP_DIR) not in sys.path:
+    sys.path.insert(0, str(APP_DIR))
+
 
 def _free_port() -> int:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:

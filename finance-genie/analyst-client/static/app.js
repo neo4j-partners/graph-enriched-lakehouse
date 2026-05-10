@@ -166,6 +166,14 @@ function toggleRing(ringId) {
   updateSelectionUI();
 }
 
+function setAllRingsSelected(selected) {
+  state.selected.clear();
+  if (selected) {
+    state.rings.forEach(ring => state.selected.add(ring.ring_id));
+  }
+  updateSelectionUI();
+}
+
 function updateSelectionUI() {
   const count = state.selected.size;
 
@@ -185,6 +193,13 @@ function updateSelectionUI() {
   document.getElementById('selected-count').textContent =
     `${count} selected`;
   document.getElementById('load-btn').disabled = count === 0;
+
+  const selectAll = document.getElementById('select-all-rings');
+  if (selectAll) {
+    selectAll.disabled = state.rings.length === 0;
+    selectAll.checked = state.rings.length > 0 && count === state.rings.length;
+    selectAll.indeterminate = count > 0 && count < state.rings.length;
+  }
 }
 
 // ── Screen 1: Search ─────────────────────────────────────────────────────────
@@ -278,6 +293,10 @@ document.getElementById('load-btn').addEventListener('click', () => {
   if (state.selected.size === 0) return;
   showScreen(2);
   startLoad([...state.selected]);
+});
+
+document.getElementById('select-all-rings').addEventListener('change', e => {
+  setAllRingsSelected(e.target.checked);
 });
 
 // ── Screen 2: Load ────────────────────────────────────────────────────────────

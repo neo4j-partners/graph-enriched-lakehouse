@@ -227,7 +227,7 @@ Runs the three GDS algorithms against Neo4j Aura. Runs locally using the `graphd
 uv run validation/run_gds.py
 ```
 
-Writes `risk_score`, `community_id`, and `similarity_score` properties to every `:Account` node, and creates `:SIMILAR_TO` relationships. Run this after `02_neo4j_ingest.py` completes.
+Writes `risk_score`, `community_id`, and `similarity_score` properties to every `:Account` node, creates `:SIMILAR_TO` relationships, and creates lookup indexes for `Account.community_id` and `Account.risk_score`. Run this after `02_neo4j_ingest.py` completes.
 
 ### 9. Verify GDS Outputs
 

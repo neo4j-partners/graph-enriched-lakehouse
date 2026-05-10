@@ -14,6 +14,80 @@ This document locks in, for each field the web app needs, exactly where it comes
 
 ---
 
+## Final implementation status
+
+**Status as of:** May 10, 2026
+
+**Overall progress:** Backend data pipeline phase is complete and validated end to end. Frontend integration remains a separate phase owned outside this backend plan.
+
+### Phase progress
+
+| Phase | Status | Outcome |
+|---|---|---|
+| Phase 1, backend automation and data contract | Complete | Databricks and Neo4j pipeline now produces every backend contract column except the intentionally mocked `shortest_paths` field. |
+| Phase 2, frontend integration | Separate / not covered here | Web app can now switch from mock services to Unity Catalog reads against the new gold columns. |
+
+### Work item status
+
+| Work item | Status | Summary |
+|---|---|---|
+| W1, betweenness centrality | Complete | `validation/run_gds.py` now runs sampled Betweenness Centrality and writes `betweenness_centrality` to `:Account` nodes. `validation/verify_gds.py` now validates population and fraud-vs-normal separation. |
+| W2, shortest_paths decision | Complete | `shortest_paths` remains intentionally mocked in the web layer. The natural future pipeline source is All Pairs Shortest Path or closeness centrality. |
+| W3, ring-level rollups | Complete | `gold_fraud_ring_communities` now includes `total_volume_usd`, `topology`, and `anchor_merchant_categories`. |
+| W4, account behavior metrics | Complete | `gold_accounts` now includes `txn_count_30d`, `distinct_merchant_count_30d`, and `distinct_counterparty_count`. |
+| W5, shared validation module | Complete | Gold-table checks were lifted into `jobs/_gold_table_checks.py`; `jobs/04_validate_gold_tables.py` is now a thin Databricks job wrapper around the shared check function. |
+
+### Implemented artifacts
+
+- `validation/run_gds.py` writes `risk_score`, `community_id`, `betweenness_centrality`, and `similarity_score` to Neo4j `:Account` nodes.
+- `validation/verify_gds.py` now runs seven checks, including the new Betweenness check.
+- `sql/gold_schema.sql` defines the expanded gold table schemas and Unity Catalog column comments.
+- `jobs/03_pull_gold_tables.py` pulls the new Neo4j property and computes the new gold-table rollups from canonical Unity Catalog base tables.
+- `jobs/_gold_table_checks.py` exposes reusable named check results with `name`, `passed`, `detail`, `problems`, and `metadata`.
+- `jobs/04_validate_gold_tables.py` submits the shared validation checks as the existing automated Databricks job.
+
+### Key validation results
+
+The full Databricks and Neo4j pipeline was run against the canonical `automated/data` files.
+
+| Step | Result | Run id / detail |
+|---|---|---|
+| Base table refresh, `./upload_and_create_tables.sh` | Passed | Refreshed UC base tables and uploaded `ground_truth.json`. |
+| Job upload, `python -m cli upload --all` | Passed | Uploaded all `jobs/` files, including `_gold_table_checks.py`, plus `gold_schema.sql`. |
+| Neo4j ingest, `02_neo4j_ingest.py` | Passed | Databricks run `1115598973726569`; wrote 25,000 accounts, 7,500 merchants, 248,639 transaction edges, and 222,966 transfer edges. |
+| GDS run, `validation/run_gds.py` | Passed | Wrote `betweenness_centrality` to all 25,000 accounts. Sampled Betweenness max score was about 105,423. |
+| GDS verification, `validation/verify_gds.py` | Passed | 7/7 checks passed. Betweenness fraud-vs-normal ratio was 5.44x. |
+| Gold pull, `03_pull_gold_tables.py` | Passed | Databricks run `806657188138617`; wrote 25,000-row `gold_accounts`, 206,277-row `gold_account_similarity_pairs`, and 12-row `gold_fraud_ring_communities` with 10 ring candidates. |
+| Gold validation, `04_validate_gold_tables.py` | Passed | Databricks run `376554938681628`; 11/11 checks passed. |
+| AFTER Genie smoke test, `05_genie_run_after.py` | Passed | Databricks run `1110187400655654`; responded to 5/5 analyst questions. |
+
+Gold-table validation highlights:
+
+- `gold_accounts` has 25,000 rows and 20 columns.
+- `betweenness_centrality` is populated on all 25,000 accounts.
+- `txn_count_30d`, `distinct_merchant_count_30d`, and `distinct_counterparty_count` had zero null or negative validation failures.
+- `gold_fraud_ring_communities` has 12 communities and 10 ring candidates.
+- All 10 ring candidates have positive `total_volume_usd`.
+- All 10 ring candidates have valid topology values.
+- All 10 mapped ring communities have four `anchor_merchant_categories`.
+- Ring-member average distinct counterparty count was 97.74 versus 12.75 for non-ring accounts, a 7.66x ratio.
+
+Artifacts written:
+
+- Gold validation artifact: `/Volumes/graph-enriched-lakehouse/graph-enriched-schema/graph-enriched-volume/genie_test_results/validate_gold_tables_2026-05-10T17-01-14Z.json`
+- AFTER Genie artifact: `/Volumes/graph-enriched-lakehouse/graph-enriched-schema/graph-enriched-volume/genie_test_results/genie_run_after_2026-05-10T17-06-12Z.json`
+
+### Final design decisions
+
+- `automated/data` is canonical for this pass. No synthetic data regeneration was required.
+- `total_volume_usd` uses account-to-account transfer volume only. Merchant transactions are excluded so the ring volume reflects internal P2P money movement, not cover spending.
+- `anchor_merchant_categories` attaches the four ground-truth anchor categories to every community listed in `ring_community_map.json` for a planted ring, not only to the dominant community.
+- Betweenness uses sampled GDS Betweenness with a fixed seed for demo stability. Exact Betweenness was avoided because the workshop graph is large enough that exact computation adds runtime risk without improving the visible demo contract.
+- `shortest_paths` remains the only mocked field. It should be replaced later by All Pairs Shortest Path if a true count is needed, or closeness centrality if a compact reachability proxy is sufficient.
+- The shared validation module lives under `automated/jobs/` so the existing `python -m cli upload --all` automation uploads it with the other Databricks job files.
+
+---
+
 ## Locked-in data contract
 
 For every field the web app returns, this table is the binding source-of-truth. Anything marked "real" is data the pipeline produces today or after the work items in this document. Anything marked "substitute" is real data being used in place of a field name that originally implied a different metric, with the substitution called out in the API response and in code comments. Exactly one field is mocked.

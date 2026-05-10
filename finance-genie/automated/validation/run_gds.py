@@ -196,6 +196,24 @@ def run_pipeline(gds: GraphDataScience) -> None:
     )
     print(f"      accounts_zeroed={int(zeroed['accounts_zeroed'].iloc[0]):,}")
 
+    header("Step 9: create Account lookup indexes for analyst queries")
+    # The analyst client searches by Louvain community and ranks by PageRank.
+    # These properties do not exist until the GDS writes above complete, so the
+    # indexes live here rather than in the base Spark ingest.
+    gds.run_cypher(
+        """
+        CREATE INDEX account_community_id IF NOT EXISTS
+        FOR (a:Account) ON (a.community_id)
+        """
+    )
+    gds.run_cypher(
+        """
+        CREATE INDEX account_risk_score IF NOT EXISTS
+        FOR (a:Account) ON (a.risk_score)
+        """
+    )
+    print("      indexes ready: account_community_id, account_risk_score")
+
 
 def main() -> None:
     load_env(REQUIRED_VARS)

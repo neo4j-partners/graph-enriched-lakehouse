@@ -77,7 +77,33 @@
       <!-- Graph view -->
       <div class="graph-view-panel">
         <div class="graph-view-header" id="graph-view-toggle">
-          ▸ GRAPH VIEW &nbsp;<span id="graph-summary"></span>
+          <span class="graph-view-title">▸ GRAPH VIEW</span>
+          <span id="graph-summary"></span>
+          <div class="graph-help">
+            <button
+              type="button"
+              class="graph-help-button"
+              aria-label="Explain graph visuals"
+              aria-describedby="graph-help-tooltip"
+              data-testid="graph-help-button"
+            >?</button>
+            <div
+              id="graph-help-tooltip"
+              class="graph-help-tooltip"
+              role="tooltip"
+              data-testid="graph-help-tooltip"
+            >
+              <strong>Reading the graph</strong>
+              <p>Each card is one detected cluster. Dots are accounts and lines are transfers or shared-account relationships.</p>
+              <ul>
+                <li>Redder dots mean higher model risk.</li>
+                <li>Larger dots are hubs with more connections.</li>
+                <li>Tight loops can indicate circular fund movement.</li>
+                <li>Dense clusters with repeated identifiers deserve review.</li>
+                <li>Long chains can indicate layering or mule movement.</li>
+              </ul>
+            </div>
+          </div>
         </div>
         <div id="graph-grid" class="graph-grid" data-testid="graph-grid"></div>
         <div class="graph-legend">
@@ -92,7 +118,16 @@
       <table class="results-table">
         <thead>
           <tr>
-            <th style="width:36px"></th>
+            <th style="width:84px">
+              <label class="select-all-control">
+                <input
+                  id="select-all-rings"
+                  type="checkbox"
+                  data-testid="select-all-rings"
+                >
+                <span>All</span>
+              </label>
+            </th>
             <th style="width:56px">TOPOLOGY</th>
             <th>RING ID</th>
             <th>NODES</th>

@@ -7,7 +7,7 @@ export const Route = createRootRouteWithContext<{
   queryClient: QueryClient;
 }>()({
   component: () => (
-    <ThemeProvider defaultTheme="dark" storageKey="apx-ui-theme">
+    <ThemeProvider defaultTheme="light" storageKey="apx-ui-theme">
       <Outlet />
       <Toaster richColors />
     </ThemeProvider>

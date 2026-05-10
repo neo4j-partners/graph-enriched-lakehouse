@@ -26,8 +26,25 @@ class AppConfig(BaseSettings):
         env_prefix=f"{app_slug.upper()}_",
         extra="ignore",
         env_nested_delimiter="__",
+        populate_by_name=True,
     )
     app_name: str = Field(default=app_name)
+
+    # Databricks runtime configuration. Required at request time, but defaulted
+    # so the app can boot in environments where they are not yet wired up. The
+    # service modules raise a clear error when they need an unset value.
+    warehouse_id: str = Field(default="")
+    """SQL warehouse ID for statement execution against gold tables."""
+
+    catalog: str = Field(default="graph_enriched_lakehouse")
+    """Unity Catalog catalog name holding the gold tables."""
+
+    schema_: str = Field(default="graph_enriched_schema", alias="schema")
+    """Unity Catalog schema name holding the gold tables. Aliased from `schema`
+    because BaseSettings reserves the `schema` attribute name."""
+
+    genie_space_id: str = Field(default="")
+    """Genie Space ID for the AFTER-GDS Conversation API."""
 
     @property
     def static_assets_path(self) -> Path:

@@ -1,6 +1,7 @@
 # Fraud Analyst App, Frontend Implementation Plan v2
 
-**Companion to:** `demo-client-graph.md` (the original APX proposal, contains stack rationale, file layout, design tokens, and code sketches), `demo-client-graph-backend.md` (the data-pipeline work delivering the contract this plan reads from)
+**Status:** ✅ All work items F1 through F11 landed. The apx-demo backend (FastAPI, Pydantic, Databricks SDK, Genie Conversation API) and `app.yml` / `databricks.yml` resource bindings are also in place. Remaining work is a workspace deploy and a smoke walkthrough; see `demo-client-graph.md` "Next steps, in order" for the deploy command.
+**Companion to:** `demo-client-graph.md` (the original APX proposal, contains stack rationale, file layout, design tokens, and code sketches), `demo-client-graph-backend.md` (the data-pipeline work delivering the contract this plan reads from), `apx-demo-client-testing.md` (the local + deploy + Playwright test plan)
 **Audience:** the agent building the React UI inside `finance-genie/apx-demo/src/fraud_analyst/ui/`
 **Goal:** turn the APX scaffold already in place into the three-screen Fraud Signal Workbench shown in the wireframe, ready to demo against real backend services as they come online.
 

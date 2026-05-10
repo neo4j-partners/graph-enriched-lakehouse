@@ -126,6 +126,7 @@ header {
 /* ── Graph view ── */
 .graph-view-panel { border-bottom: 1px solid #e4e4e4; }
 .graph-view-header {
+  position: relative;
   padding: 10px 20px;
   font-size: 11px;
   font-weight: 700;
@@ -138,7 +139,66 @@ header {
   align-items: center;
   gap: 8px;
 }
-.graph-view-header span { color: #888; font-weight: 400; }
+.graph-view-title { color: #444; font-weight: 700; }
+.graph-view-header #graph-summary { color: #888; font-weight: 400; }
+.graph-help {
+  position: relative;
+  margin-left: auto;
+  letter-spacing: 0;
+}
+.graph-help-button {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid #d0d5dd;
+  background: #fff;
+  color: #555;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 20px;
+  cursor: help;
+}
+.graph-help-button:hover,
+.graph-help-button:focus-visible {
+  border-color: #0052cc;
+  color: #0052cc;
+  outline: none;
+}
+.graph-help-tooltip {
+  display: none;
+  position: absolute;
+  top: 30px;
+  right: 0;
+  z-index: 10;
+  width: min(340px, calc(100vw - 48px));
+  padding: 12px 14px;
+  border: 1px solid #d0d5dd;
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: 0 8px 24px rgba(16, 24, 40, 0.14);
+  color: #333;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-transform: none;
+  user-select: text;
+}
+.graph-help:hover .graph-help-tooltip,
+.graph-help:focus-within .graph-help-tooltip {
+  display: block;
+}
+.graph-help-tooltip strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.graph-help-tooltip p { margin-bottom: 8px; }
+.graph-help-tooltip ul {
+  margin: 0;
+  padding-left: 16px;
+}
+.graph-help-tooltip li + li { margin-top: 4px; }
 .graph-grid {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -203,6 +263,20 @@ header {
 .results-table tr:hover td { background: #f7f9ff; }
 .results-table tr.selected td { background: #f0f4ff; }
 .results-table input[type=checkbox] { accent-color: #0052cc; width: 14px; height: 14px; cursor: pointer; }
+.select-all-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 48px;
+  color: #555;
+  cursor: pointer;
+}
+.select-all-control span {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
 
 /* ── Risk bar ── */
 .risk-bar { display: inline-flex; gap: 2px; vertical-align: middle; margin-right: 6px; }

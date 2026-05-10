@@ -22,11 +22,37 @@ def test_search_controls_and_load_button_contract(
     expect(page.get_by_test_id("ring-count")).to_have_text("6 rings")
     expect(page.get_by_test_id("load-selected")).to_be_disabled()
     expect(page.get_by_test_id("selected-count")).to_have_text("0 selected")
+    expect(page.get_by_test_id("select-all-rings")).not_to_be_checked()
+
+    page.get_by_test_id("graph-help-button").focus()
+
+    expect(page.get_by_test_id("graph-help-tooltip")).to_be_visible()
+    expect(page.get_by_test_id("graph-help-tooltip")).to_contain_text(
+        "Each card is one detected cluster"
+    )
+    expect(page.get_by_test_id("graph-help-tooltip")).to_contain_text(
+        "Tight loops can indicate circular fund movement"
+    )
+
+    page.get_by_test_id("select-all-rings").check()
+
+    expect(page.get_by_test_id("selected-count")).to_have_text("6 selected")
+    expect(page.get_by_test_id("load-selected")).to_be_enabled()
+    expect(page.get_by_test_id("ring-checkbox-RING-0041")).to_be_checked()
+
+    page.get_by_test_id("select-all-rings").uncheck()
+
+    expect(page.get_by_test_id("selected-count")).to_have_text("0 selected")
+    expect(page.get_by_test_id("load-selected")).to_be_disabled()
 
     page.get_by_test_id("ring-checkbox-RING-0041").check()
 
     expect(page.get_by_test_id("selected-count")).to_have_text("1 selected")
     expect(page.get_by_test_id("load-selected")).to_be_enabled()
+    expect(page.get_by_test_id("select-all-rings")).not_to_be_checked()
+    assert page.get_by_test_id("select-all-rings").evaluate(
+        "element => element.indeterminate"
+    )
 
 
 def test_back_navigation_preserves_search_selection(

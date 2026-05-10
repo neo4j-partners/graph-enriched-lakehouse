@@ -115,6 +115,20 @@ _MOCK_GENIE: list[dict] = [
 ]
 
 
+def _int_filter(filters: dict, key: str, default: int) -> int:
+    value = filters.get(key)
+    if value in (None, ""):
+        return default
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _bounded_int_filter(filters: dict, key: str, default: int, minimum: int, maximum: int) -> int:
+    return max(minimum, min(_int_filter(filters, key, default), maximum))
+
+
 class MockBackend:
     _conv_counter = 0
 
@@ -188,47 +202,83 @@ class RealBackend:
         return RealBackend._workspace_client
 
     def search(self, signal_type: str, filters: dict) -> list[dict]:
-        min_ring_size = int(filters.get("max_nodes", 5))
+        min_ring_size = 5
+        ring_limit = 20
+        node_limit = _bounded_int_filter(filters, "max_nodes", default=80, minimum=5, maximum=500)
+        edge_limit = max(200, node_limit * 3)
         queries = {
             "fraud_rings": """
+                // Rank communities before collecting UI payloads. The old query
+                // collected every Account per community and expanded edges before
+                // LIMIT, which could exhaust Neo4j transaction memory on Aura.
+                // Keep node/edge payloads bounded and let the automated GDS load
+                // indexes on Account.community_id and Account.risk_score support
+                // these lookups.
                 MATCH (a:Account)
                 WHERE a.community_id IS NOT NULL
-                WITH a.community_id AS ring_id, collect(a) AS members
-                WHERE size(members) >= $min_ring_size
-                WITH ring_id, members,
-                     reduce(s = 0.0, m IN members | s + coalesce(m.risk_score, 0.0)) / size(members) AS avg_risk
-                OPTIONAL MATCH (src:Account)-[:TRANSFERRED_TO]->(tgt:Account)
-                WHERE src IN members AND tgt IN members
-                WITH ring_id, members, avg_risk,
-                     collect(DISTINCT {source: src.account_id, target: tgt.account_id}) AS edges
+                WITH
+                    a.community_id AS ring_id,
+                    count(a) AS node_count,
+                    avg(coalesce(a.risk_score, 0.0)) AS avg_risk
+                WHERE node_count >= $min_ring_size
+                ORDER BY avg_risk DESC, node_count DESC
+                LIMIT $ring_limit
+                CALL (ring_id) {
+                    MATCH (m:Account)
+                    WHERE m.community_id = ring_id
+                    WITH m
+                    ORDER BY coalesce(m.risk_score, 0.0) DESC, m.account_id
+                    LIMIT $node_limit
+                    RETURN collect({
+                        id: m.account_id,
+                        risk_score: coalesce(m.risk_score, 0.0),
+                        degree: count{(m)-[:TRANSFERRED_TO]-()}
+                    }) AS nodes
+                }
+                CALL (ring_id) {
+                    MATCH (src:Account)
+                    WHERE src.community_id = ring_id
+                    MATCH (src)-[:TRANSFERRED_TO]->(tgt:Account)
+                    WHERE tgt.community_id = ring_id
+                    WITH DISTINCT src.account_id AS source, tgt.account_id AS target
+                    LIMIT $edge_limit
+                    RETURN collect({source: source, target: target}) AS edges
+                }
                 RETURN ring_id,
-                       size(members) AS node_count,
+                       node_count,
                        avg_risk AS risk_score,
-                       [m IN members | {id: m.account_id, risk_score: coalesce(m.risk_score, 0.0),
-                                        degree: size([(m)-[:TRANSFERRED_TO]-() | 1])}] AS nodes,
+                       nodes,
                        edges
-                ORDER BY avg_risk DESC LIMIT 20
+                ORDER BY risk_score DESC, node_count DESC
             """,
             "risk_scores": """
                 MATCH (a:Account)
-                WHERE a.risk_score >= 0.7
-                RETURN 'HIGH-' + toString(id(a)) AS ring_id,
+                WHERE a.risk_score IS NOT NULL AND a.risk_score >= 0.7
+                RETURN 'HIGH-' + coalesce(toString(a.account_id), elementId(a)) AS ring_id,
                        1 AS node_count,
                        a.risk_score AS risk_score,
                        [{id: a.account_id, risk_score: a.risk_score, degree: 0}] AS nodes,
                        [] AS edges
-                ORDER BY a.risk_score DESC LIMIT 20
+                ORDER BY a.risk_score DESC
+                LIMIT $ring_limit
             """,
             "central_accounts": """
                 MATCH (a:Account)
                 WHERE a.risk_score IS NOT NULL
-                WITH a ORDER BY a.risk_score DESC LIMIT 20
-                MATCH (a)-[r:TRANSFERRED_TO]-(neighbor:Account)
-                WITH a, collect(DISTINCT neighbor) AS neighbors
-                RETURN 'HUB-' + a.account_id AS ring_id,
+                WITH a
+                ORDER BY a.risk_score DESC, a.account_id
+                LIMIT $ring_limit
+                CALL (a) {
+                    MATCH (a)-[:TRANSFERRED_TO]-(neighbor:Account)
+                    WITH DISTINCT neighbor
+                    ORDER BY coalesce(neighbor.risk_score, 0.0) DESC, neighbor.account_id
+                    LIMIT $node_limit
+                    RETURN collect(neighbor) AS neighbors
+                }
+                RETURN 'HUB-' + toString(a.account_id) AS ring_id,
                        size(neighbors) + 1 AS node_count,
                        a.risk_score AS risk_score,
-                       [{id: a.account_id, risk_score: a.risk_score, degree: size(neighbors)}]
+                       [{id: a.account_id, risk_score: a.risk_score, degree: count{(a)-[:TRANSFERRED_TO]-()}}]
                          + [n IN neighbors | {id: n.account_id, risk_score: coalesce(n.risk_score, 0.3), degree: 1}] AS nodes,
                        [n IN neighbors | {source: a.account_id, target: n.account_id}] AS edges
                 ORDER BY a.risk_score DESC
@@ -238,7 +288,13 @@ class RealBackend:
 
         rings = []
         with self._driver().session() as s:
-            for rec in s.run(cypher, min_ring_size=min_ring_size):
+            params = {
+                "min_ring_size": min_ring_size,
+                "ring_limit": ring_limit,
+                "node_limit": node_limit,
+                "edge_limit": edge_limit,
+            }
+            for rec in s.run(cypher, **params):
                 r = dict(rec)
                 risk = r["risk_score"] or 0.0
                 nodes = [{"data": n} for n in r["nodes"]]

@@ -6,8 +6,6 @@ import json
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
-from pyspark.sql import functions as F
-
 from _gold_constants import (
     RING_SIZE_HIGH,
     RING_SIZE_LOW,
@@ -21,6 +19,7 @@ SAME_COMMUNITY_FRAC_MIN = 0.95
 COUNTERPARTY_RATIO_MIN = 1.10
 ANCHOR_CATEGORY_COUNT = 4
 ALLOWED_TOPOLOGIES = ("star", "mesh", "chain")
+F = None
 
 
 @dataclass
@@ -44,6 +43,15 @@ def load_ground_truth(path: str) -> dict[str, Any]:
         return json.load(f)
 
 
+def _load_spark_functions():
+    global F
+    if F is None:
+        from pyspark.sql import functions as spark_functions
+
+        F = spark_functions
+    return F
+
+
 def run_gold_table_checks(
     spark,
     catalog: str,
@@ -52,6 +60,8 @@ def run_gold_table_checks(
     *,
     emit: bool = True,
 ) -> list[GoldCheckResult]:
+    _load_spark_functions()
+
     gold_accounts = f"`{catalog}`.`{schema}`.gold_accounts"
     gold_pairs = f"`{catalog}`.`{schema}`.gold_account_similarity_pairs"
     gold_rings = f"`{catalog}`.`{schema}`.gold_fraud_ring_communities"

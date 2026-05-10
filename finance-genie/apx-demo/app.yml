@@ -1,1 +1,22 @@
 command: ["uvicorn", "fraud_analyst.backend.app:app", "--workers", "2"]
+
+# Runtime environment for the Fraud Signal Workbench.
+#
+# The four FRAUD_ANALYST_* variables drive the AppConfig in
+# src/fraud_analyst/backend/core/_config.py. WAREHOUSE_ID and GENIE_SPACE_ID
+# are bound to Databricks resources declared in databricks.yml (see the
+# `resources:` block on the app); CATALOG and SCHEMA are static defaults
+# pointing at the gold tables produced by the automated/ pipeline.
+#
+# DATABRICKS_HOST and DATABRICKS_TOKEN are injected automatically by the
+# Databricks Apps runtime; the WorkspaceClient picks them up without any
+# explicit binding here.
+env:
+  - name: FRAUD_ANALYST_WAREHOUSE_ID
+    valueFrom: "warehouse"
+  - name: FRAUD_ANALYST_GENIE_SPACE_ID
+    valueFrom: "genie"
+  - name: FRAUD_ANALYST_CATALOG
+    value: "graph_enriched_lakehouse"
+  - name: FRAUD_ANALYST_SCHEMA
+    value: "graph_enriched_schema"

@@ -77,42 +77,54 @@ apx-demo/
 ### App-specific work, status checklist
 
 Backend (`src/fraud_analyst/backend/`):
-- [ ] `models.py`, port the 3-model Pydantic shapes from the proposal (`SearchIn`, `RingOut`, `RiskAccountOut`, `HubAccountOut`, `LoadIn`, `LoadOut`, `LoadStep`, `QualityCheck`, `AskIn`, `AskOut`, `AnswerTable`)
-- [ ] `router.py`, define routes: `POST /api/search/rings`, `POST /api/search/risk`, `POST /api/search/hubs`, `POST /api/load`, `POST /api/genie/ask`, all with `response_model`
-- [ ] `services/neo4j_signals.py`, mock first (returns the 6 wireframe rings), real Neo4j after
-- [ ] `services/delta_loader.py`, mock first (synthesizes the 7-step `LoadOut`), real Databricks SDK after
-- [ ] `services/genie_client.py`, mock first (canned `ANSWERS` dict from `app.jsx`), real Genie Conversation API after
+- [x] `models.py`, ported the 3-model Pydantic shapes (`RingOut`, `RiskAccountOut`, `HubAccountOut`, `LoadIn`, `LoadOut`, `LoadStep`, `QualityCheck`, `AskIn`, `AskOut`, `AnswerTable`, `GraphNode`, `GraphEdge`, `Graph`)
+- [x] `router.py`, defined 5 endpoints: `GET /api/search/rings`, `GET /api/search/risk`, `GET /api/search/hubs`, `POST /api/load`, `POST /api/genie/ask`, each with `response_model` and `operation_id`
+- [x] `services/sql.py`, generic warehouse statement-execution helper
+- [x] `services/rings.py`, `services/accounts.py`, `services/loader.py` — real reads against `gold_fraud_ring_communities` and `gold_accounts` via Databricks SDK statement execution. The Neo4j-direct path was dropped in favor of the gold tables since W1/W3/W4 columns now exist.
+- [x] `services/genie.py`, real Genie Conversation API (`ws.genie.start_conversation_and_wait` / `create_message_and_wait`, attachment query result lookup)
+- [x] `core/_config.py` extended with `warehouse_id`, `genie_space_id`, `catalog`, `schema_` fields (env prefix `FRAUD_ANALYST_`)
 
 Frontend (`src/fraud_analyst/ui/`):
-- [ ] Tailwind theme tokens, port `tailwind.config.ts` from proposal so design tokens match the wireframe
-- [ ] IBM Plex font links in `index.html`
-- [ ] Add shadcn primitives via `add_component`: `button`, `card`, `table`, `checkbox`, `select`, `input`, `badge`, `dialog`, `textarea`, `skeleton`, `tooltip`
-- [ ] `lib/ringLayout.ts`, deterministic seed-based layout port of `app.jsx`
-- [ ] `components/RingThumb.tsx`, SVG thumbnail
-- [ ] `components/NetworkPreview.tsx`, SVG cluster grid
-- [ ] `components/RiskBar.tsx`, `Pill.tsx`, `Stepper.tsx`, `Shell.tsx`
-- [ ] `routes/index.tsx`, replace scaffold with stepper-driven 3-screen flow
-- [ ] `routes/_search.tsx` (Screen 1), `routes/_load.tsx` (Screen 2), `routes/_analyze.tsx` (Screen 3), `components/ReportModal.tsx`
-- [ ] After backend routes land, run `refresh_openapi` so the generated client at `ui/lib/api.ts` updates
+- [x] Tailwind theme tokens, ported into `styles/globals.css` (Tailwind v4 `@theme inline` block) so design tokens match the wireframe (F1)
+- [x] IBM Plex font links in `index.html` (F1)
+- [x] Add shadcn primitives via `add_component`: `button`, `card`, `table`, `checkbox`, `select`, `input`, `badge`, `dialog`, `textarea`, `skeleton`, `tooltip` (F2; pre-existing plus added: table, checkbox, select, dialog, textarea)
+- [x] `lib/riskColors.ts`, `lib/ringLayout.ts`, deterministic seed-based layout port of `app.jsx` (F3)
+- [x] `components/RingThumb.tsx`, SVG thumbnail (F4)
+- [x] `components/NetworkPreview.tsx`, SVG cluster grid (F4)
+- [x] `components/Pill.tsx`, `RiskBar.tsx`, `Stepper.tsx`, `Shell.tsx` (F5)
+- [x] `routes/_workbench.tsx` layout with `Shell` + `Stepper` + `FlowProvider`, plus `lib/flowContext.tsx` for shared state (selectedRings, conversationId, transcript)
+- [x] `routes/_workbench/search.tsx` (Screen 1, F6), `routes/_workbench/load.tsx` (Screen 2, F7), `routes/_workbench/analyze.tsx` (Screen 3, F8)
+- [x] `components/ReportModal.tsx` (F9) — shadcn Dialog with summary, loaded rings, conversation log; Print to PDF button; "Save to lakehouse" disabled with tooltip pending backend endpoint
+- [x] `routes/index.tsx` redirects to `/search` (F10)
+- [x] OpenAPI client at `ui/lib/api.ts` regenerated; screens swapped from mock services to `useSearchRingsSuspense`, `useSearchRiskAccountsSuspense`, `useSearchCentralAccountsSuspense`, `useLoadRings`, `useAskGenie` (F11)
+- [x] Mock files (`mockSignals.ts`, `mockLoader.ts`, `mockGenie.ts`) deleted; static reference content moved to `lib/genieReference.ts`
 
 Operational:
-- [ ] `app.yml`, add `env:` resource bindings for `DATABRICKS_WAREHOUSE_ID`, `GENIE_SPACE_ID`, and Neo4j secrets (currently only has the `command:` line)
-- [ ] `databricks.yml`, confirm bundle deploy targets are correct
-- [ ] First `apx dev start`, verify both servers come up clean
-- [ ] First `apx dev check`, baseline type-check pass
-- [ ] First end-to-end smoke walk through Screens 1 to 3
+- [x] `app.yml`, env bindings added for `FRAUD_ANALYST_WAREHOUSE_ID` (resource `warehouse`), `FRAUD_ANALYST_GENIE_SPACE_ID` (resource `genie`), `FRAUD_ANALYST_CATALOG`, `FRAUD_ANALYST_SCHEMA`
+- [x] `databricks.yml`, added `warehouse_id` and `genie_space_id` bundle variables plus matching `sql_warehouse` and `genie_space` resources on the app
+- [x] First `apx dev check`, baseline type-check pass (tsc and ty both green)
+- [ ] First `apx dev start`, verify both servers come up clean against a workspace where `FRAUD_ANALYST_*` env vars are set (deploy-time check, not local)
+- [ ] First end-to-end smoke walk through Screens 1 to 3 against deployed app
+- [ ] Bundle deploy via `databricks bundle deploy --profile azure-rk-knight --var "warehouse_id=…" --var "genie_space_id=…"`
 
 ### Next steps, in order
 
-1. Run `apx dev start` once via the apx MCP server to confirm the scaffold boots and grab the dev URL.
-2. Implement `models.py` first, this is the contract the rest of the work hangs off.
-3. Implement `router.py` with mock service responses inline (or thin stubs in `services/`) so the OpenAPI surface stabilizes immediately.
-4. Run `refresh_openapi` and `check` to confirm the generated client compiles.
-5. Drop the Tailwind theme tokens and IBM Plex fonts in next, the design system check happens once and protects everything that follows.
-6. Build the bespoke SVG components (`RingThumb`, `NetworkPreview`) before the screens, since the screens consume them.
-7. Build screens 1 to 3 in order, each one moves through the API stubs and gets verified in the browser via Playwright MCP before moving to the next.
-8. Swap mock services for real Neo4j, Databricks SDK, and Genie API. Confirm secrets are wired through `app.yml` resource bindings.
-9. `apx build`, then `apx deploy` (or `databricks bundle deploy`) into the workspace.
+All implementation steps are complete. The remaining work is a one-shot deploy plus smoke verification:
+
+1. Confirm the Databricks workspace is reachable: `manage_workspace(action="status")` via the Databricks MCP, profile `azure-rk-knight`.
+2. Get the workspace warehouse ID and Genie Space ID:
+   - `databricks warehouses list --profile azure-rk-knight`
+   - `databricks api get /api/2.0/genie/spaces --profile azure-rk-knight`
+3. Confirm the gold tables exist and have rows in `graph_enriched_lakehouse.graph_enriched_schema.gold_accounts` and `gold_fraud_ring_communities`. If not, run the `automated/` pipeline first.
+4. From `apx-demo/`, run the deploy:
+   ```
+   databricks bundle deploy --profile azure-rk-knight \
+     --var "warehouse_id=<id from step 2>" \
+     --var "genie_space_id=<id from step 2>"
+   ```
+5. Open the deployed app URL. Authenticate via OAuth.
+6. Walk Screens 1 → 2 → 3 against real data. Reference: `apx-demo-client-testing.md` Phase 3 manual walkthrough section.
+7. If anything 500s, tail logs: `databricks apps logs fraud-analyst --profile azure-rk-knight`. Most failures trace to a missing column on a gold table or an OAuth scope issue on the Genie call.
 
 ---
 
