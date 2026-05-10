@@ -137,13 +137,19 @@ From `finance-genie/apx-demo/`, run `apx build`. This produces a static frontend
 
 ### 2.3 Wire `app.yml` resource bindings
 
-Open `apx-demo/app.yml`. Confirm the `env:` section binds the resources the backend needs at runtime. Per the original proposal at `demo-client-graph.md` lines 656 through 680, the bindings are:
+Open `graph-fraud-analyst/app.yml`. Confirm the `env:` section binds the resources the backend needs at runtime. As of the current bundle (`graph-fraud-analyst/databricks.yml`), the bindings are:
 
-- `DATABRICKS_WAREHOUSE_ID` from the `sql-warehouse` resource keyed `fraud-analyst-warehouse`.
-- `GENIE_SPACE_ID` from the `genie-space` resource keyed `fraud-signals-genie`.
-- `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` from the `neo4j-graph-engineering` secret scope keys, matching what `automated/setup_secrets.sh` loads.
+- `GRAPH_FRAUD_ANALYST_WAREHOUSE_ID` from the `sql_warehouse` resource keyed `warehouse`.
+- `GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID` from the `genie_space` resource keyed `genie` (Genie Space binding name `graph-fraud-analyst-genie`).
+- `GRAPH_FRAUD_ANALYST_CATALOG` and `GRAPH_FRAUD_ANALYST_SCHEMA` as static `value:` env vars (defaults `graph-enriched-lakehouse` and `graph-enriched-schema`).
+
+There is no Neo4j binding. The runtime reads from the pre-computed gold Delta tables produced by `../automated/`, not from a live Neo4j connection. If a future iteration needs live Cypher, add a Neo4j secret-scope binding here; for now leave it absent.
 
 If any binding is missing or points at a resource that does not exist in the workspace, add or fix it before deploying. A missing binding turns into a 500 on the corresponding endpoint at runtime, which is harder to debug than a deploy-time error.
+
+### 2.3.1 Grant Unity Catalog access to the app SP
+
+The SQL warehouse runs every backend query as the app's auto-provisioned service principal, not as the logged-in user. After the first deploy, grant the SP `USE CATALOG`, `USE SCHEMA`, and `SELECT` on the gold-table schema. Full steps are in `graph-fraud-analyst/README.md` (step 3). Without this grant, every `/api/search/*` and `/api/load` request returns 500 with `[INSUFFICIENT_PERMISSIONS] User does not have USE CATALOG on Catalog 'graph-enriched-lakehouse'`.
 
 ### 2.4 Bundle deploy
 
@@ -160,10 +166,10 @@ apx may also expose `apx deploy` as a wrapper; check `apx --help` to confirm. Th
 Use the apx MCP `databricks_apps_logs` tool, or the CLI:
 
 ```bash
-databricks apps logs fraud-analyst --profile <your-databricks-profile>
+databricks apps logs graph-fraud-analyst --profile <your-databricks-profile> --follow
 ```
 
-Confirm the app boots cleanly. The first signs of life are the FastAPI startup banner and any DI bootstrap logs from `src/fraud_analyst/backend/core/`. If the app crashes on boot, the error is almost always a missing env var or a syntax issue in the production build. Check the build artifact and the resource bindings before assuming a code bug.
+Confirm the app boots cleanly. The first signs of life are the FastAPI startup banner and any DI bootstrap logs from `src/graph_fraud_analyst/backend/core/`. If the app crashes on boot, the error is almost always a missing env var or a syntax issue in the production build. Check the build artifact and the resource bindings before assuming a code bug.
 
 Pass criteria for Phase 2: `bundle deploy` exits 0, the deployed app URL is reachable, the logs show a clean startup with zero stack traces.
 
@@ -175,7 +181,7 @@ Open the deployed URL in a fresh browser tab. The app uses Databricks OAuth, so 
 
 ### 3.1 Manual walkthrough on the deployed app
 
-Repeat the Phase 1 walk against the deployed URL. While the mock services still drive the screens (they ship inside the bundle until F11 swaps them), the deployed walk verifies:
+Repeat the Phase 1 walk against the deployed URL. F11 has landed and the backend now calls real Databricks services through the auto-generated OpenAPI client; there are no mock services left in the bundle. The deployed walk verifies:
 
 - OAuth flow works end to end with no redirect loops.
 - Static assets serve from the FastAPI process. Zero 404s on fonts, icons, or assets.
@@ -183,11 +189,11 @@ Repeat the Phase 1 walk against the deployed URL. While the mock services still 
 - Theme tokens render the same as on local.
 - The build output matches what you saw in dev, no missing CSS or layout regressions.
 
-Once F11 lands and the OpenAPI client takes over, the same walk also exercises real Neo4j, real Delta loads, and a real Genie space. At that point, expand the checklist:
+Because real services drive the screens, also check:
 
-- Screen 1 search latency is acceptable, under 2 s cold and under 500 ms warm.
+- Screen 1 search latency is acceptable: under 2 s cold and under 500 ms warm. Rings come from `gold_fraud_ring_communities` via SQL warehouse, not from live Neo4j Cypher. The `automated/` pipeline materializes the rings; the runtime only reads.
 - Screen 2 row counts match what the gold tables actually contain for the selected rings. Cross-check against `automated/cli/04_validate_gold_tables.py` output.
-- Screen 3 Genie answers come from the real Conversation API, including non-canned table results that vary by question.
+- Screen 3 Genie answers come from the real Conversation API. The first prompt may return a canned greeting; subsequent prompts vary by question and may include a table attachment.
 
 ### 3.2 Playwright MCP automation, deployed
 

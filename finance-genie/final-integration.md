@@ -24,6 +24,30 @@ Frontend hooks (`useSearchRingsSuspense`, `useLoadRings`, `useAskGenie`, `useCur
 
 Deploy state: `graph-fraud-analyst` is `ACTIVE`, deployment `AppDeploymentState.SUCCEEDED`. Gold tables are populated (10 ring candidates). OAuth, OBO, and live smoke against the deployed URL have not been verified.
 
+## Live status
+
+**Last updated:** 2026-05-10 23:52 UTC after the end-to-end smoke pass.
+
+| Item | State |
+| --- | --- |
+| 1. Deployed-app smoke | **Done.** All five backend endpoints returned 200 in browser smoke: `/api/search/rings`, `/api/search/risk`, `/api/search/hubs`, `/api/load`, `/api/genie/ask`. |
+| 2. OBO scope wiring | **Deferred (not on demo path).** `/api/current-user` is only used on `/_sidebar/profile`, which is not part of the Search → Load → Analyze flow. Revisit only if the profile route gets demoed. |
+| 3. Genie binding doc reconciliation | Open. |
+| 4. Neo4j doc amend | Open. |
+| 5. Logs workaround confirm | **Done.** `databricks apps logs graph-fraud-analyst --follow` works; used it repeatedly during this session. |
+| 6. Playwright automation | Out of scope per decision. |
+| 7. F9 ReportModal | Out of scope per decision. |
+| 8. Lakebase cleanup | **Done (full removal).** During the post-rename crash investigation we deleted `core/lakebase.py`, removed `Dependencies.Session`, dropped `sqlmodel` and `psycopg` from `pyproject.toml`, and removed `PGAPPNAME` from `.env`. The deployed app's lifespan no longer crashes. |
+| 9. Final verification | Pending after items 3 and 4. |
+
+### Additional bugs found and fixed during this pass
+
+| Bug | Fix |
+| --- | --- |
+| App SP missing Unity Catalog grants. Every SQL endpoint 500'd with `[INSUFFICIENT_PERMISSIONS] User does not have USE CATALOG on Catalog 'graph-enriched-lakehouse'`. | Granted `USE CATALOG` on the catalog, plus `USE SCHEMA` and `SELECT` on `graph-enriched-schema` to the app SP `457da81f-e1f4-47d6-8dc6-d122a0c68093`. Documented the steps in `graph-fraud-analyst/README.md`. |
+| `/api/search/risk` and `/api/search/hubs` 500'd with `[INVALID_LIMIT_LIKE_EXPRESSION.DATA_TYPE] The limit like expression "25" is invalid. The limit expression must be integer type, but got "BIGINT"`. | In `services/accounts.py`, changed the `row_limit` parameter declaration from `type="BIGINT"` to `type="INT"`. Redeployed. |
+| App startup crashed because the dependency factory auto-registered `_LakebaseDependency` even though the `db` resource binding was removed. Lifespan raised `pydantic_core.ValidationError: 1 validation error for DatabaseConfig PGAPPNAME Field required`. | See item 8 above (full Lakebase removal). |
+
 ---
 
 ## Checklist
