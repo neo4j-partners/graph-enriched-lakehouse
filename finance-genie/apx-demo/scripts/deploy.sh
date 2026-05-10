@@ -2,7 +2,7 @@
 #
 # deploy.sh: deploy the fraud-analyst bundle to Databricks.
 #
-# Reads .env (alongside this script's app root) for:
+# Reads the shared finance-genie/.env (one directory up) for:
 #   DATABRICKS_PROFILE             ~/.databrickscfg profile name
 #   FRAUD_ANALYST_WAREHOUSE_ID     SQL warehouse the app queries
 #   FRAUD_ANALYST_GENIE_SPACE_ID   Genie Space the app calls
@@ -17,8 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ROOT_DIR="$(cd "${APP_DIR}/.." && pwd)"
-ENV_FILE="${APP_DIR}/.env"
-ROOT_ENV_FILE="${ROOT_DIR}/.env"
+ENV_FILE="${ROOT_DIR}/.env"
 
 show_help() {
   awk '/^[^#]/{exit} NR>2{sub(/^# ?/,""); print}' "${BASH_SOURCE[0]}"
@@ -34,11 +33,10 @@ if [[ "${1:-}" == "--log" ]]; then
   LOG_AFTER_DEPLOY=true
 fi
 
-if [[ -f "${ROOT_ENV_FILE}" ]]; then
-  ENV_FILE="${ROOT_ENV_FILE}"
-elif [[ ! -f "${ENV_FILE}" ]]; then
-  echo "❌ Missing ${ROOT_ENV_FILE}"
-  echo "   cp ${ROOT_DIR}/.env.sample ${ROOT_ENV_FILE} and fill in values."
+if [[ ! -f "${ENV_FILE}" ]]; then
+  echo "❌ Missing ${ENV_FILE}"
+  echo "   cp ${ROOT_DIR}/.env.sample ${ENV_FILE} and fill in values."
+  echo "   The finance-genie repo uses one shared .env at the repo root."
   exit 1
 fi
 
@@ -50,6 +48,7 @@ set -a; source "${ENV_FILE}"; set +a
 : "${FRAUD_ANALYST_GENIE_SPACE_ID:?FRAUD_ANALYST_GENIE_SPACE_ID must be set in .env}"
 
 APP_NAME="fraud-analyst"
+BUNDLE_APP_KEY="fraud-analyst-app"
 
 echo "── fraud-analyst deploy ─────────────────────────────────────────"
 echo "  profile        : ${DATABRICKS_PROFILE}"
@@ -61,6 +60,7 @@ echo "────────────────────────�
 
 cd "${APP_DIR}"
 
+# Step 1: upload bundle + create/update the app resource.
 databricks bundle deploy \
   --profile "${DATABRICKS_PROFILE}" \
   --var "warehouse_id=${FRAUD_ANALYST_WAREHOUSE_ID}" \
@@ -68,6 +68,18 @@ databricks bundle deploy \
 
 echo ""
 echo "✅ Bundle deployed."
+
+# Step 2: push the uploaded source to the app's compute and start uvicorn.
+# bundle deploy alone leaves the app UNAVAILABLE with zero deployments.
+echo ""
+echo "🚀 Starting app on compute…"
+databricks bundle run "${BUNDLE_APP_KEY}" \
+  --profile "${DATABRICKS_PROFILE}" \
+  --var "warehouse_id=${FRAUD_ANALYST_WAREHOUSE_ID}" \
+  --var "genie_space_id=${FRAUD_ANALYST_GENIE_SPACE_ID}"
+
+echo ""
+echo "✅ App is live."
 
 if [[ "${LOG_AFTER_DEPLOY}" == "true" ]]; then
   echo ""

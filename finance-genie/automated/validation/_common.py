@@ -24,7 +24,6 @@ from dotenv import load_dotenv
 
 _AUTOMATED_DIR = Path(__file__).resolve().parent.parent
 _ROOT_ENV_PATH = _AUTOMATED_DIR.parent / ".env"
-_LOCAL_ENV_PATH = _AUTOMATED_DIR / ".env"
 
 
 def fail(msg: str) -> NoReturn:
@@ -45,16 +44,15 @@ def header(label: str) -> None:
 
 
 def load_env(required: Iterable[str]) -> None:
-    """Load root .env, then automated/.env fallback, and verify vars.
+    """Load finance-genie/.env and verify the required vars are non-empty.
 
     Calls fail() with a clear message if .env is missing or any listed var
     is unset or empty. Path resolution is anchored to _common.py's location,
     so it works regardless of the caller's cwd.
     """
-    if not _ROOT_ENV_PATH.is_file() and not _LOCAL_ENV_PATH.is_file():
-        fail(f".env not found at {_ROOT_ENV_PATH} or {_LOCAL_ENV_PATH}")
+    if not _ROOT_ENV_PATH.is_file():
+        fail(f".env not found at {_ROOT_ENV_PATH}")
     load_dotenv(_ROOT_ENV_PATH, override=True)
-    load_dotenv(_LOCAL_ENV_PATH, override=False)
     missing = [v for v in required if not os.environ.get(v)]
     if missing:
         fail(f"missing or empty in .env: {', '.join(missing)}")

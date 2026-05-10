@@ -5,13 +5,13 @@ bundle:
 # variables block. Both must be valid IDs from the target workspace.
 #
 #   databricks bundle deploy \
-#     --profile azure-rk-knight \
+#     --profile <your-databricks-profile> \
 #     --var "warehouse_id=abc123..." \
 #     --var "genie_space_id=xyz789..."
 #
 # Find values via:
-#   databricks warehouses list --profile azure-rk-knight
-#   databricks api get /api/2.0/genie/spaces --profile azure-rk-knight
+#   databricks warehouses list --profile <your-databricks-profile>
+#   databricks api get /api/2.0/genie/spaces --profile <your-databricks-profile>
 variables:
   warehouse_id:
     description: "SQL warehouse ID used to query gold_accounts and gold_fraud_ring_communities."

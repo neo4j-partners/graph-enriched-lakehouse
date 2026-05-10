@@ -1,8 +1,7 @@
 """Central configuration for the finance-genie generator and verifier.
 
-Configuration is loaded from finance-genie/.env first. automated/.env remains a
-compatibility fallback for older local workflows. Environment variables already
-set in the shell take precedence over either file.
+Configuration is loaded from finance-genie/.env. Environment variables already
+set in the shell take precedence over the file.
 """
 
 import os
@@ -12,7 +11,6 @@ try:
     from dotenv import load_dotenv
     _automated_dir = Path(__file__).resolve().parent
     load_dotenv(_automated_dir.parent / ".env", override=False)
-    load_dotenv(_automated_dir / ".env", override=False)
 except ImportError:
     pass  # python-dotenv not installed; use shell environment or defaults
 

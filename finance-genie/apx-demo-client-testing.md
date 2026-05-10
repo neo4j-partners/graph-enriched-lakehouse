@@ -29,7 +29,7 @@ Before testing anything, all of these should already be true:
 - shadcn primitives are installed: button, card, table, checkbox, select, input, badge, dialog, textarea, skeleton, tooltip.
 - Light theme in effect by default. IBM Plex fonts load from Google Fonts via `index.html`.
 - The three screen routes exist at `routes/_workbench/search.tsx`, `routes/_workbench/load.tsx`, `routes/_workbench/analyze.tsx`.
-- The Databricks MCP server is connected to the workspace profile `azure-rk-knight`. Confirm via `manage_workspace(action="status")`.
+- The Databricks MCP server is connected to the workspace profile `<your-databricks-profile>`. Confirm via `manage_workspace(action="status")`.
 
 If any of these is not true, fix that first.
 
@@ -125,11 +125,11 @@ Pass criteria for Phase 1: every manual checkpoint passes by hand, the Playwrigh
 
 ## Phase 2, Deploy to Databricks
 
-The deploy target is a Databricks App at `https://adb-1098933906466604.4.azuredatabricks.net/` per the project-level `databricks/CLAUDE.md`. Profile: `azure-rk-knight`.
+The deploy target is a Databricks App at `https://<workspace-host>/` per the project-level `databricks/CLAUDE.md`. Profile: `<your-databricks-profile>`.
 
 ### 2.1 Confirm workspace connection
 
-Use the Databricks MCP `manage_workspace` tool with `action="status"` to confirm the active profile. If the token is expired, refresh via `manage_workspace(action="login", host="https://adb-1098933906466604.4.azuredatabricks.net/")`.
+Use the Databricks MCP `manage_workspace` tool with `action="status"` to confirm the active profile. If the token is expired, refresh via `manage_workspace(action="login", host="https://<workspace-host>/")`.
 
 ### 2.2 Build the production bundle
 
@@ -150,7 +150,7 @@ If any binding is missing or points at a resource that does not exist in the wor
 Run the deploy from `apx-demo/`:
 
 ```bash
-databricks bundle deploy --profile azure-rk-knight
+databricks bundle deploy --profile <your-databricks-profile>
 ```
 
 apx may also expose `apx deploy` as a wrapper; check `apx --help` to confirm. The deploy prints the deployed app URL on success. Capture it.
@@ -160,7 +160,7 @@ apx may also expose `apx deploy` as a wrapper; check `apx --help` to confirm. Th
 Use the apx MCP `databricks_apps_logs` tool, or the CLI:
 
 ```bash
-databricks apps logs fraud-analyst --profile azure-rk-knight
+databricks apps logs fraud-analyst --profile <your-databricks-profile>
 ```
 
 Confirm the app boots cleanly. The first signs of life are the FastAPI startup banner and any DI bootstrap logs from `src/fraud_analyst/backend/core/`. If the app crashes on boot, the error is almost always a missing env var or a syntax issue in the production build. Check the build artifact and the resource bindings before assuming a code bug.

@@ -105,26 +105,26 @@ Operational:
 - [x] First `apx dev check`, baseline type-check pass (tsc and ty both green)
 - [ ] First `apx dev start`, verify both servers come up clean against a workspace where `FRAUD_ANALYST_*` env vars are set (deploy-time check, not local)
 - [ ] First end-to-end smoke walk through Screens 1 to 3 against deployed app
-- [ ] Bundle deploy via `databricks bundle deploy --profile azure-rk-knight --var "warehouse_id=…" --var "genie_space_id=…"`
+- [ ] Bundle deploy via `databricks bundle deploy --profile <your-databricks-profile> --var "warehouse_id=…" --var "genie_space_id=…"`
 
 ### Next steps, in order
 
 All implementation steps are complete. The remaining work is a one-shot deploy plus smoke verification:
 
-1. Confirm the Databricks workspace is reachable: `manage_workspace(action="status")` via the Databricks MCP, profile `azure-rk-knight`.
+1. Confirm the Databricks workspace is reachable: `manage_workspace(action="status")` via the Databricks MCP, profile `<your-databricks-profile>`.
 2. Get the workspace warehouse ID and Genie Space ID:
-   - `databricks warehouses list --profile azure-rk-knight`
-   - `databricks api get /api/2.0/genie/spaces --profile azure-rk-knight`
+   - `databricks warehouses list --profile <your-databricks-profile>`
+   - `databricks api get /api/2.0/genie/spaces --profile <your-databricks-profile>`
 3. Confirm the gold tables exist and have rows in `graph_enriched_lakehouse.graph_enriched_schema.gold_accounts` and `gold_fraud_ring_communities`. If not, run the `automated/` pipeline first.
 4. From `apx-demo/`, run the deploy:
    ```
-   databricks bundle deploy --profile azure-rk-knight \
+   databricks bundle deploy --profile <your-databricks-profile> \
      --var "warehouse_id=<id from step 2>" \
      --var "genie_space_id=<id from step 2>"
    ```
 5. Open the deployed app URL. Authenticate via OAuth.
 6. Walk Screens 1 → 2 → 3 against real data. Reference: `apx-demo-client-testing.md` Phase 3 manual walkthrough section.
-7. If anything 500s, tail logs: `databricks apps logs fraud-analyst --profile azure-rk-knight`. Most failures trace to a missing column on a gold table or an OAuth scope issue on the Genie call.
+7. If anything 500s, tail logs: `databricks apps logs fraud-analyst --profile <your-databricks-profile>`. Most failures trace to a missing column on a gold table or an OAuth scope issue on the Genie call.
 
 ---
 
@@ -737,7 +737,7 @@ mcp-cli call apx/get_frontend_url '{}'
 
 # Phase 5, Deploy
 mcp-cli call apx/deploy '{}'
-databricks apps logs fraud-analyst --profile azure-rk-knight
+databricks apps logs fraud-analyst --profile <your-databricks-profile>
 ```
 
 ---

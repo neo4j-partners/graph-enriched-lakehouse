@@ -8,11 +8,13 @@ The fastest path to a live demo.
 
 ### 1. Configure
 
+The whole `finance-genie` repo shares a single `.env` at the repo root. If it does not exist yet, copy the sample and fill in values:
+
 ```bash
-cp .env.sample .env
+cp ../.env.sample ../.env
 ```
 
-Required values:
+Required values for this app (already documented in `../.env.sample` under the `apx-demo / fraud-analyst` section, plus the workspace block at the top):
 
 | Variable | Description |
 | --- | --- |
@@ -22,13 +24,20 @@ Required values:
 | `FRAUD_ANALYST_CATALOG` | Unity Catalog catalog (default `graph-enriched-lakehouse`). |
 | `FRAUD_ANALYST_SCHEMA` | Unity Catalog schema (default `graph-enriched-schema`). |
 
+If you are also running the wider finance-genie demo, see `../setup_secrets.sh` for provisioning Neo4j / Genie / MCP secret scopes. That script is not required for this app alone, which uses OAuth via the service principal.
+
 ### 2. Deploy
 
 ```bash
 ./scripts/deploy.sh
 ```
 
-The script sources `.env`, validates the required IDs, builds the bundle, and runs `databricks bundle deploy` with the right `--var` bindings.
+The script sources `.env`, validates the required IDs, then runs two CLI calls:
+
+1. `databricks bundle deploy` uploads the build, creates the app resource, and attaches the warehouse, Genie Space, and Lakebase database from `databricks.yml`.
+2. `databricks bundle run fraud-analyst-app` pushes the uploaded source to the app's compute and starts uvicorn.
+
+`bundle deploy` alone leaves the app `UNAVAILABLE`. The `bundle run` step is what makes the URL serve traffic, so both must succeed.
 
 To deploy and stream live app logs in the same shell:
 
@@ -36,11 +45,11 @@ To deploy and stream live app logs in the same shell:
 ./scripts/deploy.sh --log
 ```
 
-That runs the deploy and then tails `databricks apps logs fraud-analyst --follow` until you ctrl-c.
+That runs both steps above and then tails `databricks apps logs fraud-analyst --follow` until you ctrl-c.
 
 ### 3. Open
 
-The deploy command prints the app URL. Sign in with OAuth, then walk Screen 1 (Search) to Screen 2 (Load) to Screen 3 (Analyze).
+The second step prints the app URL. Sign in with OAuth, then walk Screen 1 (Search) to Screen 2 (Load) to Screen 3 (Analyze).
 
 Prerequisites for the deployed app to return data:
 

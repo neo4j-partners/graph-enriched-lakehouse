@@ -36,6 +36,10 @@ node_modules/
 
 # apx
 .apx/
+.build/
+.mcp.json
+.mcp-credentials.json
 
 # UI dist folder
 src/fraud_analyst/__dist__/
+src/fraud_analyst/ui/lib/

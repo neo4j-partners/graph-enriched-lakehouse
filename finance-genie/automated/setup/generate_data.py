@@ -30,8 +30,8 @@ Fraud design principles:
                Jaccard.  Overall high-risk fraction is nearly the same for
                fraud and normal, so a column filter cannot find them.
 
-All constants are loaded from config.py, which reads automated/.env.
-Copy .env.sample to .env to override defaults. See worklog/strengthen_plan.md
+All constants are loaded from config.py, which reads ../.env.
+Copy ../.env.sample to ../.env to override defaults. See worklog/strengthen_plan.md
 for per-phase tuning values.
 
 Usage:

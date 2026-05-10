@@ -247,12 +247,10 @@ def provision(
 def main() -> None:
     automated_dir = Path(__file__).parent.parent
     root_env_path = automated_dir.parent / ".env"
-    local_env_path = automated_dir / ".env"
-    if not root_env_path.is_file() and not local_env_path.is_file():
-        print(f"FAIL  .env not found at {root_env_path} or {local_env_path}")
+    if not root_env_path.is_file():
+        print(f"FAIL  .env not found at {root_env_path}")
         sys.exit(1)
     load_dotenv(root_env_path, override=True)
-    load_dotenv(local_env_path, override=False)
 
     profile = os.environ.get("DATABRICKS_PROFILE", "").strip()
     if profile:

@@ -14,7 +14,7 @@ Create and validate the Neo4j MCP Unity Catalog connection first:
 
 ```bash
 cd ../neo4j-mcp-demo
-./deploy.sh --profile azure-rk-knight --compute serverless
+./deploy.sh --profile <your-databricks-profile> --compute serverless
 ```
 
 The connection name from that setup must match `UC_CONNECTION_NAME` here. The
@@ -55,13 +55,13 @@ Run a local syntax check:
 Start or update the remote serving endpoint:
 
 ```bash
-./scripts/start_remote.sh --profile azure-rk-knight --compute serverless
+./scripts/start_remote.sh --profile <your-databricks-profile> --compute serverless
 ```
 
 Or run the full local check, deploy, readiness wait, and smoke test:
 
 ```bash
-./scripts/deploy_all.sh --profile azure-rk-knight --compute serverless
+./scripts/deploy_all.sh --profile <your-databricks-profile> --compute serverless
 ```
 
 ## Test
@@ -69,13 +69,13 @@ Or run the full local check, deploy, readiness wait, and smoke test:
 Validate and query the endpoint:
 
 ```bash
-./scripts/test_remote.sh --profile azure-rk-knight
+./scripts/test_remote.sh --profile <your-databricks-profile>
 ```
 
 Send a custom prompt:
 
 ```bash
-./scripts/test_remote.sh --profile azure-rk-knight --prompt "Use Neo4j MCP to show the graph schema."
+./scripts/test_remote.sh --profile <your-databricks-profile> --prompt "Use Neo4j MCP to show the graph schema."
 ```
 
 ## Stop
@@ -83,7 +83,7 @@ Send a custom prompt:
 Delete the serving endpoint to stop remote serving costs:
 
 ```bash
-./scripts/stop_remote.sh --profile azure-rk-knight --yes
+./scripts/stop_remote.sh --profile <your-databricks-profile> --yes
 ```
 
 This deletes only the serving endpoint named by `MODEL_SERVING_ENDPOINT_NAME`.

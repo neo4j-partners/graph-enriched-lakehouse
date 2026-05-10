@@ -23,20 +23,17 @@
 
 set -euo pipefail
 
-# ── Load root .env, with automated/.env as a compatibility fallback ───────────
+# ── Load shared finance-genie/.env ────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-if [[ -f "${ROOT_DIR}/.env" ]]; then
-  set -o allexport
-  # shellcheck source=/dev/null
-  source "${ROOT_DIR}/.env"
-  set +o allexport
-elif [[ -f "${SCRIPT_DIR}/.env" ]]; then
-  set -o allexport
-  # shellcheck source=/dev/null
-  source "${SCRIPT_DIR}/.env"
-  set +o allexport
+if [[ ! -f "${ROOT_DIR}/.env" ]]; then
+  echo "Error: ${ROOT_DIR}/.env not found. Copy .env.sample to .env at the finance-genie root." >&2
+  exit 1
 fi
+set -o allexport
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/.env"
+set +o allexport
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 if [[ -z "${DATABRICKS_PROFILE:-}" ]]; then

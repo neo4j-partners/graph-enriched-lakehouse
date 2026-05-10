@@ -104,8 +104,8 @@ cp .env.sample .env
 cd automated
 ```
 
-Edit `finance-genie/.env` and fill in all placeholder values. Existing
-`automated/.env` files are fallback-only for compatibility.
+Edit `finance-genie/.env` and fill in all placeholder values. `automated/`
+scripts read that shared root env file as `../.env`.
 
 ### 2. Generate synthetic data
 
@@ -322,15 +322,13 @@ uv run validation/verify_gds.py
 uv run validation/diagnose_similarity.py
 ```
 
-All validation scripts read credentials from `finance-genie/.env`, with
-`automated/.env` retained as a fallback.
+All validation scripts read credentials from `finance-genie/.env`.
 
 ## Project structure
 
 ```
 automated/
 ├── pyproject.toml              # uv project; all dependencies
-├── .env.sample                 # compatibility template; prefer ../.env.sample
 ├── config.py                   # loads ../.env, exposes all tuning constants
 ├── upload_and_create_tables.sh # applies sql/schema.sql, uploads CSVs, loads Delta tables
 ├── setup_secrets.sh            # stores Neo4j credentials in Databricks secrets

@@ -11,13 +11,13 @@ Three checks:
 
   1. Cluster ID shape      DATABRICKS_CLUSTER_ID matches NNNN-NNNNNN-xxxxxxxx
                            (catches the common mistake of pasting a workspace
-                           host prefix like `adb-1098933906466604.4`)
+                           host prefix like `adb-<workspace-id>.<shard>`)
   2. Cluster state         cluster exists and is RUNNING
   3. Required libraries    graphdatascience (PyPI) and
                            org.neo4j:neo4j-connector-apache-spark_2.12:5.3.1_for_spark_3
                            (Maven) are installed on the cluster
 
-Reads DATABRICKS_CLUSTER_ID and DATABRICKS_PROFILE from automated/.env.
+Reads DATABRICKS_CLUSTER_ID and DATABRICKS_PROFILE from ../.env.
 
 Run from automated/:
 
