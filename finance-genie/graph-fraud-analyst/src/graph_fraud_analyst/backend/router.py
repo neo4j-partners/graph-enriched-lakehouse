@@ -33,11 +33,10 @@ def me(user_ws: Dependencies.UserClient):
     operation_id="searchRings",
 )
 def search_rings(
-    ws: Dependencies.Client,
-    config: Dependencies.Config,
+    neo4j_driver: Dependencies.Neo4j,
     max_nodes: int = 500,
 ):
-    return rings.list_rings(ws, config, max_nodes=max_nodes)
+    return rings.list_rings(neo4j_driver, max_nodes=max_nodes)
 
 
 @router.get(
@@ -46,10 +45,9 @@ def search_rings(
     operation_id="searchRiskAccounts",
 )
 def search_risk(
-    ws: Dependencies.Client,
-    config: Dependencies.Config,
+    neo4j_driver: Dependencies.Neo4j,
 ):
-    return accounts.list_risky_accounts(ws, config)
+    return accounts.list_risky_accounts(neo4j_driver)
 
 
 @router.get(
@@ -58,10 +56,9 @@ def search_risk(
     operation_id="searchCentralAccounts",
 )
 def search_hubs(
-    ws: Dependencies.Client,
-    config: Dependencies.Config,
+    neo4j_driver: Dependencies.Neo4j,
 ):
-    return accounts.list_central_accounts(ws, config)
+    return accounts.list_central_accounts(neo4j_driver)
 
 
 @router.post(
@@ -73,10 +70,11 @@ def load_to_lakehouse(
     body: LoadIn,
     ws: Dependencies.Client,
     config: Dependencies.Config,
+    neo4j_driver: Dependencies.Neo4j,
 ):
     if not body.ring_ids:
         raise HTTPException(status_code=400, detail="ring_ids cannot be empty")
-    return loader.load_rings(ws, config, body.ring_ids)
+    return loader.load_rings(ws, config, neo4j_driver, body.ring_ids)
 
 
 @router.post(

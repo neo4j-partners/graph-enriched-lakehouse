@@ -28,17 +28,21 @@ Deploy state: `graph-fraud-analyst` is `ACTIVE`, deployment `AppDeploymentState.
 
 **Last updated:** 2026-05-10 23:52 UTC after the end-to-end smoke pass.
 
+> **Closed.** The deployed app is live and serving real Databricks SQL warehouse and Genie traffic end to end. The current runtime reads from the pre-computed `gold_*` Delta tables produced by `../enrichment-pipeline/` (note: `automated/` was renamed to `enrichment-pipeline/`). It does **not** call Neo4j live.
+>
+> **Next phase:** see [`neo4j-integration.md`](neo4j-integration.md). That plan walks Search reads off SQL warehouse and onto live Cypher against Aura `neo4j+s://0582a1b1.databases.neo4j.io`, makes the Load screen do real Cypher → Delta materialization, and reduces `enrichment-pipeline/` to a one-shot setup that runs GDS (Louvain, PageRank, Betweenness) inside Neo4j and persists results as node properties. The `03_pull_gold_tables.py` pull-back-to-Delta step becomes optional/flag-gated.
+
 | Item | State |
 | --- | --- |
 | 1. Deployed-app smoke | **Done.** All five backend endpoints returned 200 in browser smoke: `/api/search/rings`, `/api/search/risk`, `/api/search/hubs`, `/api/load`, `/api/genie/ask`. |
 | 2. OBO scope wiring | **Deferred (not on demo path).** `/api/current-user` is only used on `/_sidebar/profile`, which is not part of the Search → Load → Analyze flow. Revisit only if the profile route gets demoed. |
-| 3. Genie binding doc reconciliation | Open. |
-| 4. Neo4j doc amend | Open. |
+| 3. Genie binding doc reconciliation | **Done.** Updated `apx-demo-client-testing.md` 2.3 to match the actual bundle resource names (`warehouse`, `genie`, Genie display name `graph-fraud-analyst-genie`). Renamed all `apx-demo/` path references to `graph-fraud-analyst/`. |
+| 4. Neo4j doc amend | **Done.** Removed the "real Neo4j" promise from Phase 3.1 and the Neo4j secret-scope binding requirement from Phase 2.3. Replaced the mock-services intro with the real-services description. Added a 2.3.1 subsection on UC grants for the app SP. |
 | 5. Logs workaround confirm | **Done.** `databricks apps logs graph-fraud-analyst --follow` works; used it repeatedly during this session. |
 | 6. Playwright automation | Out of scope per decision. |
 | 7. F9 ReportModal | Out of scope per decision. |
 | 8. Lakebase cleanup | **Done (full removal).** During the post-rename crash investigation we deleted `core/lakebase.py`, removed `Dependencies.Session`, dropped `sqlmodel` and `psycopg` from `pyproject.toml`, and removed `PGAPPNAME` from `.env`. The deployed app's lifespan no longer crashes. |
-| 9. Final verification | Pending after items 3 and 4. |
+| 9. Final verification | **Done.** `apx dev check` green. `manage_app(get)` reports `ComputeState.ACTIVE`, deployment `01f14ccb10461a34b747aa39d66c4cbd` `SUCCEEDED`, "App started successfully". Both worker processes report "Application startup complete" with no stack traces. Eight `/api/*` requests since the most recent deploy all returned 200, covering rings, risk, hubs, load, and Genie. |
 
 ### Additional bugs found and fixed during this pass
 
@@ -83,7 +87,7 @@ The `current-user` route in `backend/router.py:26` injects `Dependencies.UserCli
 
 ### 4. Neo4j live integration: keep gold-table path, amend the doc
 
-The testing doc Phase 3 promises "real Neo4j calls" once F11 lands. The backend has zero Neo4j code: no driver import, no `NEO4J_*` binding in `app.yml`, no secret-scope binding in `databricks.yml`. Ring data is read exclusively from the pre-computed `gold_fraud_ring_communities` Delta table populated by the `automated/` pipeline. This matches `demo-client-graph-backend.md` (gold tables as the runtime source of truth).
+The testing doc Phase 3 promises "real Neo4j calls" once F11 lands. The backend has zero Neo4j code: no driver import, no `NEO4J_*` binding in `app.yml`, no secret-scope binding in `databricks.yml`. Ring data is read exclusively from the pre-computed `gold_fraud_ring_communities` Delta table populated by the `enrichment-pipeline/`. This matches `demo-client-graph-backend.md` (gold tables as the runtime source of truth).
 
 - [ ] Decision: keep the gold-table-only runtime path. Confirm with the demo owner.
 - [ ] Amend `apx-demo-client-testing.md` Phase 3.1 to remove the "real Neo4j" promise. Replace with "real SQL warehouse query against `gold_*` Delta tables".

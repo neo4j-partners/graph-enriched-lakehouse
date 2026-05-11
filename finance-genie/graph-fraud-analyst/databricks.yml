@@ -42,6 +42,21 @@ resources:
             name: "graph-fraud-analyst-genie"
             space_id: ${var.genie_space_id}
             permission: "CAN_RUN"
+        - name: "neo4j_uri"
+          secret:
+            scope: "neo4j-graph-engineering"
+            key: "uri"
+            permission: "READ"
+        - name: "neo4j_username"
+          secret:
+            scope: "neo4j-graph-engineering"
+            key: "username"
+            permission: "READ"
+        - name: "neo4j_password"
+          secret:
+            scope: "neo4j-graph-engineering"
+            key: "password"
+            permission: "READ"
 
 targets:
   dev:

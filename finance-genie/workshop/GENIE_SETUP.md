@@ -1,12 +1,12 @@
 # Genie Space Reference
 
 The Genie Spaces are provisioned and maintained by
-`automated/setup/provision_genie_spaces.py`. **That script is the source of
+`enrichment-pipeline/setup/provision_genie_spaces.py`. **That script is the source of
 truth** for table lists, sample questions, and text instructions. Do not
 edit the Genie Space instructions manually in the UI — the next provisioning
 run wipes any manual edits (`replace_text_instruction` deletes all existing
 instructions before adding the canonical one) and replaces them with the
-content of `automated/genie_instructions.md`.
+content of `enrichment-pipeline/genie_instructions.md`.
 
 This file is workshop-facing reading material — it explains where everything
 comes from and what to expect when you run the live before/after reveal.
@@ -17,14 +17,14 @@ comes from and what to expect when you run the live before/after reveal.
 
 | What | Source of truth |
 |------|-----------------|
-| Table list attached to each space | `automated/setup/provision_genie_spaces.py` — `BEFORE_TABLES`, `AFTER_TABLES` |
+| Table list attached to each space | `enrichment-pipeline/setup/provision_genie_spaces.py` — `BEFORE_TABLES`, `AFTER_TABLES` |
 | Sample questions surfaced in the UI | same file — `BEFORE_QUESTIONS`, `AFTER_QUESTIONS` |
-| Text instructions block | `automated/genie_instructions.md` (lean — only table relationships and schema context) |
-| Column-level documentation | Unity Catalog column comments, applied from the inline DDL in `04_pull_gold_tables.ipynb` sections 6–8 (mirrors `automated/sql/gold_schema.sql`). Genie reads column descriptions directly from UC. |
-| `fraud_risk_tier` / ring-size thresholds | `automated/jobs/_gold_constants.py` — `RING_SIZE_LOW=50`, `RING_SIZE_HIGH=200`, `COMMUNITY_AVG_RISK_MIN=1.0` |
+| Text instructions block | `enrichment-pipeline/genie_instructions.md` (lean — only table relationships and schema context) |
+| Column-level documentation | Unity Catalog column comments, applied from the inline DDL in `04_pull_gold_tables.ipynb` sections 6–8 (mirrors `enrichment-pipeline/sql/gold_schema.sql`). Genie reads column descriptions directly from UC. |
+| `fraud_risk_tier` / ring-size thresholds | `enrichment-pipeline/jobs/_gold_constants.py` — `RING_SIZE_LOW=50`, `RING_SIZE_HIGH=200`, `COMMUNITY_AVG_RISK_MIN=1.0` |
 
 To change a column description, edit the DDL (either the workshop notebook
-or `automated/sql/gold_schema.sql` — keep them in sync) and re-run the
+or `enrichment-pipeline/sql/gold_schema.sql` — keep them in sync) and re-run the
 enrichment. Genie picks up the change on the next query.
 
 ---
@@ -43,7 +43,7 @@ the ground-truth `is_fraud` column. If it were connected, Genie could
 answer fraud questions by reading the label directly, which would make the
 demo circular — Genie would find fraud because it sees the labels, not
 because the graph features work. Ground-truth validation is handled
-externally by `automated/jobs/04_validate_gold_tables.py`, which joins
+externally by `enrichment-pipeline/jobs/04_validate_gold_tables.py`, which joins
 Gold against `ground_truth.json` outside Genie.
 
 ---

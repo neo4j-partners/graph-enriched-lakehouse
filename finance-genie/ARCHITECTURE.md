@@ -2,7 +2,7 @@
 
 ## What this document covers
 
-This document describes the automated pipeline in `finance-genie/automated/`. It covers each major stage, the configuration variables that control each stage, what those variables do and why they exist, and an honest assessment of what could be removed without losing the before/after GDS enrichment contrast at the center of the demo.
+This document describes the enrichment pipeline in `finance-genie/enrichment-pipeline/`. It covers each major stage, the configuration variables that control each stage, what those variables do and why they exist, and an honest assessment of what could be removed without losing the before/after GDS enrichment contrast at the center of the demo.
 
 The pipeline has one job: demonstrate what becomes answerable when GDS enriches the Gold layer with structural dimensions that base tables cannot provide. GDS writes features: `risk_score` is PageRank eigenvector centrality, `community_id` is a Louvain community partition, `similarity_score` is Jaccard overlap of shared-merchant sets. Each carries a published mathematical definition. None is a fraud verdict. Genie reads those columns and answers segment questions over structural dimensions: portfolio composition, cohort comparisons, community rollups, operational workload, merchant-side analysis. That goal determines which variables are load-bearing and which are belt-and-suspenders.
 
@@ -12,7 +12,7 @@ The pipeline has one job: demonstrate what becomes answerable when GDS enriches 
 
 ### Overview
 
-`setup/generate_data.py` produces five CSVs and a `ground_truth.json` file in `automated/data/`. These become the Silver-layer Delta tables that the rest of the pipeline reads. The generator creates 25,000 accounts, 7,500 merchants, 250,000 account-to-merchant transactions, and 300,000 peer-to-peer transfers. Within those records it embeds ten fraud rings, each connected by elevated transaction density and shared merchant preferences -- the structural signals that GDS algorithms will later surface.
+`setup/generate_data.py` produces five CSVs and a `ground_truth.json` file in `enrichment-pipeline/data/`. These become the Silver-layer Delta tables that the rest of the pipeline reads. The generator creates 25,000 accounts, 7,500 merchants, 250,000 account-to-merchant transactions, and 300,000 peer-to-peer transfers. Within those records it embeds ten fraud rings, each connected by elevated transaction density and shared merchant preferences -- the structural signals that GDS algorithms will later surface.
 
 The key constraint is that the fraud rings must be invisible to tabular aggregation. Transaction amounts for fraud accounts are deliberately set within 3% of normal amounts. On base tables, the structural-discovery questions asked in the BEFORE demo have no column-level handle — the answers live in network topology, not in any row-level aggregate. After GDS writes `risk_score`, `community_id`, and `similarity_score` back into the Gold tables, a different class of question becomes answerable: portfolio composition by community, cohort comparisons across risk tiers, community rollups, operational workload by region, and merchant-side analysis conditioned on structural membership. GDS does the structural discovery; Genie characterizes the labeled segment.
 

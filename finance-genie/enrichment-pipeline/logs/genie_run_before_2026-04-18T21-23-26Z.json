@@ -1,0 +1,276 @@
+{
+  "space_id": "01f13926c98315898f217625c525f8fb",
+  "label": "before",
+  "timestamp_utc": "2026-04-18T21:23:26Z",
+  "gate_enabled": false,
+  "retries_configured": 2,
+  "summary": {
+    "responded": 3,
+    "total": 3,
+    "meets_after_gate": 0
+  },
+  "cases": [
+    {
+      "name": "hub_detection",
+      "question": "Are there accounts that seem to be the hub of a money movement network that are potentially fraudulent?",
+      "responded": true,
+      "attempts_made": 1,
+      "attempts": [
+        {
+          "attempt": 1,
+          "error": null,
+          "genie_sql": "SELECT \n  a.account_id, \n  a.account_hash, \n  a.account_type, \n  a.region, \n  COUNT(al_in.link_id) AS incoming_transfer_count, \n  COUNT(al_out.link_id) AS outgoing_transfer_count, \n  COALESCE(SUM(al_in.amount), 0) AS total_incoming_amount, \n  COALESCE(SUM(al_out.amount), 0) AS total_outgoing_amount, \n  (COUNT(al_in.link_id) + COUNT(al_out.link_id)) AS total_transfer_count\nFROM `graph-enriched-lakehouse`.`graph-enriched-schema`.`accounts` a\nLEFT JOIN `graph-enriched-lakehouse`.`graph-enriched-schema`.`account_links` al_in \n  ON a.account_id = al_in.dst_account_id\nLEFT JOIN `graph-enriched-lakehouse`.`graph-enriched-schema`.`account_links` al_out \n  ON a.account_id = al_out.src_account_id\nGROUP BY a.account_id, a.account_hash, a.account_type, a.region\nHAVING (COUNT(al_in.link_id) + COUNT(al_out.link_id)) > 0\nORDER BY total_transfer_count DESC, total_incoming_amount + total_outgoing_amount DESC\nLIMIT 20;",
+          "genie_response_text": "The data shows several accounts with extremely high numbers of both incoming and outgoing transfers, each exceeding 100,000 total transfers and handling tens of millions in total amounts, which could indicate hub-like behavior in money movement networks. Notable data points include:\n- **Account 13914** (business, US-West): 120,904 transfers, $30.6M outgoing, $17.8M incoming\n- **Account 4342** (savings, US-East): 114,708 transfers, $25.9M outgoing, $20.1M incoming\n- **Account 16570** (checking, US-West): 113,620 transfers, $21.5M outgoing, $35.0M incoming\n- **Account 7429** (business, EU-West): 111,644 transfers, $22.1M outgoing, $19.4M incoming\n- **Account 7698** (business, EU-West): 111,320 transfers, $25.0M outgoing, $23.6M incoming\n\nThese accounts are spread across different regions and account types, suggesting that potential network hubs are not limited to a single profile.",
+          "row_count": 20,
+          "result_preview_records": [
+            {
+              "account_id": "13914",
+              "account_hash": "d5fa3e7c5eef",
+              "account_type": "business",
+              "region": "US-West",
+              "incoming_transfer_count": "60452",
+              "outgoing_transfer_count": "60452",
+              "total_incoming_amount": "1.7846691799999714E7",
+              "total_outgoing_amount": "3.0625105120004475E7",
+              "total_transfer_count": "120904"
+            },
+            {
+              "account_id": "4342",
+              "account_hash": "3c54297b717f",
+              "account_type": "savings",
+              "region": "US-East",
+              "incoming_transfer_count": "57354",
+              "outgoing_transfer_count": "57354",
+              "total_incoming_amount": "2.0071535660001E7",
+              "total_outgoing_amount": "2.5887227969998818E7",
+              "total_transfer_count": "114708"
+            },
+            {
+              "account_id": "16570",
+              "account_hash": "178ce72e9b7a",
+              "account_type": "checking",
+              "region": "US-West",
+              "incoming_transfer_count": "56810",
+              "outgoing_transfer_count": "56810",
+              "total_incoming_amount": "3.504349549999351E7",
+              "total_outgoing_amount": "2.146356090000058E7",
+              "total_transfer_count": "113620"
+            },
+            {
+              "account_id": "7429",
+              "account_hash": "a34254a0b160",
+              "account_type": "business",
+              "region": "EU-West",
+              "incoming_transfer_count": "55822",
+              "outgoing_transfer_count": "55822",
+              "total_incoming_amount": "1.9425371810002353E7",
+              "total_outgoing_amount": "2.211474635999902E7",
+              "total_transfer_count": "111644"
+            },
+            {
+              "account_id": "7698",
+              "account_hash": "d4257a0d7526",
+              "account_type": "business",
+              "region": "EU-West",
+              "incoming_transfer_count": "55660",
+              "outgoing_transfer_count": "55660",
+              "total_incoming_amount": "2.3585370820001215E7",
+              "total_outgoing_amount": "2.5004829499997277E7",
+              "total_transfer_count": "111320"
+            },
+            {
+              "account_id": "3805",
+              "account_hash": "c652647ceb17",
+              "account_type": "savings",
+              "region": "EU-West",
+              "incoming_transfer_count": "55590",
+              "outgoing_transfer_count": "55590",
+              "total_incoming_amount": "2.246440296000074E7",
+              "total_outgoing_amount": "2.045256314999832E7",
+              "total_transfer_count": "111180"
+            },
+            {
+              "account_id": "4807",
+              "account_hash": "0fef106c07e2",
+              "account_type": "checking",
+              "region": "APAC",
+              "incoming_transfer_count": "54934",
+              "outgoing_transfer_count": "54934",
+              "total_incoming_amount": "3.6061073399998955E7",
+              "total_outgoing_amount": "2.9538170700000558E7",
+              "total_transfer_count": "109868"
+            },
+            {
+              "account_id": "7321",
+              "account_hash": "62b6644fd807",
+              "account_type": "checking",
+              "region": "EU-West",
+              "incoming_transfer_count": "54747",
+              "outgoing_transfer_count": "54747",
+              "total_incoming_amount": "3.530078936999909E7",
+              "total_outgoing_amount": "1.9504215990001418E7",
+              "total_transfer_count": "109494"
+            },
+            {
+              "account_id": "5489",
+              "account_hash": "553788fce885",
+              "account_type": "business",
+              "region": "EU-West",
+              "incoming_transfer_count": "54718",
+              "outgoing_transfer_count": "54718",
+              "total_incoming_amount": "1.7563639659999922E7",
+              "total_outgoing_amount": "2.3595729220001485E7",
+              "total_transfer_count": "109436"
+            },
+            {
+              "account_id": "6593",
+              "account_hash": "4f78183e73a1",
+              "account_type": "savings",
+              "region": "EU-East",
+              "incoming_transfer_count": "54635",
+              "outgoing_transfer_count": "54635",
+              "total_incoming_amount": "2.254067619999423E7",
+              "total_outgoing_amount": "2.9918781619999833E7",
+              "total_transfer_count": "109270"
+            }
+          ],
+          "metric": {
+            "key": "precision",
+            "value": 0.0,
+            "after_gate_criterion": "> 0.70",
+            "meets_after_gate": false
+          }
+        }
+      ],
+      "metric": {
+        "key": "precision",
+        "value": 0.0,
+        "after_gate_criterion": "> 0.70",
+        "meets_after_gate": false
+      }
+    },
+    {
+      "name": "community_structure",
+      "question": "Find groups of accounts transferring money heavily among themselves.",
+      "responded": true,
+      "attempts_made": 1,
+      "attempts": [
+        {
+          "attempt": 1,
+          "error": null,
+          "genie_sql": "WITH pair_transfers AS (\n  SELECT \n    LEAST(`src_account_id`, `dst_account_id`) AS account_a,\n    GREATEST(`src_account_id`, `dst_account_id`) AS account_b,\n    SUM(`amount`) AS total_transfer_amount,\n    COUNT(*) AS transfer_count\n  FROM `graph-enriched-lakehouse`.`graph-enriched-schema`.`account_links`\n  WHERE `src_account_id` IS NOT NULL AND `dst_account_id` IS NOT NULL\n  GROUP BY LEAST(`src_account_id`, `dst_account_id`), GREATEST(`src_account_id`, `dst_account_id`)\n)\nSELECT account_a, account_b, total_transfer_amount, transfer_count\nFROM pair_transfers\nWHERE total_transfer_amount > 10000 -- threshold for 'heavily', can be adjusted\nORDER BY total_transfer_amount DESC\nLIMIT 50;",
+          "genie_response_text": "Would you like to see account pairs with different thresholds for what counts as 'heavily' transferred amounts?",
+          "row_count": 50,
+          "result_preview_records": [
+            {
+              "account_a": "7855",
+              "account_b": "13727",
+              "total_transfer_amount": "122721.78",
+              "transfer_count": "2"
+            },
+            {
+              "account_a": "7066",
+              "account_b": "20956",
+              "total_transfer_amount": "96923.97",
+              "transfer_count": "1"
+            },
+            {
+              "account_a": "10606",
+              "account_b": "11636",
+              "total_transfer_amount": "90881.19",
+              "transfer_count": "1"
+            },
+            {
+              "account_a": "11166",
+              "account_b": "15208",
+              "total_transfer_amount": "80506.15",
+              "transfer_count": "1"
+            },
+            {
+              "account_a": "7722",
+              "account_b": "16272",
+              "total_transfer_amount": "72863.31",
+              "transfer_count": "1"
+            },
+            {
+              "account_a": "12281",
+              "account_b": "18045",
+              "total_transfer_amount": "72685.99",
+              "transfer_count": "1"
+            },
+            {
+              "account_a": "11950",
+              "account_b": "22372",
+              "total_transfer_amount": "70534.01",
+              "transfer_count": "1"
+            },
+            {
+              "account_a": "2599",
+              "account_b": "24896",
+              "total_transfer_amount": "66317.09",
+              "transfer_count": "1"
+            },
+            {
+              "account_a": "8193",
+              "account_b": "14959",
+              "total_transfer_amount": "64749.82",
+              "transfer_count": "1"
+            },
+            {
+              "account_a": "826",
+              "account_b": "14680",
+              "total_transfer_amount": "63739.409999999996",
+              "transfer_count": "4"
+            }
+          ],
+          "metric": {
+            "key": "max_ring_coverage",
+            "value": 0.0,
+            "after_gate_criterion": "> 0.80",
+            "meets_after_gate": false
+          }
+        }
+      ],
+      "metric": {
+        "key": "max_ring_coverage",
+        "value": 0.0,
+        "after_gate_criterion": "> 0.80",
+        "meets_after_gate": false
+      }
+    },
+    {
+      "name": "merchant_overlap",
+      "question": "Which pairs of accounts have visited the most merchants in common?",
+      "responded": true,
+      "attempts_made": 1,
+      "attempts": [
+        {
+          "attempt": 1,
+          "error": null,
+          "genie_sql": "WITH account_merchant AS (\n  SELECT \n    `account_id`, \n    `merchant_id`\n  FROM `graph-enriched-lakehouse`.`graph-enriched-schema`.`transactions`\n  WHERE `account_id` IS NOT NULL AND `merchant_id` IS NOT NULL\n),\naccount_pairs AS (\n  SELECT \n    a1.`account_id` AS account1_id,\n    a2.`account_id` AS account2_id,\n    a1.`merchant_id`\n  FROM account_merchant a1\n  JOIN account_merchant a2\n    ON a1.`merchant_id` = a2.`merchant_id`\n    AND a1.`account_id` < a2.`account_id`\n),\nshared_merchants AS (\n  SELECT \n    account1_id,\n    account2_id,\n    COUNT(DISTINCT `merchant_id`) AS shared_merchant_count\n  FROM account_pairs\n  GROUP BY account1_id, account2_id\n),\nranked_pairs AS (\n  SELECT \n    account1_id,\n    account2_id,\n    shared_merchant_count,\n    RANK() OVER (ORDER BY shared_merchant_count DESC) AS rank\n  FROM shared_merchants\n)\nSELECT account1_id, account2_id, shared_merchant_count\nFROM ranked_pairs\nWHERE rank = 1",
+          "genie_response_text": "The pair of accounts that have visited the most merchants in common are account ID 3962 and account ID 8435, with **5 shared merchants**.",
+          "row_count": 1,
+          "result_preview_records": [
+            {
+              "account1_id": "3962",
+              "account2_id": "8435",
+              "shared_merchant_count": "5"
+            }
+          ],
+          "metric": {
+            "key": "same_ring_fraction",
+            "value": 1.0,
+            "after_gate_criterion": "> 0.60",
+            "meets_after_gate": false
+          }
+        }
+      ],
+      "metric": {
+        "key": "same_ring_fraction",
+        "value": 1.0,
+        "after_gate_criterion": "> 0.60",
+        "meets_after_gate": false
+      }
+    }
+  ]
+}

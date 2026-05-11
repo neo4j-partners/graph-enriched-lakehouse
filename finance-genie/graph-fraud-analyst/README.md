@@ -1,6 +1,14 @@
 # graph-fraud-analyst
 
-The Fraud Signal Workbench. A Databricks App built with [apx](https://github.com/databricks-solutions/apx) (FastAPI + React) that surfaces ring-candidate communities, risky accounts, and central hub accounts from the gold tables produced by `../automated/`, then lets an analyst load a subgraph and chat with Genie about it.
+The Fraud Signal Workbench. A Databricks App built with [apx](https://github.com/databricks-solutions/apx) (FastAPI + React) that runs live Cypher against Neo4j Aura to surface ring-candidate communities, risky accounts, and central hub accounts, then materializes the selected subgraph into Delta tables for Genie to query.
+
+Architecture at a glance:
+
+| Screen | Backend | Data source |
+| --- | --- | --- |
+| Search (rings, risky, hubs) | Live Cypher | Aura node properties written by `enrichment-pipeline/setup/run_gds.py` |
+| Load (materialize subgraph) | Cypher → Delta `CREATE OR REPLACE TABLE` | Neo4j → SQL warehouse |
+| Analyze (Genie) | Genie Conversation API | Delta tables written by Load |
 
 ## Quick start: deploy to Databricks
 
@@ -19,10 +27,11 @@ Required values for this app (already documented in `../.env.sample` under the `
 | Variable | Description |
 | --- | --- |
 | `DATABRICKS_PROFILE` | Profile name from `~/.databrickscfg`. |
-| `GRAPH_FRAUD_ANALYST_WAREHOUSE_ID` | SQL warehouse the FastAPI service uses to query gold tables. |
-| `GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID` | Genie Space ID for the AFTER-GDS conversational experience. |
+| `GRAPH_FRAUD_ANALYST_WAREHOUSE_ID` | SQL warehouse the Load step uses to write Delta tables. |
+| `GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID` | Genie Space ID that queries the Load-materialized Delta tables. |
 | `GRAPH_FRAUD_ANALYST_CATALOG` | Unity Catalog catalog (default `graph-enriched-lakehouse`). |
 | `GRAPH_FRAUD_ANALYST_SCHEMA` | Unity Catalog schema (default `graph-enriched-schema`). |
+| `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` | Local-dev only. The deployed app reads these from the `neo4j-graph-engineering` UC secret scope (bound in `databricks.yml`). |
 
 If you are also running the wider finance-genie demo, see `../setup_secrets.sh` for provisioning Neo4j / Genie / MCP secret scopes. That script is not required for this app alone, which uses OAuth via the service principal.
 
@@ -85,17 +94,49 @@ SHOW GRANTS `<service_principal_client_id>`
   ON SCHEMA `graph-enriched-lakehouse`.`graph-enriched-schema`;
 ```
 
-You should see at least `SELECT` and `USE SCHEMA` rows. The grant is per workspace, so it only needs to be applied once per environment.
+You should see `SELECT`, `USE SCHEMA`, `CREATE TABLE`, and `MODIFY` rows. The first two are for Search reads; the last two let the Load step `CREATE OR REPLACE TABLE` the materialized subgraph. The grant is per workspace, so it only needs to be applied once per environment.
 
-### 4. Open
+### 4. Grant the app SP READ on the Neo4j secret scope
+
+The Search and Load endpoints connect to Neo4j Aura through the app SP. The credentials live in the `neo4j-graph-engineering` UC secret scope (referenced as resources in `databricks.yml`). The bundle deploy declares the resource bindings, but UC does not auto-grant scope ACLs; do it once:
+
+```bash
+databricks secrets put-acl neo4j-graph-engineering \
+  <service_principal_client_id> READ \
+  --profile "$DATABRICKS_PROFILE"
+```
+
+Verify:
+
+```bash
+databricks secrets list-acls neo4j-graph-engineering --profile "$DATABRICKS_PROFILE"
+```
+
+You should see a row with `permission: READ` for the app SP. If you skip this step, the app's startup lifespan logs `Neo4j connectivity check failed`, uvicorn exits, and the URL serves "App Not Available".
+
+### 5. Run the one-shot Neo4j GDS setup
+
+The deployed app expects four node properties on every `:Account` in Aura: `risk_score` (PageRank), `community_id` (Louvain), `betweenness_centrality` (sampled Betweenness), `similarity_score` (max JACCARD from NodeSimilarity). Run the setup script once per Aura dataset:
+
+```bash
+cd ../enrichment-pipeline
+uv run setup/run_gds.py            # idempotent: no-op if already populated
+uv run setup/run_gds.py --force    # recompute and overwrite
+```
+
+The script checks current coverage first and exits 0 if the properties are already present. Without this setup, the `/api/search/*` endpoints return empty arrays (and Load fails its quality checks).
+
+### 6. Open
 
 The deploy script prints the app URL. Sign in with OAuth, then walk Screen 1 (Search) to Screen 2 (Load) to Screen 3 (Analyze).
 
 Prerequisites for the deployed app to return data:
 
-1. The `../automated/` pipeline has produced the three gold tables: `gold_accounts`, `gold_fraud_ring_communities`, `gold_account_similarity_pairs`.
-2. The Genie Space referenced by `GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID` points at the AFTER-GDS dataset.
-3. The app SP has been granted UC access per step 3 above.
+1. Neo4j Aura (`neo4j+s://0582a1b1.databases.neo4j.io`) reachable from Databricks Apps egress, with the four GDS node properties populated (step 5).
+2. The Genie Space referenced by `GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID` points at the same UC schema the Load step writes to.
+3. The app SP has been granted UC schema access (step 3) and Neo4j secret-scope READ (step 4).
+
+The `../enrichment-pipeline/` Delta pipeline is **no longer required** for the runtime. Search reads come from Aura via Cypher, and Load materializes the three gold tables on demand. The pipeline still exists for the data-generation and BEFORE/AFTER Genie comparison demos.
 
 ---
 

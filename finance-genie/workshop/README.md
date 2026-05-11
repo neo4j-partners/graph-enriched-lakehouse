@@ -13,7 +13,7 @@ centrality, and structural similarity back as scalar columns.
 
 **Audience:** Workshop participants running the demo interactively on Databricks.
 
-**Prerequisite state:** The demo owner has already run the `automated/` setup
+**Prerequisite state:** The demo owner has already run the `enrichment-pipeline/` setup
 steps: data generated, tables loaded into Unity Catalog, and credentials stored
 in the `neo4j-graph-engineering` secret scope.
 
@@ -32,13 +32,13 @@ Three things must be in place before the first notebook:
 2. **Secret scope populated:** the `neo4j-graph-engineering` scope must contain
    `uri`, `username`, `password`, `genie_space_id_before`, and
    `genie_space_id_after`. The demo owner populates these by running
-   `automated/setup_secrets.sh`. Participants can also store them interactively
+   `enrichment-pipeline/setup_secrets.sh`. Participants can also store them interactively
    by running `00_required_setup.ipynb`.
 
 3. **Tables loaded:** `accounts`, `merchants`, `transactions`, `account_links`,
    and `account_labels` must exist in
    `graph-enriched-lakehouse.graph-enriched-schema`. The demo owner loads them
-   with `automated/upload_and_create_tables.sh`.
+   with `enrichment-pipeline/upload_and_create_tables.sh`.
 
 ---
 
@@ -113,8 +113,8 @@ Q&A; skip for the analyst-workflow demo.
 - `genie-guide.md` — copy-paste questions organized as Primary Anchor,
   Backup Anchor, Validation Pairs, Extended Questions, and Fill-In / Q&A
 - `GENIE_SETUP.md` — pointer file that explains where the live Genie Space
-  configuration comes from (`automated/setup/provision_genie_spaces.py` +
-  `automated/genie_instructions.md` + UC column comments), plus the
+  configuration comes from (`enrichment-pipeline/setup/provision_genie_spaces.py` +
+  `enrichment-pipeline/genie_instructions.md` + UC column comments), plus the
   workshop-specific before/after narrative for the "hub of a money
   movement network" question
 - `aura_gds_guide.md` — step-by-step GDS algorithm guide for running in the

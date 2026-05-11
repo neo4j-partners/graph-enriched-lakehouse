@@ -1,7 +1,7 @@
 # Apx Demo Client, Testing Plan
 
-**Companion to:** `demo-client-graph.md` (original proposal), `demo-client-graph-v2.md` (frontend work-item plan F1 through F11), `demo-client-graph-backend.md` (data-pipeline plan), `apx-demo/CLAUDE.md` (apx project conventions).
-**Audience:** the agent or engineer running the test pass on the Fraud Signal Workbench frontend at `finance-genie/apx-demo/`.
+**Companion to:** `demo-client-graph.md` (original proposal), `demo-client-graph-v2.md` (frontend work-item plan F1 through F11), `demo-client-graph-backend.md` (data-pipeline plan), `graph-fraud-analyst/CLAUDE.md` (apx project conventions).
+**Audience:** the agent or engineer running the test pass on the Fraud Signal Workbench frontend at `finance-genie/graph-fraud-analyst/`.
 
 ---
 
@@ -11,9 +11,11 @@ The frontend ships in three layers and each layer has its own test surface. This
 
 The three layers, in execution order:
 
-1. **Local**, against the apx dev server with mock services. This is where the bulk of UI verification happens.
+1. **Local**, against the apx dev server. The backend calls the real Databricks SDK against the workspace named in `~/.databrickscfg`, so local dev exercises real SQL warehouse and Genie. There is no mock-service layer in the codebase.
 2. **Deploy**, to a Databricks Apps target via the workspace bundle.
-3. **Deployed**, against the real workspace URL. Smaller checklist but exercises OAuth, resource bindings, and (once the OpenAPI client lands per F11) real Neo4j, Delta, and Genie calls.
+3. **Deployed**, against the real workspace URL. Exercises OAuth, app-SP UC grants, the bound SQL warehouse, and the bound Genie Space.
+
+Ring data is read from the pre-computed `gold_fraud_ring_communities` Delta table, not from live Neo4j Cypher. The `enrichment-pipeline/` materializes the rings; the runtime only reads.
 
 Playwright MCP automates the click-paths in layers 1 and 3.
 
@@ -39,7 +41,7 @@ If any of these is not true, fix that first.
 
 ### 1.1 Boot the dev servers
 
-From `finance-genie/apx-demo/`, start the dev environment via the apx MCP `start` tool. This brings up the FastAPI backend, the Vite frontend, and the OpenAPI watcher in one step. The MCP returns the frontend dev URL, which is what you open in the browser.
+From `finance-genie/graph-fraud-analyst/`, start the dev environment via the apx MCP `start` tool. This brings up the FastAPI backend, the Vite frontend, and the OpenAPI watcher in one step. The MCP returns the frontend dev URL, which is what you open in the browser.
 
 CLI fallback: `apx dev start`. Then `apx dev status` to confirm all three processes are alive.
 
@@ -91,7 +93,7 @@ Walk all three screens in order.
 
 Open DevTools.
 
-- **Console**: zero errors, zero React warnings, zero CSP warnings. Mock service calls resolve cleanly with no rejected promises.
+- **Console**: zero errors, zero React warnings, zero CSP warnings. The OpenAPI client calls resolve cleanly with no rejected promises.
 - **Network**: IBM Plex font loads from Google Fonts. No 404s on icons, static assets, or the apx OpenAPI watcher endpoint.
 - **Performance**: Screen 1 first paint under 1 s on localhost. Screen 2 animation runs without dropped frames.
 
@@ -99,7 +101,7 @@ Open DevTools.
 
 Once the manual walk passes once by hand, automate the same path. Re-running the script on every change catches regressions you would otherwise miss between commits.
 
-The Playwright MCP server is registered in `apx-demo/.mcp.json`. The exact tool names depend on which Playwright MCP server is installed. Common shapes are `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type` or `browser_fill`, `browser_wait_for`, `browser_take_screenshot`, `browser_close`. List the available tools at the start of a run so the script names are accurate.
+The Playwright MCP server is registered in `graph-fraud-analyst/.mcp.json`. The exact tool names depend on which Playwright MCP server is installed. Common shapes are `browser_navigate`, `browser_snapshot`, `browser_click`, `browser_type` or `browser_fill`, `browser_wait_for`, `browser_take_screenshot`, `browser_close`. List the available tools at the start of a run so the script names are accurate.
 
 Recommended script outline for the full three-screen walk:
 
@@ -133,7 +135,7 @@ Use the Databricks MCP `manage_workspace` tool with `action="status"` to confirm
 
 ### 2.2 Build the production bundle
 
-From `finance-genie/apx-demo/`, run `apx build`. This produces a static frontend bundle under the project's build output directory and prepares the FastAPI app for production. Confirm the build exits clean. Warnings about missing env vars at build time are acceptable; the values come in at runtime via the resource bindings.
+From `finance-genie/graph-fraud-analyst/`, run `apx build`. This produces a static frontend bundle under the project's build output directory and prepares the FastAPI app for production. Confirm the build exits clean. Warnings about missing env vars at build time are acceptable; the values come in at runtime via the resource bindings.
 
 ### 2.3 Wire `app.yml` resource bindings
 
@@ -143,7 +145,7 @@ Open `graph-fraud-analyst/app.yml`. Confirm the `env:` section binds the resourc
 - `GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID` from the `genie_space` resource keyed `genie` (Genie Space binding name `graph-fraud-analyst-genie`).
 - `GRAPH_FRAUD_ANALYST_CATALOG` and `GRAPH_FRAUD_ANALYST_SCHEMA` as static `value:` env vars (defaults `graph-enriched-lakehouse` and `graph-enriched-schema`).
 
-There is no Neo4j binding. The runtime reads from the pre-computed gold Delta tables produced by `../automated/`, not from a live Neo4j connection. If a future iteration needs live Cypher, add a Neo4j secret-scope binding here; for now leave it absent.
+There is no Neo4j binding. The runtime reads from the pre-computed gold Delta tables produced by `../enrichment-pipeline/`, not from a live Neo4j connection. If a future iteration needs live Cypher, add a Neo4j secret-scope binding here; for now leave it absent.
 
 If any binding is missing or points at a resource that does not exist in the workspace, add or fix it before deploying. A missing binding turns into a 500 on the corresponding endpoint at runtime, which is harder to debug than a deploy-time error.
 
@@ -153,13 +155,15 @@ The SQL warehouse runs every backend query as the app's auto-provisioned service
 
 ### 2.4 Bundle deploy
 
-Run the deploy from `apx-demo/`:
+Run the deploy from `graph-fraud-analyst/`. The repo ships a wrapper that runs `bundle deploy` and `bundle run` in one shot, sources the warehouse and Genie variables from the shared `.env`, and tails logs on `--log`:
 
 ```bash
-databricks bundle deploy --profile <your-databricks-profile>
+./scripts/deploy.sh
+# or, to stream live app logs after the deploy:
+./scripts/deploy.sh --log
 ```
 
-apx may also expose `apx deploy` as a wrapper; check `apx --help` to confirm. The deploy prints the deployed app URL on success. Capture it.
+`bundle deploy` alone leaves the app `UNAVAILABLE`. `bundle run graph-fraud-analyst-app` is what pushes the source to the app's compute and starts uvicorn, so both must succeed. The deploy prints the deployed app URL on success.
 
 ### 2.5 Tail the deployed logs
 
@@ -181,7 +185,7 @@ Open the deployed URL in a fresh browser tab. The app uses Databricks OAuth, so 
 
 ### 3.1 Manual walkthrough on the deployed app
 
-Repeat the Phase 1 walk against the deployed URL. F11 has landed and the backend now calls real Databricks services through the auto-generated OpenAPI client; there are no mock services left in the bundle. The deployed walk verifies:
+Repeat the Phase 1 walk against the deployed URL. The backend now runs live Cypher against Neo4j Aura for Search, materializes a real Cypher → Delta subgraph for Load, and reads the materialized tables via Genie for Analyze. The deployed walk verifies:
 
 - OAuth flow works end to end with no redirect loops.
 - Static assets serve from the FastAPI process. Zero 404s on fonts, icons, or assets.
@@ -189,11 +193,19 @@ Repeat the Phase 1 walk against the deployed URL. F11 has landed and the backend
 - Theme tokens render the same as on local.
 - The build output matches what you saw in dev, no missing CSS or layout regressions.
 
-Because real services drive the screens, also check:
+Real-Neo4j assertions:
 
-- Screen 1 search latency is acceptable: under 2 s cold and under 500 ms warm. Rings come from `gold_fraud_ring_communities` via SQL warehouse, not from live Neo4j Cypher. The `automated/` pipeline materializes the rings; the runtime only reads.
-- Screen 2 row counts match what the gold tables actually contain for the selected rings. Cross-check against `automated/cli/04_validate_gold_tables.py` output.
-- Screen 3 Genie answers come from the real Conversation API. The first prompt may return a canned greeting; subsequent prompts vary by question and may include a table attachment.
+- Screen 1 rings: the table reads from Aura. The number of rows shown should equal the number of Louvain communities with `member_count >= 3` (currently 10 in the seeded dataset). Cross-check by running `MATCH (a:Account) WHERE a.community_id IS NOT NULL WITH a.community_id AS c, count(a) AS n WHERE n >= 3 RETURN count(*)` against `neo4j+s://0582a1b1.databases.neo4j.io`.
+- Screen 1 risky accounts: top account_id and risk_score should match `MATCH (a:Account) WHERE a.risk_score IS NOT NULL RETURN a.account_id, a.risk_score ORDER BY a.risk_score DESC LIMIT 1`. The UI normalizes risk_score by max so the displayed value is in [0,1]; the raw value is what Aura returns.
+- Screen 1 central accounts: top account_id should match `MATCH (a:Account) WHERE a.betweenness_centrality IS NOT NULL RETURN a.account_id ORDER BY a.betweenness_centrality DESC LIMIT 1`.
+- Screen 2 Load: after the seven steps complete, the Load summary panel shows real row counts for the three gold tables. Cross-check with `SELECT count(*) FROM \`graph-enriched-lakehouse\`.\`graph-enriched-schema\`.gold_accounts` and confirm it equals the summary row count. Each Load overwrites the previous session.
+- Screen 3 Genie: answers query the just-written Delta tables. Ask "How many accounts in each ring?" and confirm the per-community counts match what Load reported.
+
+Latency budgets, live Cypher path:
+
+- Screen 1 first paint: under 2 s cold (driver warmup) and under 800 ms warm. If consistently over 2 s warm, check Aura tier and the verify_connectivity ping latency.
+- Screen 2 Load: roughly 1 to 3 s for a two-community Load. Most of the time is the SQL warehouse `CREATE OR REPLACE TABLE` round-trips, not Cypher.
+- Screen 3 Genie: 4 to 10 s per question is normal for the Conversation API; this is unchanged.
 
 ### 3.2 Playwright MCP automation, deployed
 
@@ -208,7 +220,7 @@ Pass criteria for Phase 3: the deployed app reproduces every Phase 1 visual and 
 
 ## Playwright MCP, reference notes
 
-The Playwright MCP server lives in `apx-demo/.mcp.json`. To find the exact tool names available right now, list the registered MCP tools at the start of the testing session. The tools in the standard Microsoft Playwright MCP server include:
+The Playwright MCP server lives in `graph-fraud-analyst/.mcp.json`. To find the exact tool names available right now, list the registered MCP tools at the start of the testing session. The tools in the standard Microsoft Playwright MCP server include:
 
 - **`browser_navigate`**, navigate the active page to a URL. Returns the page snapshot inline so the next step can target by accessible name immediately.
 - **`browser_snapshot`**, dump the accessibility tree for the current page. Use this for assertions; the tree shows roles and accessible names, which match the component conventions in the v2 plan.

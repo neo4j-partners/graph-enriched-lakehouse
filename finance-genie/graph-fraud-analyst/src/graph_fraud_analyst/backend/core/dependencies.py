@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TypeAlias
 from ._defaults import ConfigDependency, ClientDependency, UserWorkspaceClientDependency
 from ._headers import HeadersDependency
+from ._neo4j import Neo4jDriverDependency
 
 
 class Dependencies:
@@ -24,4 +25,8 @@ class Dependencies:
     Headers: TypeAlias = HeadersDependency
     """Databricks Apps HTTP headers for the current request.
     Recommended usage: `headers: Dependencies.Headers`"""
+
+    Neo4j: TypeAlias = Neo4jDriverDependency
+    """Neo4j AsyncDriver against the bound Aura instance. Recommended usage:
+    `driver: Dependencies.Neo4j` then `async with driver.session() as s: ...`."""
 

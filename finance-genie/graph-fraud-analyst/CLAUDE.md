@@ -35,7 +35,7 @@ The `Dependency` class in `src/graph_fraud_analyst/backend/core.py` provides typ
 | `Dependencies.Client` | `WorkspaceClient` | Databricks client using app-level service principal credentials |
 | `Dependencies.UserClient` | `WorkspaceClient` | Databricks client authenticated on behalf of the current user (requires OBO token) |
 | `Dependencies.Config` | `AppConfig` | Application configuration loaded from environment variables |
-| `Dependencies.Session` | `Session` | SQLModel database session, scoped to request (requires lakebase addon) |
+| `Dependencies.Neo4j` | `neo4j.Driver` | Neo4j sync driver against the bound Aura instance. Connection-pooled across requests. Use as `async with driver.session() as s: ...` (Note: sync driver, FastAPI runs sync handlers in a threadpool). |
 
 ## Models & API
 - **3-model pattern:** `Entity` (DB), `EntityIn` (input), `EntityOut` (output)

@@ -41,7 +41,7 @@ class AppConfig(BaseSettings):
 
     catalog: str = Field(default="graph-enriched-lakehouse")
     """Unity Catalog catalog name holding the gold tables. Matches the names
-    produced by the automated/ pipeline (hyphens, quoted with backticks in
+    produced by the enrichment-pipeline/ (hyphens, quoted with backticks in
     SQL)."""
 
     schema_: str = Field(default="graph-enriched-schema", alias="schema")
@@ -50,6 +50,20 @@ class AppConfig(BaseSettings):
 
     genie_space_id: str = Field(default="")
     """Genie Space ID for the AFTER-GDS Conversation API."""
+
+    neo4j_uri: str = Field(default="", validation_alias="NEO4J_URI")
+    """Neo4j Aura bolt URI, e.g. neo4j+s://<dbid>.databases.neo4j.io.
+
+    Read via validation_alias so the deployed app can bind directly to the
+    secret-scope key {{secrets/neo4j-graph-engineering/uri}} without the
+    GRAPH_FRAUD_ANALYST_ prefix.
+    """
+
+    neo4j_username: str = Field(default="", validation_alias="NEO4J_USERNAME")
+    """Neo4j Aura username (typically `neo4j`)."""
+
+    neo4j_password: str = Field(default="", validation_alias="NEO4J_PASSWORD")
+    """Neo4j Aura password from the neo4j-graph-engineering secret scope."""
 
     @property
     def static_assets_path(self) -> Path:

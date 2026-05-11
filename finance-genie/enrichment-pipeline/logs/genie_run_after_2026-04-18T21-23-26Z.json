@@ -1,0 +1,271 @@
+{
+  "space_id": "01f139ac0f8f1336a622615dcf478f71",
+  "label": "after",
+  "timestamp_utc": "2026-04-18T21:23:26Z",
+  "gate_enabled": false,
+  "retries_configured": 2,
+  "summary": {
+    "responded": 3,
+    "total": 3,
+    "meets_after_gate": 2
+  },
+  "cases": [
+    {
+      "name": "hub_detection",
+      "question": "Are there accounts that seem to be the hub of a money movement network that are potentially fraudulent?",
+      "responded": true,
+      "attempts_made": 1,
+      "attempts": [
+        {
+          "attempt": 1,
+          "error": null,
+          "genie_sql": "SELECT `account_id`, `account_hash`, `risk_score`, `community_id`, `community_size`, `community_avg_risk_score`, `fraud_risk_tier` FROM `graph-enriched-lakehouse`.`graph-enriched-schema`.`gold_accounts` WHERE `is_ring_community` = true AND `fraud_risk_tier` = 'high' AND `risk_score` IS NOT NULL ORDER BY `risk_score` DESC",
+          "genie_response_text": "There are accounts identified as part of large communities with a **high fraud risk tier** and elevated **risk scores**, suggesting they may be hubs in potentially fraudulent money movement networks. Examples include:\n- **Account ID 20129** (community size: 137, risk score: 3.92)\n- **Account ID 7890** (community size: 126, risk score: 3.90)\n- **Account ID 7006** (community size: 123, risk score: 3.86)\n- **Account ID 16504** (community size: 119, risk score: 3.83)\n- **Account ID 16579** (community size: 127, risk score: 3.82)",
+          "row_count": 901,
+          "result_preview_records": [
+            {
+              "account_id": "20129",
+              "account_hash": "bba103dc70bd",
+              "risk_score": "3.9223244924829315",
+              "community_id": "10497",
+              "community_size": "137",
+              "community_avg_risk_score": "2.6756793030326964",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "7890",
+              "account_hash": "9a50f3aa719d",
+              "risk_score": "3.8957641105079577",
+              "community_id": "10698",
+              "community_size": "126",
+              "community_avg_risk_score": "2.715356093664905",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "7006",
+              "account_hash": "0b20b7a16b14",
+              "risk_score": "3.862204086625141",
+              "community_id": "5572",
+              "community_size": "123",
+              "community_avg_risk_score": "2.7110753790757562",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "16504",
+              "account_hash": "eb3c4264d8df",
+              "risk_score": "3.832760873756961",
+              "community_id": "6003",
+              "community_size": "119",
+              "community_avg_risk_score": "2.8199543599526593",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "16579",
+              "account_hash": "bf0691ac8eac",
+              "risk_score": "3.8171311791227125",
+              "community_id": "17806",
+              "community_size": "127",
+              "community_avg_risk_score": "2.676028151365292",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "22618",
+              "account_hash": "3b7e65b3978a",
+              "risk_score": "3.7997746241801407",
+              "community_id": "10698",
+              "community_size": "126",
+              "community_avg_risk_score": "2.715356093664905",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "1676",
+              "account_hash": "2e3931ed8913",
+              "risk_score": "3.774705916579873",
+              "community_id": "4363",
+              "community_size": "133",
+              "community_avg_risk_score": "2.6282621590331394",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "13396",
+              "account_hash": "3eaa675abd1e",
+              "risk_score": "3.7665061225206253",
+              "community_id": "6003",
+              "community_size": "119",
+              "community_avg_risk_score": "2.8199543599526593",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "22898",
+              "account_hash": "1472dcaabf75",
+              "risk_score": "3.740574181041901",
+              "community_id": "5572",
+              "community_size": "123",
+              "community_avg_risk_score": "2.7110753790757562",
+              "fraud_risk_tier": "high"
+            },
+            {
+              "account_id": "4405",
+              "account_hash": "27db1b792281",
+              "risk_score": "3.713109232024345",
+              "community_id": "7955",
+              "community_size": "122",
+              "community_avg_risk_score": "2.682392668143449",
+              "fraud_risk_tier": "high"
+            }
+          ],
+          "metric": {
+            "key": "precision",
+            "value": 1.0,
+            "after_gate_criterion": "> 0.70",
+            "meets_after_gate": true
+          }
+        }
+      ],
+      "metric": {
+        "key": "precision",
+        "value": 1.0,
+        "after_gate_criterion": "> 0.70",
+        "meets_after_gate": true
+      }
+    },
+    {
+      "name": "community_structure",
+      "question": "Find groups of accounts transferring money heavily among themselves.",
+      "responded": true,
+      "attempts_made": 1,
+      "attempts": [
+        {
+          "attempt": 1,
+          "error": null,
+          "genie_sql": "SELECT `community_id`, `member_count`, `avg_risk_score`, `high_risk_member_count`\nFROM `graph-enriched-lakehouse`.`graph-enriched-schema`.`gold_fraud_ring_communities`\nWHERE `is_ring_candidate` = true\nORDER BY `member_count` DESC",
+          "genie_response_text": "The data identifies groups of accounts (communities) that are candidates for heavy internal money transfers, each with a notable number of members and high-risk participants. Examples of these groups include:\n- **Community 24981**: 142 members, 110 high-risk members, average risk score 2.47\n- **Community 10497**: 137 members, 106 high-risk members, average risk score 2.68\n- **Community 4363**: 133 members, 103 high-risk members, average risk score 2.63\n- **Community 5557**: 128 members, 102 high-risk members, average risk score 2.60\n- **Community 17806**: 127 members, 102 high-risk members, average risk score 2.68\n\nThese communities are the largest ring candidates, with member counts ranging from 119 to 142 and consistently high numbers of high-risk accounts.",
+          "row_count": 10,
+          "result_preview_records": [
+            {
+              "community_id": "24981",
+              "member_count": "142",
+              "avg_risk_score": "2.465068",
+              "high_risk_member_count": "110"
+            },
+            {
+              "community_id": "10497",
+              "member_count": "137",
+              "avg_risk_score": "2.675679",
+              "high_risk_member_count": "106"
+            },
+            {
+              "community_id": "4363",
+              "member_count": "133",
+              "avg_risk_score": "2.628262",
+              "high_risk_member_count": "103"
+            },
+            {
+              "community_id": "5557",
+              "member_count": "128",
+              "avg_risk_score": "2.601105",
+              "high_risk_member_count": "102"
+            },
+            {
+              "community_id": "17806",
+              "member_count": "127",
+              "avg_risk_score": "2.676028",
+              "high_risk_member_count": "102"
+            },
+            {
+              "community_id": "5276",
+              "member_count": "126",
+              "avg_risk_score": "2.636274",
+              "high_risk_member_count": "104"
+            },
+            {
+              "community_id": "10698",
+              "member_count": "126",
+              "avg_risk_score": "2.715356",
+              "high_risk_member_count": "101"
+            },
+            {
+              "community_id": "5572",
+              "member_count": "123",
+              "avg_risk_score": "2.711075",
+              "high_risk_member_count": "102"
+            },
+            {
+              "community_id": "7955",
+              "member_count": "122",
+              "avg_risk_score": "2.682393",
+              "high_risk_member_count": "102"
+            },
+            {
+              "community_id": "6003",
+              "member_count": "119",
+              "avg_risk_score": "2.819954",
+              "high_risk_member_count": "102"
+            }
+          ],
+          "metric": {
+            "key": "max_ring_coverage",
+            "value": 1.0,
+            "after_gate_criterion": "> 0.80",
+            "meets_after_gate": true
+          }
+        }
+      ],
+      "metric": {
+        "key": "max_ring_coverage",
+        "value": 1.0,
+        "after_gate_criterion": "> 0.80",
+        "meets_after_gate": true
+      }
+    },
+    {
+      "name": "merchant_overlap",
+      "question": "Which pairs of accounts have visited the most merchants in common?",
+      "responded": true,
+      "attempts_made": 1,
+      "attempts": [
+        {
+          "attempt": 1,
+          "error": null,
+          "genie_sql": "WITH ranked_pairs AS (\n  SELECT \n    account_id_a, \n    account_id_b, \n    similarity_score, \n    RANK() OVER (ORDER BY similarity_score DESC) AS rnk\n  FROM `graph-enriched-lakehouse`.`graph-enriched-schema`.`gold_account_similarity_pairs`\n  WHERE similarity_score IS NOT NULL\n)\nSELECT account_id_a, account_id_b, similarity_score\nFROM ranked_pairs\nWHERE rnk = 1;",
+          "genie_response_text": "The pairs of accounts that have visited the most merchants in common are:\n- **7493** and **21396** (similarity score: 0.5)\n- **15117** and **16869** (similarity score: 0.5)\n- **5119** and **21396** (similarity score: 0.5)\n- **21396** and **24863** (similarity score: 0.5)\n\nAll top pairs share the same highest similarity score of 0.5, indicating they have the most merchants in common among the available data.",
+          "row_count": 4,
+          "result_preview_records": [
+            {
+              "account_id_a": "7493",
+              "account_id_b": "21396",
+              "similarity_score": "0.5"
+            },
+            {
+              "account_id_a": "15117",
+              "account_id_b": "16869",
+              "similarity_score": "0.5"
+            },
+            {
+              "account_id_a": "5119",
+              "account_id_b": "21396",
+              "similarity_score": "0.5"
+            },
+            {
+              "account_id_a": "21396",
+              "account_id_b": "24863",
+              "similarity_score": "0.5"
+            }
+          ],
+          "metric": {
+            "key": "same_ring_fraction",
+            "value": 1.0,
+            "after_gate_criterion": "> 0.60",
+            "meets_after_gate": false
+          }
+        }
+      ],
+      "metric": {
+        "key": "same_ring_fraction",
+        "value": 1.0,
+        "after_gate_criterion": "> 0.60",
+        "meets_after_gate": false
+      }
+    }
+  ]
+}

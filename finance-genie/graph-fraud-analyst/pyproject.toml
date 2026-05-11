@@ -9,6 +9,7 @@ dependencies = [
     "pydantic-settings>=2.11.0",
     "uvicorn>=0.37.0",
     "databricks-sdk>=0.74.0",
+    "neo4j>=5.20.0",
 ]
 
 [dependency-groups]

@@ -6,10 +6,8 @@ from flask import Flask, jsonify, request, send_from_directory
 
 APP_DIR = Path(__file__).resolve().parent
 ROOT_ENV = APP_DIR.parent / ".env"
-LOCAL_ENV = APP_DIR / ".env"
 
 load_dotenv(ROOT_ENV, override=False)
-load_dotenv(LOCAL_ENV, override=False)
 
 USE_MOCK = os.getenv("USE_MOCK_BACKEND", "true").lower() == "true"
 if USE_MOCK:

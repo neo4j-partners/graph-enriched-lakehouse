@@ -6,7 +6,7 @@ command: ["uvicorn", "graph_fraud_analyst.backend.app:app", "--workers", "2"]
 # src/graph_fraud_analyst/backend/core/_config.py. WAREHOUSE_ID and GENIE_SPACE_ID
 # are bound to Databricks resources declared in databricks.yml (see the
 # `resources:` block on the app); CATALOG and SCHEMA are static defaults
-# pointing at the gold tables produced by the automated/ pipeline.
+# pointing at the gold tables produced by the enrichment-pipeline/.
 #
 # DATABRICKS_HOST and DATABRICKS_TOKEN are injected automatically by the
 # Databricks Apps runtime; the WorkspaceClient picks them up without any
@@ -20,3 +20,12 @@ env:
     value: "graph-enriched-lakehouse"
   - name: GRAPH_FRAUD_ANALYST_SCHEMA
     value: "graph-enriched-schema"
+  # Neo4j Aura binding. The secret resources are declared in databricks.yml
+  # under the app's `resources:` block; the app SP must have READ on the
+  # neo4j-graph-engineering scope (granted once via `databricks secrets put-acl`).
+  - name: NEO4J_URI
+    valueFrom: "neo4j_uri"
+  - name: NEO4J_USERNAME
+    valueFrom: "neo4j_username"
+  - name: NEO4J_PASSWORD
+    valueFrom: "neo4j_password"

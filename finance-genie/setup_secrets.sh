@@ -100,7 +100,7 @@ put_secret() {
 }
 
 echo
-echo "Writing automated/workshop Neo4j and Genie secrets"
+echo "Writing enrichment-pipeline/workshop Neo4j and Genie secrets"
 ensure_scope "$NEO4J_SECRET_SCOPE"
 put_secret "$NEO4J_SECRET_SCOPE" "uri" "$NEO4J_URI"
 put_secret "$NEO4J_SECRET_SCOPE" "username" "$NEO4J_USERNAME"

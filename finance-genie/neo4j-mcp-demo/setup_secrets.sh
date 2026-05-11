@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Stores AgentCore OAuth credentials for the Neo4j MCP demo in Databricks
-# secrets. This is the Neo4j MCP equivalent of ../automated/setup_secrets.sh,
+# secrets. This is the Neo4j MCP equivalent of ../enrichment-pipeline/setup_secrets.sh,
 # but delegates validation and SDK calls to setup/store_secrets.py.
 #
 # Secrets written:

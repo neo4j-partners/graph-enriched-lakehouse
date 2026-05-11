@@ -1,33 +1,35 @@
-"""Account-level search services.
+"""Account-level search services, backed by live Cypher against Aura.
 
-`list_risky_accounts` powers Screen 1 mode "Risky accounts".
-`list_central_accounts` powers Screen 1 mode "Central accounts".
+`list_risky_accounts` powers Screen 1 mode "Risky accounts" (ordered by
+PageRank as `risk_score`).
+`list_central_accounts` powers Screen 1 mode "Central accounts" (ordered by
+sampled betweenness as `betweenness_centrality`).
+
+Shape parity with the previous SQL-backed version so the OpenAPI client
+requires no regeneration.
 """
 
 from __future__ import annotations
 
 from datetime import date, datetime
 
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.sql import StatementParameterListItem
+from neo4j import Driver
 
-from ..core._config import AppConfig
 from ..models import Band, HubAccountOut, RiskAccountOut
-from . import sql
 
 
-def _velocity_band(txn_count_30d: int) -> Band:
-    if txn_count_30d >= 50:
+def _velocity_band(txn_count: int) -> Band:
+    if txn_count >= 50:
         return "High"
-    if txn_count_30d >= 15:
+    if txn_count >= 15:
         return "Medium"
     return "Low"
 
 
-def _diversity_band(distinct_merchants_30d: int) -> Band:
-    if distinct_merchants_30d >= 20:
+def _diversity_band(distinct_merchants: int) -> Band:
+    if distinct_merchants >= 20:
         return "High"
-    if distinct_merchants_30d >= 8:
+    if distinct_merchants >= 8:
         return "Medium"
     return "Low"
 
@@ -47,25 +49,25 @@ def _account_age_days(opened_date: object) -> int:
     return max((date.today() - d).days, 0)
 
 
+_RISKY_CYPHER = """
+MATCH (a:Account) WHERE a.risk_score IS NOT NULL
+WITH a ORDER BY a.risk_score DESC LIMIT $row_limit
+OPTIONAL MATCH (a)-[t:TRANSACTED_WITH]->(m:Merchant)
+WITH a, count(t) AS txn_count, count(DISTINCT m) AS distinct_merchants
+RETURN a.account_id     AS account_id,
+       a.risk_score     AS risk_score,
+       txn_count,
+       distinct_merchants,
+       a.opened_date    AS opened_date
+ORDER BY a.risk_score DESC
+"""
+
+
 def list_risky_accounts(
-    ws: WorkspaceClient, config: AppConfig, limit: int = 25
+    driver: Driver, limit: int = 25
 ) -> list[RiskAccountOut]:
-    statement = f"""
-        SELECT
-          account_id,
-          risk_score,
-          COALESCE(txn_count_30d, 0) AS txn_count_30d,
-          COALESCE(distinct_merchant_count_30d, 0) AS distinct_merchant_count_30d,
-          opened_date
-        FROM `{config.catalog}`.`{config.schema_}`.gold_accounts
-        WHERE risk_score IS NOT NULL
-        ORDER BY risk_score DESC
-        LIMIT :row_limit
-    """
-    parameters = [
-        StatementParameterListItem(name="row_limit", value=str(limit), type="INT"),
-    ]
-    rows = sql.execute(ws, config.warehouse_id, statement, parameters=parameters)
+    with driver.session() as session:
+        rows = session.run(_RISKY_CYPHER, row_limit=int(limit)).data()
 
     if not rows:
         return []
@@ -77,8 +79,8 @@ def list_risky_accounts(
     for r in rows:
         raw_score = float(r.get("risk_score") or 0)
         score = raw_score / max_score if normalize else raw_score
-        txn_count = int(r.get("txn_count_30d") or 0)
-        diversity = int(r.get("distinct_merchant_count_30d") or 0)
+        txn_count = int(r.get("txn_count") or 0)
+        diversity = int(r.get("distinct_merchants") or 0)
         out.append(
             RiskAccountOut(
                 account_id=str(r.get("account_id")),
@@ -91,38 +93,37 @@ def list_risky_accounts(
     return out
 
 
-def list_central_accounts(
-    ws: WorkspaceClient, config: AppConfig, limit: int = 25
-) -> list[HubAccountOut]:
-    """Return central (high-betweenness) accounts.
+_HUBS_CYPHER = """
+MATCH (a:Account) WHERE a.betweenness_centrality IS NOT NULL
+WITH a ORDER BY a.betweenness_centrality DESC LIMIT $row_limit
+OPTIONAL MATCH (a)-[r:TRANSFERRED_TO]-(b:Account)
+WITH a, count(DISTINCT b) AS neighbors, count(r) AS inbound_transfer_events
+RETURN a.account_id              AS account_id,
+       a.betweenness_centrality  AS betweenness,
+       neighbors,
+       inbound_transfer_events
+ORDER BY a.betweenness_centrality DESC
+"""
 
-    Note on `shortest_paths`: per the locked-in data contract in
-    `demo-client-graph-backend.md` (Central account results section), this
-    field is intentionally mocked in the web service. We derive a deterministic
-    value from `inbound_transfer_events` so the output is stable across calls.
-    The natural future pipeline source is All Pairs Shortest Path or closeness
-    centrality.
+
+def list_central_accounts(
+    driver: Driver, limit: int = 25
+) -> list[HubAccountOut]:
+    """Return high-betweenness accounts.
+
+    `shortest_paths` is derived from `inbound_transfer_events` so the value is
+    deterministic without running an All Pairs Shortest Path computation at
+    request time. Matches the previous SQL service's contract.
     """
-    statement = f"""
-        SELECT
-          account_id,
-          COALESCE(betweenness_centrality, risk_score) AS betweenness,
-          COALESCE(distinct_counterparty_count, 0) AS neighbors,
-          COALESCE(inbound_transfer_events, 0) AS inbound_transfer_events
-        FROM `{config.catalog}`.`{config.schema_}`.gold_accounts
-        WHERE COALESCE(betweenness_centrality, risk_score) IS NOT NULL
-        ORDER BY betweenness DESC
-        LIMIT :row_limit
-    """
-    parameters = [
-        StatementParameterListItem(name="row_limit", value=str(limit), type="INT"),
-    ]
-    rows = sql.execute(ws, config.warehouse_id, statement, parameters=parameters)
+    with driver.session() as session:
+        rows = session.run(_HUBS_CYPHER, row_limit=int(limit)).data()
 
     if not rows:
         return []
 
-    max_betweenness = max((float(r.get("betweenness") or 0) for r in rows), default=0.0)
+    max_betweenness = max(
+        (float(r.get("betweenness") or 0) for r in rows), default=0.0
+    )
     normalize = max_betweenness > 1.0
 
     out: list[HubAccountOut] = []

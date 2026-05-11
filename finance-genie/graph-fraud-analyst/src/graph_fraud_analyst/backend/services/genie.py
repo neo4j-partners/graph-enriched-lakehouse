@@ -1,6 +1,6 @@
 """Genie Conversation API client.
 
-Mirrors the pattern in `automated/jobs/_demo_utils.py::ask_genie`, adapted to
+Mirrors the pattern in `enrichment-pipeline/jobs/_demo_utils.py::ask_genie`, adapted to
 the AskOut contract. The service issues a question against the configured
 Genie Space and parses the first attachment that carries either text or a
 query result.

@@ -1,28 +1,29 @@
-"""Ring search service.
+"""Ring search service, backed by live Cypher against Aura.
 
-Reads ring-candidate communities from `gold_fraud_ring_communities` and shapes
-them into `RingOut` records for Screen 1 of the workbench.
+Reads ring-candidate communities directly from Neo4j using the GDS node
+properties written by enrichment-pipeline/setup/run_gds.py (`community_id` from
+Louvain, `risk_score` from PageRank). One Cypher round-trip per call.
+
+Shape parity with the previous SQL-backed version: same RingOut fields, same
+order, so the frontend OpenAPI client requires no regeneration.
 """
 
 from __future__ import annotations
 
-from databricks.sdk import WorkspaceClient
-from databricks.sdk.service.sql import StatementParameterListItem
+from neo4j import Driver
 
-from ..core._config import AppConfig
-from ..models import Graph, Risk, RingOut, Topology
-from . import sql
+from ..models import Graph, Risk, RingOut
 
+# Minimum community size to count as a ring-candidate. Matches the
+# enrichment-pipeline's is_ring_candidate gate (member_count >= 3).
+_MIN_MEMBERS = 3
 
-_VALID_TOPOLOGIES = {"star", "mesh", "chain"}
+# Cap returned rings; mirrors the SQL LIMIT 20 from the previous gold-table
+# query and keeps payloads small.
+_TOP_N = 20
 
 
 def _risk_band(score: float, max_score: float) -> Risk:
-    """Map a normalized risk score in [0, 1] to a band.
-
-    Louvain pageRank scores can run higher than 1.0, so we normalize against
-    the column max before binning.
-    """
     normalized = score / max_score if max_score > 0 else 0.0
     if normalized >= 0.75:
         return "H"
@@ -31,26 +32,37 @@ def _risk_band(score: float, max_score: float) -> Risk:
     return "L"
 
 
-def list_rings(ws: WorkspaceClient, config: AppConfig, max_nodes: int) -> list[RingOut]:
-    """Return up to 20 ring-candidate communities ordered by avg_risk_score desc."""
-    statement = f"""
-        SELECT
-          community_id,
-          member_count,
-          COALESCE(total_volume_usd, 0) AS total_volume_usd,
-          COALESCE(avg_risk_score, 0) AS avg_risk_score,
-          COALESCE(topology, 'mesh') AS topology,
-          COALESCE(anchor_merchant_categories, ARRAY()) AS anchor_merchant_categories
-        FROM `{config.catalog}`.`{config.schema_}`.gold_fraud_ring_communities
-        WHERE is_ring_candidate = TRUE
-          AND member_count <= :max_nodes
-        ORDER BY avg_risk_score DESC
-        LIMIT 20
-    """
-    parameters = [
-        StatementParameterListItem(name="max_nodes", value=str(max_nodes), type="BIGINT"),
-    ]
-    rows = sql.execute(ws, config.warehouse_id, statement, parameters=parameters)
+_RINGS_CYPHER = """
+MATCH (a:Account)
+WHERE a.community_id IS NOT NULL
+WITH a.community_id AS community_id,
+     count(a)       AS member_count,
+     avg(a.risk_score) AS avg_risk_score
+WHERE member_count >= $min_members AND member_count <= $max_nodes
+OPTIONAL MATCH (b:Account)-[t:TRANSACTED_WITH]->(m:Merchant)
+WHERE b.community_id = community_id
+WITH community_id, member_count, avg_risk_score,
+     collect(DISTINCT m.category) AS categories,
+     sum(t.amount)                AS total_volume
+RETURN community_id,
+       member_count,
+       avg_risk_score,
+       categories[0..3] AS anchor_merchant_categories,
+       coalesce(total_volume, 0)  AS total_volume_usd
+ORDER BY avg_risk_score DESC
+LIMIT $top_n
+"""
+
+
+def list_rings(driver: Driver, max_nodes: int) -> list[RingOut]:
+    """Return up to 20 ring-candidate communities, ordered by avg_risk_score desc."""
+    with driver.session() as session:
+        rows = session.run(
+            _RINGS_CYPHER,
+            min_members=_MIN_MEMBERS,
+            max_nodes=int(max_nodes),
+            top_n=_TOP_N,
+        ).data()
 
     if not rows:
         return []
@@ -60,8 +72,6 @@ def list_rings(ws: WorkspaceClient, config: AppConfig, max_nodes: int) -> list[R
     out: list[RingOut] = []
     for r in rows:
         risk_score = float(r.get("avg_risk_score") or 0)
-        topology_raw = r.get("topology") or "mesh"
-        topology: Topology = topology_raw if topology_raw in _VALID_TOPOLOGIES else "mesh"  # type: ignore[assignment]
         anchors = r.get("anchor_merchant_categories") or []
         if not isinstance(anchors, list):
             anchors = []
@@ -74,9 +84,10 @@ def list_rings(ws: WorkspaceClient, config: AppConfig, max_nodes: int) -> list[R
                 shared_identifiers=[str(a) for a in anchors],
                 risk=_risk_band(risk_score, max_score),
                 risk_score=risk_score,
-                topology=topology,
-                # UI computes layout client-side from id + nodes + topology, so
-                # empty arrays are intentional.
+                # Topology defaults to "mesh"; the UI computes its own layout
+                # from id + node count + topology, so live classification is
+                # not required for the demo.
+                topology="mesh",
                 graph=Graph(nodes=[], edges=[]),
             )
         )
