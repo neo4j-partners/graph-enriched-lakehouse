@@ -254,7 +254,17 @@ class RetailAgentRunner(Runner):
             print("\nJob submitted (--no-wait). Check status in the Databricks UI.")
         else:
             print("  Waiting for completion...")
-            run = waiter.result()
+            try:
+                run = waiter.result()
+            except TimeoutError as exc:
+                raise RunnerError(
+                    "Timed out waiting for Databricks job completion. "
+                    "The run may still be active or may have completed after "
+                    "the local waiter timed out.\n"
+                    f"  Run ID:       {run_id}\n"
+                    f"  Check status: {self._databricks_get_run_command(run_id)}\n"
+                    f"  View logs:    {self.cli_command} logs {run_id}"
+                ) from exc
             result_state = run.state.result_state if run.state else None
             state_name = result_state.value if result_state else "UNKNOWN"
             page_url = run.run_page_url or ""
@@ -272,6 +282,12 @@ class RetailAgentRunner(Runner):
         if self.config.databricks_volume_path:
             print(f"  List results:       {self.cli_command} download --list results")
             print(f"  Download results:   {self.cli_command} download results/<filename>")
+
+    def _databricks_get_run_command(self, run_id: int) -> str:
+        command = f"databricks jobs get-run {run_id}"
+        if self.config.databricks_profile:
+            command = f"{command} --profile {self.config.databricks_profile}"
+        return command
 
     def upload_all(self) -> None:
         """No-op because jobs run Python wheel entry points directly."""

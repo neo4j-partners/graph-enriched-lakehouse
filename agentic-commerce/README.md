@@ -68,6 +68,10 @@ Run the full pipeline:
 uv run python -m cli pipeline --all
 ```
 
+For operator runs or debugging, prefer running the same path one step at a
+time so each Databricks run ID is visible and easy to inspect. See
+[Step-by-step runbook](#step-by-step-runbook).
+
 Run the demo client locally after the serving endpoint is deployed:
 
 ```bash
@@ -130,6 +134,73 @@ uv run python -m cli pipeline --verify --compute serverless
 
 Use `uv run python -m cli logs <run-id>` after a submitted step to inspect Databricks task output.
 
+### Step-by-step runbook
+
+Use this path when validating a deployment, debugging a failure, or keeping a
+clear record of each Databricks run ID. It is the same sequence as
+`pipeline --all`, but each step can be checked before continuing.
+
+Run local checks first:
+
+```bash
+uv run python -m pytest tests
+uv run python -m compileall -q retail_agent demo-client/src
+uv run python -m cli validate
+```
+
+Build and upload the wheel:
+
+```bash
+uv run python -m cli upload --wheel
+```
+
+Submit each Databricks job in order:
+
+```bash
+uv run python -m cli submit retail-agent-load-products
+uv run python -m cli submit retail-agent-load-graphrag
+uv run python -m cli submit retail-agent-deploy
+uv run python -m cli submit retail-agent-demo
+uv run python -m cli submit retail-agent-demo-retrievers
+uv run python -m cli submit retail-agent-check-knowledge
+```
+
+After each submitted job, inspect the logs before moving to the next step:
+
+```bash
+uv run python -m cli logs <run-id>
+```
+
+Expected success signals:
+
+| Step | Success signal |
+|------|----------------|
+| Load products | `Sample data loaded successfully`, 21 products, 84 knowledge articles, 84 support tickets, 84 reviews, and 21 product embeddings |
+| Build GraphRAG | `Pipeline complete. 252 processed, 0 failed` |
+| Deploy agent | A new Unity Catalog model version is created and the endpoint reports target version traffic |
+| Verify endpoint | `Overall: 9 passed, 0 failed` |
+| Verify retrievers | `Demo complete` with vector, vector-plus-Cypher, hybrid, and Text2Cypher sections |
+| Verify knowledge | `Knowledge exercise: 4 passed, 0 failed` |
+
+### Long-running jobs
+
+Databricks jobs can outlive the local SDK waiter. A local `TimeoutError` means
+the CLI stopped waiting; it does not prove that the Databricks run failed.
+Check the run state and logs with:
+
+```bash
+databricks jobs get-run <run-id> --profile <profile>
+uv run python -m cli logs <run-id>
+```
+
+For this project, `retail-agent-load-graphrag` can run long enough to hit the
+local waiter timeout while still finishing successfully in Databricks. Treat the
+Databricks run state and final log counts as the source of truth.
+
+Some GraphRAG logs can include nonfatal warnings from Neo4j APOC relationship
+merges or from a malformed LLM extraction response. Inspect the final result
+state and summary counts before treating these warnings as failures.
+
 ## Focused Testing
 
 Test only the deployed agent endpoint on Databricks:
@@ -157,7 +228,7 @@ uv run python -m cli validate retail-agent-demo
 
 ## Individual Commands
 
-The single pipeline command is the normal path. Use these commands for debugging or rerunning one step.
+Use these commands for debugging, rerunning one step, or checking a submitted run.
 
 ```bash
 # Show project CLI help
