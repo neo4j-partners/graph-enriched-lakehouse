@@ -97,7 +97,8 @@
               <p>Each card is one detected cluster. Dots are accounts and lines are transfers or shared-account relationships.</p>
               <ul>
                 <li>Redder dots mean higher model risk.</li>
-                <li>Larger dots are hubs with more connections.</li>
+                <li>Larger dots are hubs with more connections, and dark outlines mark the strongest hub or priority accounts.</li>
+                <li>The card summary shows risk, hub count, density, volume, and shared identifiers.</li>
                 <li>Tight loops can indicate circular fund movement.</li>
                 <li>Dense clusters with repeated identifiers deserve review.</li>
                 <li>Long chains can indicate layering or mule movement.</li>
@@ -105,12 +106,16 @@
             </div>
           </div>
         </div>
+        <div class="graph-context">
+          <span>Topology stays in the table. Cards rank evidence: risk, accounts, hubs, density, volume, and shared identifiers.</span>
+        </div>
         <div id="graph-grid" class="graph-grid" data-testid="graph-grid"></div>
         <div class="graph-legend">
           <span class="legend-item high">High risk</span>
           <span class="legend-item medium">Medium</span>
           <span class="legend-item low">Low</span>
-          <span class="legend-hint">Click a cluster to select · larger nodes are hubs</span>
+          <span class="legend-item hub">Hub / priority</span>
+          <span class="legend-hint">Click a cluster to select · cards show top risk-ranked accounts</span>
         </div>
       </div>
 

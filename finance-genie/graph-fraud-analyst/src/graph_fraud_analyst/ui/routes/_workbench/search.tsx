@@ -14,6 +14,7 @@ import {
   useReactTable,
   type Column,
   type ColumnDef,
+  type SortingFn,
   type SortingState,
   type Table as TanStackTable,
 } from "@tanstack/react-table";
@@ -24,15 +25,16 @@ import {
   ArrowDown,
   ArrowUp,
   ChevronsUpDown,
+  Info,
   Network,
   Search as SearchIcon,
   Table2,
 } from "lucide-react";
 
+import { FraudRingCard } from "@/components/FraudRingCard";
 import { Pill, type PillIntent } from "@/components/Pill";
 import { RiskBar } from "@/components/RiskBar";
 import { RingThumb } from "@/components/RingThumb";
-import { NetworkPreview } from "@/components/NetworkPreview";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -114,6 +116,11 @@ const currency = new Intl.NumberFormat("en-US", {
   maximumFractionDigits: 0,
 });
 const TABLE_HEAD_CLASS = "text-[11px] uppercase tracking-wide text-muted-ink";
+const BAND_SORT_ORDER = {
+  Low: 0,
+  Medium: 1,
+  High: 2,
+} satisfies Record<"Low" | "Medium" | "High", number>;
 
 declare module "@tanstack/react-table" {
   interface ColumnMeta<TData, TValue> {
@@ -128,6 +135,12 @@ function bandPillIntent(band: "Low" | "Medium" | "High"): PillIntent {
   if (band === "Medium") return "risk-med";
   return "default";
 }
+
+const bandSortingFn: SortingFn<RiskAccountOut> = (rowA, rowB, columnId) => {
+  const a = rowA.getValue<"Low" | "Medium" | "High">(columnId);
+  const b = rowB.getValue<"Low" | "Medium" | "High">(columnId);
+  return BAND_SORT_ORDER[a] - BAND_SORT_ORDER[b];
+};
 
 function SearchScreen() {
   const navigate = useNavigate();
@@ -567,6 +580,71 @@ function EmptyRingsCard() {
   );
 }
 
+function FraudRingCardGrid({
+  rings,
+  selectedRings,
+  onToggle,
+}: {
+  rings: RingOut[];
+  selectedRings: string[];
+  onToggle: (ringId: string) => void;
+}) {
+  const nodeTotal = rings.reduce((sum, ring) => sum + ring.nodes, 0);
+
+  return (
+    <div className="overflow-hidden rounded-md border border-line bg-surface">
+      <div className="flex h-10 items-center justify-between border-b border-line bg-canvas-soft px-4">
+        <div className="flex min-w-0 items-center gap-2">
+          <span className="text-xs font-semibold uppercase tracking-wide text-ink-2">
+            Graph view
+          </span>
+          <span className="truncate text-xs text-muted-ink">
+            {rings.length} clusters · {nodeTotal.toLocaleString()} nodes total
+          </span>
+        </div>
+        <TooltipProvider delayDuration={150}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full border border-line bg-surface text-muted-ink transition-colors hover:border-accent-ink hover:text-accent-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                aria-label="What graph cards mean"
+              >
+                <Info className="h-3.5 w-3.5" />
+              </button>
+            </TooltipTrigger>
+            <TooltipContent
+              side="left"
+              align="start"
+              className="max-w-[320px] text-left leading-snug"
+            >
+              Cards rank fraud-ring evidence by risk, accounts, hubs, density,
+              volume, and shared identifiers. Dots are accounts and lines are
+              transfers inside the detected community.
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      </div>
+      <div className="px-4 pt-3 text-xs text-muted-ink">
+        Topology stays in the table. Cards rank evidence: risk, accounts, hubs,
+        density, volume, and shared identifiers.
+      </div>
+      <TooltipProvider delayDuration={150}>
+        <div className="grid grid-cols-1 gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+          {rings.map((ring) => (
+            <FraudRingCard
+              key={ring.ring_id}
+              ring={ring}
+              selected={selectedRings.includes(ring.ring_id)}
+              onToggle={onToggle}
+            />
+          ))}
+        </div>
+      </TooltipProvider>
+    </div>
+  );
+}
+
 function RingResults({
   rings,
   selectedRings,
@@ -577,13 +655,155 @@ function RingResults({
   onToggle: (ringId: string) => void;
 }) {
   const [view, setView] = useState<RingResultsView>("graph");
-  const previewRings = rings.map((r) => ({
-    ring_id: r.ring_id,
-    nodes: r.nodes,
-    topology: r.topology,
-    risk: r.risk,
-    graph: r.graph,
-  }));
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const columns = useMemo<ColumnDef<RingOut>[]>(
+    () => [
+      {
+        id: "select",
+        enableSorting: false,
+        header: () => (
+          <HeaderTooltip
+            label="Select"
+            tooltip="Choose fraud rings to carry forward into the load step."
+          />
+        ),
+        cell: ({ row }) => {
+          const ring = row.original;
+          return (
+            <Checkbox
+              checked={selectedRings.includes(ring.ring_id)}
+              onCheckedChange={() => onToggle(ring.ring_id)}
+              aria-label={`Select ${ring.ring_id}`}
+            />
+          );
+        },
+        meta: { className: "w-10" },
+      },
+      {
+        accessorKey: "ring_id",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Ring"
+            tooltip="Graph community identifier returned by the fraud-ring search."
+          />
+        ),
+        cell: ({ row }) => <Pill intent="mono">{row.original.ring_id}</Pill>,
+      },
+      {
+        accessorKey: "topology",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Topology"
+            tooltip="Preview of the ring shape and the structural pattern found in the graph."
+          />
+        ),
+        cell: ({ row }) => {
+          const ring = row.original;
+          return (
+            <div className="flex flex-col items-start">
+              <RingThumb
+                ring={{
+                  ring_id: ring.ring_id,
+                  nodes: ring.nodes,
+                  topology: ring.topology,
+                  risk: ring.risk,
+                  graph: ring.graph,
+                }}
+                width={140}
+                height={80}
+                selected={selectedRings.includes(ring.ring_id)}
+              />
+              <span className="text-[11px] text-muted-ink mt-1">
+                {ring.topology}
+              </span>
+            </div>
+          );
+        },
+      },
+      {
+        accessorKey: "nodes",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Nodes"
+            tooltip="Number of accounts and entities included in the detected ring."
+            align="right"
+          />
+        ),
+        cell: ({ row }) => row.original.nodes,
+        meta: {
+          align: "right",
+          cellClassName: "font-mono tabular-nums",
+        },
+      },
+      {
+        accessorKey: "volume",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Volume"
+            tooltip="Total transaction volume associated with the detected ring."
+            align="right"
+          />
+        ),
+        cell: ({ row }) => currency.format(row.original.volume),
+        meta: {
+          align: "right",
+          cellClassName: "font-mono tabular-nums",
+        },
+      },
+      {
+        accessorFn: (row) => row.shared_identifiers.join(", "),
+        id: "shared_identifiers",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Shared identifiers"
+            tooltip="Identifiers reused across ring members, such as shared devices, emails, or addresses."
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="flex flex-wrap gap-1">
+            {row.original.shared_identifiers.map((id) => (
+              <Pill key={id}>{id}</Pill>
+            ))}
+          </div>
+        ),
+      },
+      {
+        accessorKey: "risk_score",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Risk"
+            tooltip="Composite risk score and risk label assigned to the ring."
+          />
+        ),
+        cell: ({ row }) => {
+          const ring = row.original;
+          return (
+            <div className="flex items-center gap-2">
+              <RiskBar score={ring.risk_score} risk={ring.risk} />
+              <Pill intent={RISK_PILL_INTENT[ring.risk]}>
+                {RISK_LABEL[ring.risk]}
+              </Pill>
+            </div>
+          );
+        },
+      },
+    ],
+    [onToggle, selectedRings],
+  );
+  const table = useReactTable({
+    data: rings,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
 
   if (rings.length === 0) return <EmptyRingsCard />;
 
@@ -629,132 +849,24 @@ function RingResults({
       </div>
 
       {view === "graph" ? (
-        <NetworkPreview
-          rings={previewRings}
-          selectedRingIds={selectedRings}
+        <FraudRingCardGrid
+          rings={rings}
+          selectedRings={selectedRings}
           onToggle={onToggle}
-          defaultOpen
         />
       ) : null}
 
       {view === "table" ? (
         <Card className="overflow-hidden">
           <TooltipProvider delayDuration={150}>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className={cn(TABLE_HEAD_CLASS, "w-10")}>
-                    <HeaderTooltip
-                      label="Select"
-                      tooltip="Choose fraud rings to carry forward into the load step."
-                    />
-                  </TableHead>
-                  <TableHead className={TABLE_HEAD_CLASS}>
-                    <HeaderTooltip
-                      label="Ring"
-                      tooltip="Graph community identifier returned by the fraud-ring search."
-                    />
-                  </TableHead>
-                  <TableHead className={TABLE_HEAD_CLASS}>
-                    <HeaderTooltip
-                      label="Topology"
-                      tooltip="Preview of the ring shape and the structural pattern found in the graph."
-                    />
-                  </TableHead>
-                  <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
-                    <HeaderTooltip
-                      label="Nodes"
-                      tooltip="Number of accounts and entities included in the detected ring."
-                      align="right"
-                    />
-                  </TableHead>
-                  <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
-                    <HeaderTooltip
-                      label="Volume"
-                      tooltip="Total transaction volume associated with the detected ring."
-                      align="right"
-                    />
-                  </TableHead>
-                  <TableHead className={TABLE_HEAD_CLASS}>
-                    <HeaderTooltip
-                      label="Shared identifiers"
-                      tooltip="Identifiers reused across ring members, such as shared devices, emails, or addresses."
-                    />
-                  </TableHead>
-                  <TableHead className={TABLE_HEAD_CLASS}>
-                    <HeaderTooltip
-                      label="Risk"
-                      tooltip="Composite risk score and risk label assigned to the ring."
-                    />
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rings.map((r) => {
-                  const selected = selectedRings.includes(r.ring_id);
-                  return (
-                    <TableRow
-                      key={r.ring_id}
-                      className={cn(
-                        "border-b border-line",
-                        selected && "bg-accent-soft/40",
-                      )}
-                    >
-                      <TableCell>
-                        <Checkbox
-                          checked={selected}
-                          onCheckedChange={() => onToggle(r.ring_id)}
-                          aria-label={`Select ${r.ring_id}`}
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Pill intent="mono">{r.ring_id}</Pill>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-col items-start">
-                          <RingThumb
-                            ring={{
-                              ring_id: r.ring_id,
-                              nodes: r.nodes,
-                              topology: r.topology,
-                              risk: r.risk,
-                              graph: r.graph,
-                            }}
-                            width={140}
-                            height={80}
-                            selected={selected}
-                          />
-                          <span className="text-[11px] text-muted-ink mt-1">
-                            {r.topology}
-                          </span>
-                        </div>
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {r.nodes}
-                      </TableCell>
-                      <TableCell className="text-right font-mono tabular-nums">
-                        {currency.format(r.volume)}
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex flex-wrap gap-1">
-                          {r.shared_identifiers.map((id) => (
-                            <Pill key={id}>{id}</Pill>
-                          ))}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center gap-2">
-                          <RiskBar score={r.risk_score} risk={r.risk} />
-                          <Pill intent={RISK_PILL_INTENT[r.risk]}>
-                            {RISK_LABEL[r.risk]}
-                          </Pill>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+            <SearchDataTable
+              table={table}
+              getRowClassName={(ring) =>
+                selectedRings.includes(ring.ring_id)
+                  ? "bg-accent-soft/40"
+                  : undefined
+              }
+            />
           </TooltipProvider>
         </Card>
       ) : null}
@@ -763,138 +875,188 @@ function RingResults({
 }
 
 function RiskResults({ rows }: { rows: RiskAccountOut[] }) {
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const columns = useMemo<ColumnDef<RiskAccountOut>[]>(
+    () => [
+      {
+        accessorKey: "account_id",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Account"
+            tooltip="Account identifier returned by the risk-score search."
+          />
+        ),
+        cell: ({ row }) => <Pill intent="mono">{row.original.account_id}</Pill>,
+      },
+      {
+        accessorKey: "risk_score",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Risk"
+            tooltip="Individual account risk score on a zero-to-one scale."
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2">
+            <RiskBar score={row.original.risk_score} />
+            <span className="font-mono tabular-nums text-xs text-ink-2">
+              {row.original.risk_score.toFixed(2)}
+            </span>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "velocity",
+        sortingFn: bandSortingFn,
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Velocity"
+            tooltip="Relative transaction velocity band for the account."
+          />
+        ),
+        cell: ({ row }) => (
+          <Pill intent={bandPillIntent(row.original.velocity)}>
+            {row.original.velocity}
+          </Pill>
+        ),
+      },
+      {
+        accessorKey: "merchant_diversity",
+        sortingFn: bandSortingFn,
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Merchant diversity"
+            tooltip="Relative breadth of merchants connected to the account."
+          />
+        ),
+        cell: ({ row }) => (
+          <Pill intent={bandPillIntent(row.original.merchant_diversity)}>
+            {row.original.merchant_diversity}
+          </Pill>
+        ),
+      },
+      {
+        accessorKey: "account_age_days",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Account age"
+            tooltip="Age of the account in days."
+            align="right"
+          />
+        ),
+        cell: ({ row }) => `${row.original.account_age_days}d`,
+        meta: {
+          align: "right",
+          cellClassName: "font-mono tabular-nums",
+        },
+      },
+    ],
+    [],
+  );
+  const table = useReactTable({
+    data: rows,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
   return (
     <Card className="overflow-hidden">
       <TooltipProvider delayDuration={150}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className={TABLE_HEAD_CLASS}>
-                <HeaderTooltip
-                  label="Account"
-                  tooltip="Account identifier returned by the risk-score search."
-                />
-              </TableHead>
-              <TableHead className={TABLE_HEAD_CLASS}>
-                <HeaderTooltip
-                  label="Risk"
-                  tooltip="Individual account risk score on a zero-to-one scale."
-                />
-              </TableHead>
-              <TableHead className={TABLE_HEAD_CLASS}>
-                <HeaderTooltip
-                  label="Velocity"
-                  tooltip="Relative transaction velocity band for the account."
-                />
-              </TableHead>
-              <TableHead className={TABLE_HEAD_CLASS}>
-                <HeaderTooltip
-                  label="Merchant diversity"
-                  tooltip="Relative breadth of merchants connected to the account."
-                />
-              </TableHead>
-              <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
-                <HeaderTooltip
-                  label="Account age"
-                  tooltip="Age of the account in days."
-                  align="right"
-                />
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.account_id} className="border-b border-line">
-                <TableCell>
-                  <Pill intent="mono">{r.account_id}</Pill>
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <RiskBar score={r.risk_score} />
-                    <span className="font-mono tabular-nums text-xs text-ink-2">
-                      {r.risk_score.toFixed(2)}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Pill intent={bandPillIntent(r.velocity)}>{r.velocity}</Pill>
-                </TableCell>
-                <TableCell>
-                  <Pill intent={bandPillIntent(r.merchant_diversity)}>
-                    {r.merchant_diversity}
-                  </Pill>
-                </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {r.account_age_days}d
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <SearchDataTable table={table} />
       </TooltipProvider>
     </Card>
   );
 }
 
 function HubResults({ rows }: { rows: HubAccountOut[] }) {
+  const [sorting, setSorting] = useState<SortingState>([]);
+  const columns = useMemo<ColumnDef<HubAccountOut>[]>(
+    () => [
+      {
+        accessorKey: "account_id",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Account"
+            tooltip="Account identifier returned by the central-account search."
+          />
+        ),
+        cell: ({ row }) => <Pill intent="mono">{row.original.account_id}</Pill>,
+      },
+      {
+        accessorKey: "neighbors",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Neighbors"
+            tooltip="Number of directly connected accounts or entities."
+            align="right"
+          />
+        ),
+        cell: ({ row }) => row.original.neighbors,
+        meta: {
+          align: "right",
+          cellClassName: "font-mono tabular-nums",
+        },
+      },
+      {
+        accessorKey: "betweenness",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Betweenness"
+            tooltip="Normalized betweenness centrality, measuring how often the account bridges graph paths."
+          />
+        ),
+        cell: ({ row }) => (
+          <div className="flex items-center gap-2">
+            <BetweennessBar score={row.original.betweenness} />
+            <span className="font-mono tabular-nums text-xs text-ink-2">
+              {row.original.betweenness.toFixed(2)}
+            </span>
+          </div>
+        ),
+      },
+      {
+        accessorKey: "shortest_paths",
+        header: ({ column }) => (
+          <SortableHeader
+            column={column}
+            label="Shortest paths"
+            tooltip="Count of shortest paths routed through the account."
+            align="right"
+          />
+        ),
+        cell: ({ row }) => row.original.shortest_paths,
+        meta: {
+          align: "right",
+          cellClassName: "font-mono tabular-nums",
+        },
+      },
+    ],
+    [],
+  );
+  const table = useReactTable({
+    data: rows,
+    columns,
+    state: { sorting },
+    onSortingChange: setSorting,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+  });
+
   return (
     <Card className="overflow-hidden">
       <TooltipProvider delayDuration={150}>
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className={TABLE_HEAD_CLASS}>
-                <HeaderTooltip
-                  label="Account"
-                  tooltip="Account identifier returned by the central-account search."
-                />
-              </TableHead>
-              <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
-                <HeaderTooltip
-                  label="Neighbors"
-                  tooltip="Number of directly connected accounts or entities."
-                  align="right"
-                />
-              </TableHead>
-              <TableHead className={TABLE_HEAD_CLASS}>
-                <HeaderTooltip
-                  label="Betweenness"
-                  tooltip="Normalized betweenness centrality, measuring how often the account bridges graph paths."
-                />
-              </TableHead>
-              <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
-                <HeaderTooltip
-                  label="Shortest paths"
-                  tooltip="Count of shortest paths routed through the account."
-                  align="right"
-                />
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rows.map((r) => (
-              <TableRow key={r.account_id} className="border-b border-line">
-                <TableCell>
-                  <Pill intent="mono">{r.account_id}</Pill>
-                </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {r.neighbors}
-                </TableCell>
-                <TableCell>
-                  <div className="flex items-center gap-2">
-                    <BetweennessBar score={r.betweenness} />
-                    <span className="font-mono tabular-nums text-xs text-ink-2">
-                      {r.betweenness.toFixed(2)}
-                    </span>
-                  </div>
-                </TableCell>
-                <TableCell className="text-right font-mono tabular-nums">
-                  {r.shortest_paths}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
+        <SearchDataTable table={table} />
       </TooltipProvider>
     </Card>
   );

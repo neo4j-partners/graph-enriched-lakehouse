@@ -28,6 +28,97 @@ function riskBarHtml(score, label) {
   return `<span class="risk-bar">${squares}</span><span class="risk-label">${escHtml(label)}</span>`;
 }
 
+function riskPercent(score) {
+  return `${Math.round((Number(score) || 0) * 100)}`;
+}
+
+function topologyLabel(topology) {
+  return {
+    star: 'Hub pattern',
+    ring: 'Circular flow',
+    chain: 'Layering path',
+    mesh: 'Dense mesh',
+  }[topology] || 'Cluster';
+}
+
+function topologyMeaning(topology) {
+  return {
+    star: 'One account is connected to many peers',
+    ring: 'Transfers close back on themselves',
+    chain: 'Funds move through a sequence of accounts',
+    mesh: 'Many accounts share repeated connections',
+  }[topology] || 'Connected accounts require review';
+}
+
+function evidenceHeadline(metrics) {
+  const accounts = `${metrics.nodeCount.toLocaleString()} accounts`;
+  if (metrics.hubCount >= 3) return `${metrics.hubCount} hub accounts`;
+  if (metrics.maxDegree >= 5) return `Hub-led - ${accounts}`;
+  if (metrics.densityLabel === 'High') return `High density - ${accounts}`;
+  if (metrics.nodeCount >= 100) return `${accounts} - ${metrics.densityLabel} density`;
+  if (metrics.edgeCount >= metrics.nodeCount) return `${metrics.edgeCount.toLocaleString()} links - ${accounts}`;
+  return `Connected - ${accounts}`;
+}
+
+function evidenceMeaning(ring, metrics) {
+  const sharedIds = Array.isArray(ring.shared_ids) && ring.shared_ids.length
+    ? ring.shared_ids.join(', ')
+    : 'shared identifiers';
+
+  if (metrics.hubCount >= 3) {
+    return `${metrics.hubCount} hub accounts concentrate the connections`;
+  }
+  if (metrics.maxDegree >= 5) {
+    return `Highest-degree account connects to ${metrics.maxDegree} peers`;
+  }
+  if (metrics.densityLabel === 'High') {
+    return `High connection density across ${metrics.nodeCount.toLocaleString()} accounts`;
+  }
+  if (metrics.nodeCount >= 100) {
+    return `${metrics.nodeCount.toLocaleString()} accounts linked by ${sharedIds}`;
+  }
+  if (metrics.edgeCount >= metrics.nodeCount) {
+    return `${metrics.edgeCount.toLocaleString()} relationships among ${metrics.nodeCount.toLocaleString()} accounts`;
+  }
+  return topologyMeaning(ring.topology);
+}
+
+function ringMetrics(ring) {
+  const nodes = Array.isArray(ring.nodes) ? ring.nodes : [];
+  const edges = Array.isArray(ring.edges) ? ring.edges : [];
+  const nodeCount = Number(ring.node_count) || nodes.length;
+  const degrees = {};
+
+  nodes.forEach(node => {
+    const data = node.data || {};
+    degrees[data.id] = Number(data.degree) || 0;
+  });
+  edges.forEach(edge => {
+    const data = edge.data || {};
+    degrees[data.source] = Math.max(degrees[data.source] || 0, 1);
+    degrees[data.target] = Math.max(degrees[data.target] || 0, 1);
+  });
+
+  const degreeVals = Object.values(degrees);
+  const maxDegree = degreeVals.length ? Math.max(...degreeVals) : 0;
+  const hubCount = degreeVals.filter(deg => deg >= Math.max(3, maxDegree * 0.5)).length;
+  const possibleEdges = Math.max(1, (nodeCount * (nodeCount - 1)) / 2);
+  const density = edges.length / possibleEdges;
+  const densityLabel = density >= 0.12 ? 'High' : density >= 0.04 ? 'Med' : 'Low';
+  const topRisk = nodes.reduce((max, node) => Math.max(max, Number((node.data || {}).risk_score) || 0), Number(ring.risk_score) || 0);
+
+  return {
+    density,
+    densityLabel,
+    edgeCount: edges.length,
+    hubCount,
+    maxDegree,
+    nodeCount,
+    shownCount: Math.min(nodes.length, 40),
+    topRisk,
+  };
+}
+
 // ── Topology SVG icon (for table column) ─────────────────────────────────────
 
 function topologyIcon(ring) {
@@ -94,8 +185,64 @@ function topologyIcon(ring) {
 
 // ── Cytoscape layout selection ────────────────────────────────────────────────
 
-function pickLayout(nodes, edges) {
+function positionNodesForTopology(nodes, topology, metrics) {
+  if (!['star', 'ring', 'chain'].includes(topology)) return nodes;
+
+  const n = Math.max(nodes.length, 1);
+  const center = { x: 180, y: 90 };
+
+  if (topology === 'ring') {
+    const radius = n <= 8 ? 60 : 72;
+    return nodes.map((node, i) => {
+      const angle = (i * 2 * Math.PI) / n - Math.PI / 2;
+      return {
+        ...node,
+        position: {
+          x: center.x + Math.cos(angle) * radius,
+          y: center.y + Math.sin(angle) * radius,
+        },
+      };
+    });
+  }
+
+  if (topology === 'chain') {
+    const step = 42;
+    const offset = ((n - 1) * step) / 2;
+    return nodes.map((node, i) => ({
+      ...node,
+      position: {
+        x: center.x + i * step - offset,
+        y: center.y + (i % 2 === 0 ? -18 : 18),
+      },
+    }));
+  }
+
+  const hubId = nodes.find(node => node.data.is_hub)?.data.id || nodes[0].data.id;
+  const radius = n <= 10 ? 62 : 78;
+  const outerNodes = nodes.filter(node => node.data.id !== hubId);
+  return nodes.map(node => {
+    if (node.data.id === hubId) {
+      return { ...node, position: center };
+    }
+    const i = outerNodes.findIndex(outer => outer.data.id === node.data.id);
+    const angle = (i * 2 * Math.PI) / Math.max(outerNodes.length, 1) - Math.PI / 2;
+    const degreeBoost = metrics.maxDegree > 8 ? 1.05 : 1;
+    return {
+      ...node,
+      position: {
+        x: center.x + Math.cos(angle) * radius * degreeBoost,
+        y: center.y + Math.sin(angle) * radius * degreeBoost,
+      },
+    };
+  });
+}
+
+function pickLayout(nodes, edges, topology) {
   if (!nodes.length) return { name: 'grid' };
+  if (['star', 'ring', 'chain'].includes(topology)) {
+    return { name: 'preset', fit: true, padding: 24, animate: false };
+  }
+
   const degrees = {};
   edges.forEach(e => {
     degrees[e.data.source] = (degrees[e.data.source] || 0) + 1;
@@ -111,7 +258,13 @@ function pickLayout(nodes, edges) {
   if (edges.length === nodes.length && maxDeg <= 2) {
     return { name: 'circle', animate: false };
   }
-  return { name: 'breadthfirst', directed: false, spacingFactor: 1.1, animate: false };
+  return {
+    name: 'concentric',
+    concentric: node => (Number(node.data('degree')) || 1) * 10 + (Number(node.data('risk_score')) || 0) * 8,
+    levelWidth: () => 12,
+    minNodeSpacing: 10,
+    animate: false,
+  };
 }
 
 // ── Cytoscape ring card ───────────────────────────────────────────────────────
@@ -123,12 +276,55 @@ function buildRingCard(ring, idx) {
   card.dataset.testid = `ring-card-${ring.ring_id}`;
 
   const vol = ring.volume ? `$${ring.volume.toLocaleString()}` : '';
+  const metrics = ringMetrics(ring);
+  const sharedIds = Array.isArray(ring.shared_ids) && ring.shared_ids.length
+    ? ring.shared_ids.slice(0, 3)
+    : ['No shared id'];
+  const hiddenCount = Math.max(0, metrics.nodeCount - metrics.shownCount);
+  const headline = evidenceHeadline(metrics);
+  const meaning = evidenceMeaning(ring, metrics);
+  const graphNote = hiddenCount > 0
+    ? `Top ${metrics.shownCount} risk-ranked accounts shown, ${hiddenCount} more in cluster`
+    : `${metrics.shownCount} accounts shown`;
+
   card.innerHTML = `
     <div class="ring-card-header">
-      <span>${escHtml(ring.ring_id)}</span>
-      <span class="ring-card-meta">${escHtml(ring.node_count)} nodes${vol ? ' · ' + escHtml(vol) : ''}</span>
+      <div>
+        <div class="ring-card-title">${escHtml(ring.ring_id)}</div>
+        <div class="ring-card-subtitle">${escHtml(headline)}</div>
+      </div>
+      <div class="ring-card-risk" style="color:${riskColor(ring.risk_score)}">
+        <strong>${escHtml(riskPercent(ring.risk_score))}</strong>
+        <span>risk</span>
+      </div>
     </div>
-    <div class="ring-card-canvas" id="cy-card-${idx}" data-testid="ring-graph-${escHtml(ring.ring_id)}"></div>
+    <div class="ring-card-signals">
+      <div class="risk-mini-meter" aria-label="Risk score ${escHtml(riskPercent(ring.risk_score))} percent">
+        <span style="width:${escHtml(riskPercent(ring.risk_score))}%; background:${riskColor(ring.risk_score)}"></span>
+      </div>
+      <div class="ring-card-insights">
+        <span class="metric-chip" tabindex="0" data-tip="Number of accounts assigned to this detected fraud-ring community.">
+          <strong>${escHtml(metrics.nodeCount.toLocaleString())}</strong> accounts
+        </span>
+        <span class="metric-chip" tabindex="0" data-tip="Accounts with the most graph connections in this cluster. Hubs often deserve first review.">
+          <strong>${escHtml(metrics.hubCount)}</strong> hubs
+        </span>
+        <span class="metric-chip" tabindex="0" data-tip="How connected the cluster is relative to its size. High density means repeated shared relationships.">
+          <strong>${escHtml(metrics.densityLabel)}</strong> density
+        </span>
+        ${vol ? `<span class="metric-chip" tabindex="0" data-tip="Total transaction volume represented by accounts in this ring.">
+          <strong>${escHtml(vol)}</strong> volume
+        </span>` : ''}
+      </div>
+      <div class="shared-id-chips">
+        ${sharedIds.map(id => `<span class="shared-id-chip">${escHtml(id)}</span>`).join('')}
+      </div>
+    </div>
+    <div class="ring-graph-wrap">
+      <div class="ring-card-canvas" id="cy-card-${idx}" data-testid="ring-graph-${escHtml(ring.ring_id)}"></div>
+      <div class="graph-meaning">${escHtml(meaning)}</div>
+      <div class="graph-scope">${escHtml(graphNote)}</div>
+    </div>
   `;
 
   card.addEventListener('click', () => toggleRing(ring.ring_id));
@@ -139,7 +335,15 @@ function initCardCytoscape(ring, idx) {
   const container = document.getElementById(`cy-card-${idx}`);
   if (!container || typeof cytoscape === 'undefined') return;
 
-  const displayNodes = ring.nodes.slice(0, 40);
+  const metrics = ringMetrics(ring);
+  const topRiskCutoff = Math.max(0.8, metrics.topRisk - 0.05);
+  const displayNodes = positionNodesForTopology(ring.nodes.slice(0, 40).map(node => {
+    const data = { ...(node.data || {}) };
+    data.degree = Number(data.degree) || 1;
+    data.is_hub = data.degree === metrics.maxDegree && metrics.maxDegree >= 3;
+    data.is_priority = (Number(data.risk_score) || 0) >= topRiskCutoff;
+    return { data };
+  }), ring.topology, metrics);
   const displayNodeIds = new Set(displayNodes.map(n => n.data.id));
   const displayEdges = ring.edges.filter(e => displayNodeIds.has(e.data.source) && displayNodeIds.has(e.data.target));
 
@@ -151,18 +355,25 @@ function initCardCytoscape(ring, idx) {
         selector: 'node',
         style: {
           'background-color': ele => riskColor(ele.data('risk_score') || 0.3),
-          'width': ele => Math.max(6, 6 + (ele.data('degree') || 1) * 2.5),
-          'height': ele => Math.max(6, 6 + (ele.data('degree') || 1) * 2.5),
-          'border-width': 0,
+          'width': ele => Math.min(24, Math.max(7, 7 + (ele.data('degree') || 1) * 2.2)),
+          'height': ele => Math.min(24, Math.max(7, 7 + (ele.data('degree') || 1) * 2.2)),
+          'border-width': ele => ele.data('is_priority') || ele.data('is_hub') ? 2 : 0,
+          'border-color': ele => ele.data('is_hub') ? '#111827' : '#ffffff',
+          'opacity': ele => ele.data('is_priority') ? 1 : 0.82,
           'label': '',
         },
       },
       {
         selector: 'edge',
-        style: { 'width': 1, 'line-color': '#d0d5dd', 'opacity': 0.7 },
+        style: {
+          'width': ele => Math.min(3, Math.max(1, Number(ele.data('weight')) || 1)),
+          'line-color': '#98a2b3',
+          'opacity': 0.65,
+          'curve-style': 'bezier',
+        },
       },
     ],
-    layout: pickLayout(displayNodes, displayEdges),
+    layout: pickLayout(displayNodes, displayEdges, ring.topology),
     userZoomingEnabled: false,
     userPanningEnabled: false,
     autoungrabify: true,

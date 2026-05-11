@@ -199,16 +199,22 @@ header {
   padding-left: 16px;
 }
 .graph-help-tooltip li + li { margin-top: 4px; }
+.graph-context {
+  padding: 10px 20px 0;
+  color: #667085;
+  font-size: 11px;
+  line-height: 1.4;
+}
 .graph-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 12px;
   padding: 16px 20px;
 }
 .ring-card {
   border: 2px solid #e4e4e4;
   border-radius: 6px;
-  overflow: hidden;
+  overflow: visible;
   cursor: pointer;
   transition: border-color 0.15s, box-shadow 0.15s;
   background: #fafafa;
@@ -218,15 +224,189 @@ header {
 .ring-card-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12px;
   padding: 8px 12px;
   font-size: 11px;
   font-weight: 700;
   color: #333;
   background: inherit;
 }
-.ring-card-meta { font-size: 10px; color: #888; font-weight: 400; }
+.ring-card-title { font-size: 11px; font-weight: 800; color: #222; }
+.ring-card-subtitle {
+  margin-top: 2px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #667085;
+}
+.ring-card-risk {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  line-height: 1;
+}
+.ring-card-risk strong { font-size: 17px; font-weight: 800; }
+.ring-card-risk span {
+  margin-top: 2px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #667085;
+}
+.ring-card-signals {
+  padding: 0 12px 8px;
+  border-bottom: 1px solid #eceff3;
+}
+.risk-mini-meter {
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #e4e7ec;
+}
+.risk-mini-meter span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.ring-card-insights {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 5px;
+  margin-top: 8px;
+}
+.metric-chip {
+  position: relative;
+}
+.metric-chip:hover,
+.metric-chip:focus-visible {
+  z-index: 20;
+}
+.ring-card-insights span {
+  min-width: 0;
+  padding: 4px 5px;
+  border: 1px solid #e4e7ec;
+  border-radius: 4px;
+  background: #fff;
+  color: #667085;
+  font-size: 9px;
+  line-height: 1.25;
+  text-align: center;
+}
+.metric-chip:hover,
+.metric-chip:focus-visible {
+  border-color: #98a2b3;
+  outline: none;
+}
+.metric-chip::after {
+  content: attr(data-tip);
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 8px);
+  z-index: 12;
+  width: 210px;
+  padding: 8px 9px;
+  border: 1px solid #d0d5dd;
+  border-radius: 5px;
+  background: #fff;
+  box-shadow: 0 8px 20px rgba(16, 24, 40, 0.16);
+  color: #344054;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  transform: translateX(-50%);
+}
+.metric-chip::before {
+  content: '';
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 3px);
+  z-index: 13;
+  width: 9px;
+  height: 9px;
+  border-right: 1px solid #d0d5dd;
+  border-bottom: 1px solid #d0d5dd;
+  background: #fff;
+  transform: translateX(-50%) rotate(45deg);
+}
+.metric-chip:hover::after,
+.metric-chip:hover::before,
+.metric-chip:focus-visible::after,
+.metric-chip:focus-visible::before {
+  display: block;
+}
+.metric-chip:first-child::after {
+  left: 0;
+  transform: none;
+}
+.metric-chip:first-child::before {
+  left: 26px;
+  transform: rotate(45deg);
+}
+.metric-chip:last-child::after {
+  right: 0;
+  left: auto;
+  transform: none;
+}
+.metric-chip:last-child::before {
+  right: 26px;
+  left: auto;
+  transform: rotate(45deg);
+}
+.ring-card-insights strong {
+  display: block;
+  overflow: hidden;
+  color: #222;
+  font-size: 10px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.shared-id-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 7px;
+}
+.shared-id-chip {
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #eef4ff;
+  color: #0052cc;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+.ring-graph-wrap {
+  position: relative;
+  background: #fff;
+}
 .ring-card-canvas { height: 150px; width: 100%; }
+.graph-meaning,
+.graph-scope {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.graph-meaning {
+  top: 8px;
+  color: #344054;
+  font-size: 10px;
+  font-weight: 700;
+}
+.graph-scope {
+  bottom: 8px;
+  color: #667085;
+  font-size: 9px;
+}
 .graph-legend {
   display: flex;
   align-items: center;
@@ -240,6 +420,13 @@ header {
 .legend-item.high::before { content: '●'; color: #d63031; }
 .legend-item.medium::before { content: '●'; color: #e17055; }
 .legend-item.low::before { content: '●'; color: #00b894; }
+.legend-item.hub::before {
+  content: '';
+  width: 9px;
+  height: 9px;
+  border: 2px solid #111827;
+  border-radius: 50%;
+}
 .legend-hint { margin-left: auto; color: #aaa; font-size: 10px; }
 
 /* ── Results table ── */

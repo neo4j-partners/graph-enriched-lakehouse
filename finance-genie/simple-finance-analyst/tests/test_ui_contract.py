@@ -33,6 +33,24 @@ def test_search_controls_and_load_button_contract(
     expect(page.get_by_test_id("graph-help-tooltip")).to_contain_text(
         "Tight loops can indicate circular fund movement"
     )
+    expect(page.get_by_test_id("graph-help-tooltip")).to_contain_text(
+        "risk, hub count, density, volume, and shared identifiers"
+    )
+    expect(page.get_by_test_id("ring-card-RING-0041")).to_contain_text(
+        "Hub-led - 38 accounts"
+    )
+    expect(page.get_by_test_id("ring-card-RING-0041")).to_contain_text(
+        "88"
+    )
+    expect(page.get_by_test_id("ring-card-RING-0041")).to_contain_text(
+        "Device"
+    )
+    expect(
+        page.locator('[data-testid="ring-card-RING-0041"] .metric-chip').nth(0)
+    ).to_have_attribute(
+        "data-tip",
+        "Number of accounts assigned to this detected fraud-ring community.",
+    )
 
     page.get_by_test_id("select-all-rings").check()
 
