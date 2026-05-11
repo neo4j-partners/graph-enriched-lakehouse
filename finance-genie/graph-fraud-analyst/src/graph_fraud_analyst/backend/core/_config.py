@@ -39,7 +39,7 @@ class AppConfig(BaseSettings):
     warehouse_id: str = Field(default="")
     """SQL warehouse ID for statement execution against gold tables."""
 
-    catalog: str = Field(default="graph-enriched-lakehouse")
+    catalog: str = Field(default="graph-on-databricks")
     """Unity Catalog catalog name holding the gold tables. Matches the names
     produced by the enrichment-pipeline/ (hyphens, quoted with backticks in
     SQL)."""

@@ -6,6 +6,16 @@ Graph enrichment connects Neo4j Graph Data Science to a Databricks Lakehouse as 
 
 ## Projects
 
+### [Agentic Commerce](./agentic-commerce/README.md)
+
+A Databricks-hosted agentic commerce example backed by Neo4j. The assistant uses a Neo4j product knowledge graph, GraphRAG retrieval, and graph-backed memory to search products, diagnose issues, remember customer preferences, and personalize recommendations. The project also includes a Databricks App demo client and deployment pipeline for Mosaic AI Model Serving.
+
+Start here:
+
+- [agentic-commerce/README.md](./agentic-commerce/README.md): project overview, setup, deployment, and validation.
+- [agentic-commerce/docs/agentic-commerce.md](./agentic-commerce/docs/agentic-commerce.md): design narrative for GraphRAG plus agent memory.
+- [agentic-commerce/demo-client/README.md](./agentic-commerce/demo-client/README.md): local and deployed demo client workflow.
+
 ### [Finance Genie](./finance-genie/README.md)
 
 A fraud-surfacing demo for Databricks account teams and partners. Financial crime is a network problem: fraud rings operate as connected patterns across many accounts and transactions, and the individual event looks clean while the connected pattern does not. A high-level synthetic fraud dataset loads into Neo4j Aura as a property graph. PageRank, Louvain community detection, and Node Similarity run against the projection and write `risk_score`, `community_id`, and `similarity_score` back to the Gold layer as plain Delta columns: centrality, community membership, and structural similarity materialized where every Databricks tool can reach them.

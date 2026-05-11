@@ -61,9 +61,9 @@ predicate at the community level (`member_count` between 50 and 200 AND
 Full column definitions are in the Unity Catalog comments. To read them:
 
 ```sql
-DESCRIBE TABLE EXTENDED `graph-enriched-lakehouse`.`graph-enriched-schema`.gold_accounts;
-DESCRIBE TABLE EXTENDED `graph-enriched-lakehouse`.`graph-enriched-schema`.gold_account_similarity_pairs;
-DESCRIBE TABLE EXTENDED `graph-enriched-lakehouse`.`graph-enriched-schema`.gold_fraud_ring_communities;
+DESCRIBE TABLE EXTENDED `graph-on-databricks`.`graph-enriched-schema`.gold_accounts;
+DESCRIBE TABLE EXTENDED `graph-on-databricks`.`graph-enriched-schema`.gold_account_similarity_pairs;
+DESCRIBE TABLE EXTENDED `graph-on-databricks`.`graph-enriched-schema`.gold_fraud_ring_communities;
 ```
 
 ---

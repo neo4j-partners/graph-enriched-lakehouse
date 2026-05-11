@@ -29,7 +29,7 @@ Required values for this app (already documented in `../.env.sample` under the `
 | `DATABRICKS_PROFILE` | Profile name from `~/.databrickscfg`. |
 | `GRAPH_FRAUD_ANALYST_WAREHOUSE_ID` | SQL warehouse the Load step uses to write Delta tables. |
 | `GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID` | Genie Space ID that queries the Load-materialized Delta tables. |
-| `GRAPH_FRAUD_ANALYST_CATALOG` | Unity Catalog catalog (default `graph-enriched-lakehouse`). |
+| `GRAPH_FRAUD_ANALYST_CATALOG` | Unity Catalog catalog (default `graph-on-databricks`). |
 | `GRAPH_FRAUD_ANALYST_SCHEMA` | Unity Catalog schema (default `graph-enriched-schema`). |
 | `NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD` | Local-dev only. The deployed app reads these from the `neo4j-graph-engineering` UC secret scope (bound in `databricks.yml`). |
 
@@ -58,7 +58,7 @@ That runs both steps above and then tails `databricks apps logs graph-fraud-anal
 
 ### 3. Grant Unity Catalog access to the app service principal
 
-The first deploy auto-provisions a service principal for the app (display name `app-XXXXXX graph-fraud-analyst`). The SQL warehouse runs every backend query as that SP, not as the logged-in user, so it needs Unity Catalog grants on the gold-table schema. Without these grants the `/api/search/*` and `/api/load` endpoints return 500 with `[INSUFFICIENT_PERMISSIONS] User does not have USE CATALOG on Catalog 'graph-enriched-lakehouse'`.
+The first deploy auto-provisions a service principal for the app (display name `app-XXXXXX graph-fraud-analyst`). The SQL warehouse runs every backend query as that SP, not as the logged-in user, so it needs Unity Catalog grants on the gold-table schema. Without these grants the `/api/search/*` and `/api/load` endpoints return 500 with `[INSUFFICIENT_PERMISSIONS] User does not have USE CATALOG on Catalog 'graph-on-databricks'`.
 
 Find the SP's `service_principal_client_id` once:
 
@@ -70,11 +70,11 @@ databricks apps get graph-fraud-analyst --profile "$DATABRICKS_PROFILE" \
 Then run these three statements against the warehouse (substitute the client_id):
 
 ```sql
-GRANT USE CATALOG ON CATALOG `graph-enriched-lakehouse`
+GRANT USE CATALOG ON CATALOG `graph-on-databricks`
   TO `<service_principal_client_id>`;
-GRANT USE SCHEMA  ON SCHEMA  `graph-enriched-lakehouse`.`graph-enriched-schema`
+GRANT USE SCHEMA  ON SCHEMA  `graph-on-databricks`.`graph-enriched-schema`
   TO `<service_principal_client_id>`;
-GRANT SELECT      ON SCHEMA  `graph-enriched-lakehouse`.`graph-enriched-schema`
+GRANT SELECT      ON SCHEMA  `graph-on-databricks`.`graph-enriched-schema`
   TO `<service_principal_client_id>`;
 ```
 
@@ -84,14 +84,14 @@ CLI equivalent:
 databricks sql query \
   --warehouse-id "$GRAPH_FRAUD_ANALYST_WAREHOUSE_ID" \
   --profile "$DATABRICKS_PROFILE" \
-  --query "GRANT USE CATALOG ON CATALOG \`graph-enriched-lakehouse\` TO \`<client_id>\`"
+  --query "GRANT USE CATALOG ON CATALOG \`graph-on-databricks\` TO \`<client_id>\`"
 ```
 
 Verify:
 
 ```sql
 SHOW GRANTS `<service_principal_client_id>`
-  ON SCHEMA `graph-enriched-lakehouse`.`graph-enriched-schema`;
+  ON SCHEMA `graph-on-databricks`.`graph-enriched-schema`;
 ```
 
 You should see `SELECT`, `USE SCHEMA`, `CREATE TABLE`, and `MODIFY` rows. The first two are for Search reads; the last two let the Load step `CREATE OR REPLACE TABLE` the materialized subgraph. The grant is per workspace, so it only needs to be applied once per environment.

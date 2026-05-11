@@ -17,7 +17,7 @@
 #
 # Optional overrides:
 #   DATABRICKS_PROFILE   (required — set in .env)
-#   DATABRICKS_CATALOG   (default: graph-enriched-lakehouse)
+#   DATABRICKS_CATALOG   (default: graph-on-databricks)
 #   DATABRICKS_SCHEMA    (default: graph-enriched-schema)
 #   DATABRICKS_VOLUME    (default: graph-enriched-volume)
 
@@ -41,7 +41,7 @@ if [[ -z "${DATABRICKS_PROFILE:-}" ]]; then
   exit 1
 fi
 PROFILE="${DATABRICKS_PROFILE}"
-CATALOG="${DATABRICKS_CATALOG:-graph-enriched-lakehouse}"
+CATALOG="${DATABRICKS_CATALOG:-graph-on-databricks}"
 SCHEMA="${DATABRICKS_SCHEMA:-graph-enriched-schema}"
 VOLUME="${DATABRICKS_VOLUME:-graph-enriched-volume}"
 VOLUME_PATH="/Volumes/${CATALOG}/${SCHEMA}/${VOLUME}"

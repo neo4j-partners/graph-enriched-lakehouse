@@ -10,7 +10,7 @@ env:
   - name: USE_MOCK_BACKEND
     value: "false"
   - name: SIMPLE_FINANCE_ANALYST_CATALOG
-    value: "graph-enriched-lakehouse"
+    value: "graph-on-databricks"
   - name: SIMPLE_FINANCE_ANALYST_SCHEMA
     value: "graph-enriched-schema"
   - name: GENIE_SPACE_ID

@@ -88,7 +88,7 @@ Required values:
 Recommended root `.env` values:
 
 ```bash
-SIMPLE_FINANCE_AGENT_DATABRICKS_WORKSPACE_DIR=/Users/<you>@<domain>/graph-enriched-lakehouse/simple-finance-agent
+SIMPLE_FINANCE_AGENT_DATABRICKS_WORKSPACE_DIR=/Users/<you>@<domain>/graph-on-databricks/simple-finance-agent
 SIMPLE_FINANCE_AGENT_UC_MODEL_NAME=simple-finance-agent
 SIMPLE_FINANCE_AGENT_MODEL_SERVING_ENDPOINT_NAME=simple-finance-agent
 ```

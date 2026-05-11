@@ -56,7 +56,7 @@ from dotenv import load_dotenv
 # Contract — every run of this script enforces exactly these values.          #
 # Any drift from these lists causes a diff to print and an update to fire.    #
 # --------------------------------------------------------------------------- #
-CATALOG_SCHEMA = "graph-enriched-lakehouse.graph-enriched-schema"
+CATALOG_SCHEMA = "graph-on-databricks.graph-enriched-schema"
 
 BASE_TABLES = [
     f"{CATALOG_SCHEMA}.accounts",

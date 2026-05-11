@@ -1,4 +1,4 @@
--- Base table schema for graph-enriched-lakehouse.graph-enriched-schema
+-- Base table schema for graph-on-databricks.graph-enriched-schema
 --
 -- Defines all five base tables with Unity Catalog column-level comments.
 -- Column descriptions are the primary signal Genie uses to understand data.
@@ -7,7 +7,7 @@
 -- Placeholders ${catalog} and ${schema} are substituted by the shell script.
 --
 -- To run manually in the Databricks SQL editor, replace placeholders:
---   ${catalog} → graph-enriched-lakehouse
+--   ${catalog} → graph-on-databricks
 --   ${schema}  → graph-enriched-schema
 
 CREATE OR REPLACE TABLE `${catalog}`.`${schema}`.accounts (

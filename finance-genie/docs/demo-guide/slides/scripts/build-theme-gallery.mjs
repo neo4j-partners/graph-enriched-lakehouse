@@ -237,7 +237,7 @@ function renderIndex() {
       <div class="actions">
         <a class="button" href="./slides.html">Open full slide deck</a>
         <a class="button secondary" href="./slides-15min.html">Open 15-minute deck</a>
-        <a class="button tertiary" href="https://github.com/neo4j-partners/graph-enriched-lakehouse/tree/main/finance-genie">View project on GitHub</a>
+        <a class="button tertiary" href="https://github.com/neo4j-partners/graph-on-databricks/tree/main/finance-genie">View project on GitHub</a>
       </div>
       <section class="summary" aria-label="Project overview">
         <div class="summary-card">

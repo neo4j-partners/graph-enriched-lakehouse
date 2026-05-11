@@ -143,7 +143,7 @@ Open `graph-fraud-analyst/app.yml`. Confirm the `env:` section binds the resourc
 
 - `GRAPH_FRAUD_ANALYST_WAREHOUSE_ID` from the `sql_warehouse` resource keyed `warehouse`.
 - `GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID` from the `genie_space` resource keyed `genie` (Genie Space binding name `graph-fraud-analyst-genie`).
-- `GRAPH_FRAUD_ANALYST_CATALOG` and `GRAPH_FRAUD_ANALYST_SCHEMA` as static `value:` env vars (defaults `graph-enriched-lakehouse` and `graph-enriched-schema`).
+- `GRAPH_FRAUD_ANALYST_CATALOG` and `GRAPH_FRAUD_ANALYST_SCHEMA` as static `value:` env vars (defaults `graph-on-databricks` and `graph-enriched-schema`).
 
 There is no Neo4j binding. The runtime reads from the pre-computed gold Delta tables produced by `../enrichment-pipeline/`, not from a live Neo4j connection. If a future iteration needs live Cypher, add a Neo4j secret-scope binding here; for now leave it absent.
 
@@ -151,7 +151,7 @@ If any binding is missing or points at a resource that does not exist in the wor
 
 ### 2.3.1 Grant Unity Catalog access to the app SP
 
-The SQL warehouse runs every backend query as the app's auto-provisioned service principal, not as the logged-in user. After the first deploy, grant the SP `USE CATALOG`, `USE SCHEMA`, and `SELECT` on the gold-table schema. Full steps are in `graph-fraud-analyst/README.md` (step 3). Without this grant, every `/api/search/*` and `/api/load` request returns 500 with `[INSUFFICIENT_PERMISSIONS] User does not have USE CATALOG on Catalog 'graph-enriched-lakehouse'`.
+The SQL warehouse runs every backend query as the app's auto-provisioned service principal, not as the logged-in user. After the first deploy, grant the SP `USE CATALOG`, `USE SCHEMA`, and `SELECT` on the gold-table schema. Full steps are in `graph-fraud-analyst/README.md` (step 3). Without this grant, every `/api/search/*` and `/api/load` request returns 500 with `[INSUFFICIENT_PERMISSIONS] User does not have USE CATALOG on Catalog 'graph-on-databricks'`.
 
 ### 2.4 Bundle deploy
 
@@ -198,7 +198,7 @@ Real-Neo4j assertions:
 - Screen 1 rings: the table reads from Aura. The number of rows shown should equal the number of Louvain communities with `member_count >= 3` (currently 10 in the seeded dataset). Cross-check by running `MATCH (a:Account) WHERE a.community_id IS NOT NULL WITH a.community_id AS c, count(a) AS n WHERE n >= 3 RETURN count(*)` against `neo4j+s://0582a1b1.databases.neo4j.io`.
 - Screen 1 risky accounts: top account_id and risk_score should match `MATCH (a:Account) WHERE a.risk_score IS NOT NULL RETURN a.account_id, a.risk_score ORDER BY a.risk_score DESC LIMIT 1`. The UI normalizes risk_score by max so the displayed value is in [0,1]; the raw value is what Aura returns.
 - Screen 1 central accounts: top account_id should match `MATCH (a:Account) WHERE a.betweenness_centrality IS NOT NULL RETURN a.account_id ORDER BY a.betweenness_centrality DESC LIMIT 1`.
-- Screen 2 Load: after the seven steps complete, the Load summary panel shows real row counts for the three gold tables. Cross-check with `SELECT count(*) FROM \`graph-enriched-lakehouse\`.\`graph-enriched-schema\`.gold_accounts` and confirm it equals the summary row count. Each Load overwrites the previous session.
+- Screen 2 Load: after the seven steps complete, the Load summary panel shows real row counts for the three gold tables. Cross-check with `SELECT count(*) FROM \`graph-on-databricks\`.\`graph-enriched-schema\`.gold_accounts` and confirm it equals the summary row count. Each Load overwrites the previous session.
 - Screen 3 Genie: answers query the just-written Delta tables. Ask "How many accounts in each ring?" and confirm the per-community counts match what Load reported.
 
 Latency budgets, live Cypher path:

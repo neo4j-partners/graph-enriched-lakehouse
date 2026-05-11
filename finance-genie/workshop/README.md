@@ -37,7 +37,7 @@ Three things must be in place before the first notebook:
 
 3. **Tables loaded:** `accounts`, `merchants`, `transactions`, `account_links`,
    and `account_labels` must exist in
-   `graph-enriched-lakehouse.graph-enriched-schema`. The demo owner loads them
+   `graph-on-databricks.graph-enriched-schema`. The demo owner loads them
    with `enrichment-pipeline/upload_and_create_tables.sh`.
 
 ---

@@ -17,7 +17,7 @@ env:
   - name: GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID
     valueFrom: "genie"
   - name: GRAPH_FRAUD_ANALYST_CATALOG
-    value: "graph-enriched-lakehouse"
+    value: "graph-on-databricks"
   - name: GRAPH_FRAUD_ANALYST_SCHEMA
     value: "graph-enriched-schema"
   # Neo4j Aura binding. The secret resources are declared in databricks.yml

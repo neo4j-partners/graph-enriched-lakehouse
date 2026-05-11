@@ -48,7 +48,7 @@ Deploy state: `graph-fraud-analyst` is `ACTIVE`, deployment `AppDeploymentState.
 
 | Bug | Fix |
 | --- | --- |
-| App SP missing Unity Catalog grants. Every SQL endpoint 500'd with `[INSUFFICIENT_PERMISSIONS] User does not have USE CATALOG on Catalog 'graph-enriched-lakehouse'`. | Granted `USE CATALOG` on the catalog, plus `USE SCHEMA` and `SELECT` on `graph-enriched-schema` to the app SP `457da81f-e1f4-47d6-8dc6-d122a0c68093`. Documented the steps in `graph-fraud-analyst/README.md`. |
+| App SP missing Unity Catalog grants. Every SQL endpoint 500'd with `[INSUFFICIENT_PERMISSIONS] User does not have USE CATALOG on Catalog 'graph-on-databricks'`. | Granted `USE CATALOG` on the catalog, plus `USE SCHEMA` and `SELECT` on `graph-enriched-schema` to the app SP `457da81f-e1f4-47d6-8dc6-d122a0c68093`. Documented the steps in `graph-fraud-analyst/README.md`. |
 | `/api/search/risk` and `/api/search/hubs` 500'd with `[INVALID_LIMIT_LIKE_EXPRESSION.DATA_TYPE] The limit like expression "25" is invalid. The limit expression must be integer type, but got "BIGINT"`. | In `services/accounts.py`, changed the `row_limit` parameter declaration from `type="BIGINT"` to `type="INT"`. Redeployed. |
 | App startup crashed because the dependency factory auto-registered `_LakebaseDependency` even though the `db` resource binding was removed. Lifespan raised `pydantic_core.ValidationError: 1 validation error for DatabaseConfig PGAPPNAME Field required`. | See item 8 above (full Lakebase removal). |
 

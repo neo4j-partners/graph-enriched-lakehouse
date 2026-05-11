@@ -1,0 +1,41 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# version file
+src/agentic_commerce/_version.py
+
+# metadata file
+src/agentic_commerce/_metadata.py
+
+# build files
+dist
+
+# js-related
+node_modules/
+.tanstack
+
+# env files
+.env
+.env.local
+.env.*
+!.env.sample
+
+# mac
+.DS_Store
+
+# DABs 
+.databricks
+
+# apx
+.apx/
+
+# UI dist folder
+src/agentic_commerce/__dist__/

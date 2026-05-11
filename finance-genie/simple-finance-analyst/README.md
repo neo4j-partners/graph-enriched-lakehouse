@@ -126,7 +126,7 @@ simple-finance-analyst/
 |---|---|---|
 | `USE_MOCK_BACKEND` | `true` (default) | Uses seeded mock data, no external connections |
 | `USE_MOCK_BACKEND` | `false` | Connects to Neo4j and Databricks |
-| `SIMPLE_FINANCE_ANALYST_CATALOG` | `graph-enriched-lakehouse` | Catalog containing enriched gold tables |
+| `SIMPLE_FINANCE_ANALYST_CATALOG` | `graph-on-databricks` | Catalog containing enriched gold tables |
 | `SIMPLE_FINANCE_ANALYST_SCHEMA` | `graph-enriched-schema` | Schema containing enriched gold tables |
 
 `app.yaml` sets `USE_MOCK_BACKEND=false` for deployed live-backend use. Local

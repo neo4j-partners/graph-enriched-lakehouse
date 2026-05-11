@@ -54,7 +54,7 @@ echo "── graph-fraud-analyst deploy ─────────────�
 echo "  profile        : ${DATABRICKS_PROFILE}"
 echo "  warehouse_id   : ${GRAPH_FRAUD_ANALYST_WAREHOUSE_ID}"
 echo "  genie_space_id : ${GRAPH_FRAUD_ANALYST_GENIE_SPACE_ID}"
-echo "  catalog        : ${GRAPH_FRAUD_ANALYST_CATALOG:-graph-enriched-lakehouse}"
+echo "  catalog        : ${GRAPH_FRAUD_ANALYST_CATALOG:-graph-on-databricks}"
 echo "  schema         : ${GRAPH_FRAUD_ANALYST_SCHEMA:-graph-enriched-schema}"
 echo "──────────────────────────────────────────────────────────────────"
 

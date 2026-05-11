@@ -14,7 +14,7 @@ relationships — not column documentation, not query recipes.
 # Financial Account Analytics — Transaction Data
 
 This space covers payment and transfer activity for a financial institution.
-Four tables are available in `graph-enriched-lakehouse.graph-enriched-schema`.
+Four tables are available in `graph-on-databricks.graph-enriched-schema`.
 
 ## Table relationships
 
@@ -31,7 +31,7 @@ Four tables are available in `graph-enriched-lakehouse.graph-enriched-schema`.
 This space covers the same payment and transfer data as the base schema, plus
 three gold tables that add graph analytics features derived from the account
 transfer network. Seven tables are available in
-`graph-enriched-lakehouse.graph-enriched-schema`.
+`graph-on-databricks.graph-enriched-schema`.
 
 ## Base tables
 

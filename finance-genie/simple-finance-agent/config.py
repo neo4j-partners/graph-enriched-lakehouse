@@ -35,7 +35,7 @@ class Settings(BaseModel):
             "DATABRICKS_WORKSPACE_DIR",
         ),
     )
-    catalog: str = Field(default="graph-enriched-lakehouse", alias="CATALOG")
+    catalog: str = Field(default="graph-on-databricks", alias="CATALOG")
     schema_name: str = Field(default="graph-enriched-schema", alias="SCHEMA")
 
     uc_connection_name: str = Field(

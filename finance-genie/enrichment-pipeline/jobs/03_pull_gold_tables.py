@@ -4,7 +4,7 @@ This agent module is the source of truth for the gold tables the after-GDS
 Genie Space reads. `workshop/03_pull_gold_tables.ipynb` will be synced to
 match in phase 11e.
 
-Writes three tables into `graph-enriched-lakehouse.graph-enriched-schema`:
+Writes three tables into `graph-on-databricks.graph-enriched-schema`:
   gold_accounts                   account metadata + GDS features + community
                                   aggregates + fraud_risk_tier (20 cols)
   gold_account_similarity_pairs   pair-level similarity + same_community flag

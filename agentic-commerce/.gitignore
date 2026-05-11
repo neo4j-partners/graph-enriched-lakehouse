@@ -1,0 +1,89 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+wheels/
+*.egg-info/
+*.egg
+*.manifest
+*.spec
+pip-log.txt
+pip-delete-this-directory.txt
+.Python
+develop-eggs/
+eggs/
+/lib/
+/lib64/
+parts/
+sdist/
+var/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Environment variables
+.env
+.env.*
+!.env.sample
+
+# IDEs - IntelliJ / PyCharm
+.idea/
+
+# Local assistant/tooling state
+/.claude/
+/.codex/
+
+# IDEs - VSCode
+.vscode/
+*.code-workspace
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon?
+._*
+.Spotlight-V100
+.Trashes
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+
+# mypy / type checking
+.mypy_cache/
+.pytype/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# uv
+.python-version
+
+# App/build tooling
+.apx/
+.build/
+.databricks/
+node_modules/
+*.tsbuildinfo
+
+# Generated lakehouse data
+data/lakehouse/

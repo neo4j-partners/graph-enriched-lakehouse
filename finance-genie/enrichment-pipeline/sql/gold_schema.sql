@@ -1,4 +1,4 @@
--- Gold table schema for graph-enriched-lakehouse.graph-enriched-schema
+-- Gold table schema for graph-on-databricks.graph-enriched-schema
 --
 -- Defines the three gold tables written by pull_gold_tables.py, with
 -- Unity Catalog column-level comments. Column descriptions are the primary

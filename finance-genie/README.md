@@ -1,6 +1,6 @@
 # Graph-Enriched Lakehouse: Finance Genie
 
-[Project website and slides](https://neo4j-partners.github.io/graph-enriched-lakehouse/)
+[Project website and slides](https://neo4j-partners.github.io/graph-on-databricks/)
 
 ## Quick Start: Shared Environment
 
@@ -185,5 +185,5 @@ Use this with a manually configured Supervisor Agent that routes graph questions
 
 ## Slides
 
-- [Full Finance Genie deck](https://neo4j-partners.github.io/graph-enriched-lakehouse/slides.html)
-- [15-minute Finance Genie deck](https://neo4j-partners.github.io/graph-enriched-lakehouse/slides-15min.html)
+- [Full Finance Genie deck](https://neo4j-partners.github.io/graph-on-databricks/slides.html)
+- [15-minute Finance Genie deck](https://neo4j-partners.github.io/graph-on-databricks/slides-15min.html)

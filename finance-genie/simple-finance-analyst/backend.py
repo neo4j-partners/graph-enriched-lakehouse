@@ -182,7 +182,7 @@ class MockBackend:
 
 # ── Real backend ─────────────────────────────────────────────────────────────
 
-_DEFAULT_CATALOG = "graph-enriched-lakehouse"
+_DEFAULT_CATALOG = "graph-on-databricks"
 _DEFAULT_SCHEMA = "graph-enriched-schema"
 
 

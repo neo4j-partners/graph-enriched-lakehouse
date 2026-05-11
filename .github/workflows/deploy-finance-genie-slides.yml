@@ -6,7 +6,7 @@ on:
       - main
     paths:
       - .github/workflows/deploy-finance-genie-slides.yml
-      - finance-genie/demo-guide/slides/**
+      - finance-genie/docs/demo-guide/slides/**
   workflow_dispatch:
 
 permissions:
@@ -32,17 +32,17 @@ jobs:
           node-version: 22
 
       - name: Install Marp dependencies
-        working-directory: finance-genie/demo-guide/slides
+        working-directory: finance-genie/docs/demo-guide/slides
         run: npm install
 
       - name: Build slides
-        working-directory: finance-genie/demo-guide/slides
+        working-directory: finance-genie/docs/demo-guide/slides
         run: npm run build:all
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: finance-genie/demo-guide/slides/build
+          path: finance-genie/docs/demo-guide/slides/build
 
   deploy:
     if: github.ref == 'refs/heads/main'
