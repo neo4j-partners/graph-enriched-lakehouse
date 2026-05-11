@@ -1,8 +1,9 @@
 """Load-screen service: real Cypher → Delta materialization.
 
-The `/api/load` endpoint pulls the selected communities (ring_ids) from Neo4j
-via live Cypher, derives every column the `gold_schema.sql` contract defines,
-then writes three Delta tables that Screen 3's Genie Space queries:
+The `/api/load` endpoint pulls selected communities (ring_ids) or communities
+resolved from selected account ids from Neo4j via live Cypher, derives every
+column the `gold_schema.sql` contract defines, then writes three Delta tables
+that Screen 3's Genie Space queries:
 
     gold_accounts                     all :Account nodes in the loaded rings
     gold_fraud_ring_communities       per-community summary rows
@@ -54,6 +55,16 @@ def _coerce_ring_ids(ring_ids: list[str]) -> list[int]:
     for rid in ring_ids:
         try:
             out.append(int(str(rid).strip()))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _coerce_account_ids(account_ids: list[str]) -> list[int]:
+    out: list[int] = []
+    for account_id in account_ids:
+        try:
+            out.append(int(str(account_id).strip()))
         except (TypeError, ValueError):
             continue
     return out
@@ -257,6 +268,13 @@ RETURN a.account_id        AS account_id_a,
          AND a.community_id = b.community_id  AS same_community
 ORDER BY s.similarity_score DESC
 LIMIT $row_cap
+"""
+
+_ACCOUNT_COMMUNITIES_CYPHER = """
+MATCH (a:Account)
+WHERE a.account_id IN $account_ids
+  AND a.community_id IS NOT NULL
+RETURN collect(DISTINCT a.community_id) AS community_ids
 """
 
 
@@ -476,6 +494,8 @@ def load_rings(
     config: AppConfig,
     driver: Driver,
     ring_ids: list[str],
+    risk_account_ids: list[str] | None = None,
+    central_account_ids: list[str] | None = None,
 ) -> LoadOut:
     target_tables = [
         f"{config.catalog}.{config.schema_}.gold_accounts",
@@ -490,17 +510,49 @@ def load_rings(
     }
 
     community_ids = _coerce_ring_ids(ring_ids)
-    if not community_ids:
+    account_ids = _coerce_account_ids(
+        [*(risk_account_ids or []), *(central_account_ids or [])]
+    )
+    if not community_ids and not account_ids:
         return LoadOut(
             target_tables=target_tables,
             steps=[LoadStep(label=label, status="todo") for label in _step_labels()],
             row_counts=row_counts,
             quality_checks=[
-                QualityCheck(name="At least one valid ring_id provided", passed=False),
+                QualityCheck(name="At least one valid signal id provided", passed=False),
             ],
         )
 
     with driver.session() as session:
+        if account_ids:
+            resolved = session.run(
+                _ACCOUNT_COMMUNITIES_CYPHER,
+                account_ids=account_ids,
+            ).data()
+            resolved_ids = (
+                resolved[0].get("community_ids", []) if resolved else []
+            )
+            community_ids.extend(
+                int(cid) for cid in resolved_ids if cid is not None
+            )
+            community_ids = sorted(set(community_ids))
+
+        if not community_ids:
+            return LoadOut(
+                target_tables=target_tables,
+                steps=[
+                    LoadStep(label=label, status="todo")
+                    for label in _step_labels()
+                ],
+                row_counts=row_counts,
+                quality_checks=[
+                    QualityCheck(
+                        name="At least one selected signal resolved to a community",
+                        passed=False,
+                    ),
+                ],
+            )
+
         accounts_raw = _normalize_accounts(
             session.run(_ACCOUNTS_CYPHER, community_ids=community_ids).data()
         )
@@ -555,7 +607,7 @@ def load_rings(
             == len(accounts),
         ),
         QualityCheck(
-            name="All selected ring_ids returned",
+            name="All selected communities returned",
             passed={
                 int(c["community_id"])
                 for c in communities

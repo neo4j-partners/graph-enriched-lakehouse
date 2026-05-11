@@ -144,7 +144,15 @@ const bandSortingFn: SortingFn<RiskAccountOut> = (rowA, rowB, columnId) => {
 
 function SearchScreen() {
   const navigate = useNavigate();
-  const { selectedRings, toggleRing, clearRings } = useFlow();
+  const {
+    selectedRings,
+    selectedRiskAccounts,
+    selectedCentralAccounts,
+    selectedSignalIds,
+    toggleRing,
+    toggleRiskAccount,
+    toggleCentralAccount,
+  } = useFlow();
 
   const [mode, setMode] = useState<Mode>("fraud_rings");
   const [dateRange, setDateRange] = useState("Last 30 days");
@@ -154,11 +162,10 @@ function SearchScreen() {
   const handleModeChange = (next: Mode) => {
     if (next === mode) return;
     setMode(next);
-    if (next !== "fraud_rings") clearRings();
   };
 
-  const continueDisabled =
-    mode === "fraud_rings" && selectedRings.length === 0;
+  const continueDisabled = selectedSignalIds.length === 0;
+  const selectedWord = selectedSignalIds.length === 1 ? "signal" : "signals";
 
   // Note: dateRange and minAmount are kept in the UI for fidelity but the
   // backend does not yet honor them; only maxNodes is part of the query key,
@@ -289,7 +296,11 @@ function SearchScreen() {
                 mode={mode}
                 maxNodes={maxNodes}
                 selectedRings={selectedRings}
+                selectedRiskAccounts={selectedRiskAccounts}
+                selectedCentralAccounts={selectedCentralAccounts}
                 onToggleRing={toggleRing}
+                onToggleRiskAccount={toggleRiskAccount}
+                onToggleCentralAccount={toggleCentralAccount}
               />
             </Suspense>
           </ErrorBoundary>
@@ -299,8 +310,8 @@ function SearchScreen() {
       {/* Continue footer */}
       <div className="mt-6 flex items-center justify-between">
         <span className="text-xs text-muted-ink">
-          {mode === "fraud_rings" && selectedRings.length > 0
-            ? `${selectedRings.length} ring${selectedRings.length === 1 ? "" : "s"} selected`
+          {selectedSignalIds.length > 0
+            ? `${selectedSignalIds.length} ${selectedWord} selected`
             : ""}
         </span>
         <Button
@@ -322,14 +333,22 @@ interface ResultsBodyProps {
   mode: Mode;
   maxNodes: number;
   selectedRings: string[];
+  selectedRiskAccounts: string[];
+  selectedCentralAccounts: string[];
   onToggleRing: (ringId: string) => void;
+  onToggleRiskAccount: (accountId: string) => void;
+  onToggleCentralAccount: (accountId: string) => void;
 }
 
 function ResultsBody({
   mode,
   maxNodes,
   selectedRings,
+  selectedRiskAccounts,
+  selectedCentralAccounts,
   onToggleRing,
+  onToggleRiskAccount,
+  onToggleCentralAccount,
 }: ResultsBodyProps) {
   if (mode === "fraud_rings") {
     return (
@@ -341,9 +360,19 @@ function ResultsBody({
     );
   }
   if (mode === "risk_scores") {
-    return <RiskBody />;
+    return (
+      <RiskBody
+        selectedRiskAccounts={selectedRiskAccounts}
+        onToggleRiskAccount={onToggleRiskAccount}
+      />
+    );
   }
-  return <HubBody />;
+  return (
+    <HubBody
+      selectedCentralAccounts={selectedCentralAccounts}
+      onToggleCentralAccount={onToggleCentralAccount}
+    />
+  );
 }
 
 function RingsBody({
@@ -368,18 +397,42 @@ function RingsBody({
   );
 }
 
-function RiskBody() {
+function RiskBody({
+  selectedRiskAccounts,
+  onToggleRiskAccount,
+}: {
+  selectedRiskAccounts: string[];
+  onToggleRiskAccount: (accountId: string) => void;
+}) {
   const { data: rows } = useSearchRiskAccountsSuspense(
     selector<RiskAccountOut[]>(),
   );
-  return <RiskResults rows={rows} />;
+  return (
+    <RiskResults
+      rows={rows}
+      selectedRiskAccounts={selectedRiskAccounts}
+      onToggleRiskAccount={onToggleRiskAccount}
+    />
+  );
 }
 
-function HubBody() {
+function HubBody({
+  selectedCentralAccounts,
+  onToggleCentralAccount,
+}: {
+  selectedCentralAccounts: string[];
+  onToggleCentralAccount: (accountId: string) => void;
+}) {
   const { data: rows } = useSearchCentralAccountsSuspense(
     selector<HubAccountOut[]>(),
   );
-  return <HubResults rows={rows} />;
+  return (
+    <HubResults
+      rows={rows}
+      selectedCentralAccounts={selectedCentralAccounts}
+      onToggleCentralAccount={onToggleCentralAccount}
+    />
+  );
 }
 
 function ResultsSkeleton() {
@@ -874,10 +927,39 @@ function RingResults({
   );
 }
 
-function RiskResults({ rows }: { rows: RiskAccountOut[] }) {
+function RiskResults({
+  rows,
+  selectedRiskAccounts,
+  onToggleRiskAccount,
+}: {
+  rows: RiskAccountOut[];
+  selectedRiskAccounts: string[];
+  onToggleRiskAccount: (accountId: string) => void;
+}) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const columns = useMemo<ColumnDef<RiskAccountOut>[]>(
     () => [
+      {
+        id: "select",
+        enableSorting: false,
+        header: () => (
+          <HeaderTooltip
+            label="Select"
+            tooltip="Choose risk-scored accounts to carry forward into the load step."
+          />
+        ),
+        cell: ({ row }) => {
+          const account = row.original;
+          return (
+            <Checkbox
+              checked={selectedRiskAccounts.includes(account.account_id)}
+              onCheckedChange={() => onToggleRiskAccount(account.account_id)}
+              aria-label={`Select account ${account.account_id}`}
+            />
+          );
+        },
+        meta: { className: "w-10" },
+      },
       {
         accessorKey: "account_id",
         header: ({ column }) => (
@@ -956,7 +1038,7 @@ function RiskResults({ rows }: { rows: RiskAccountOut[] }) {
         },
       },
     ],
-    [],
+    [onToggleRiskAccount, selectedRiskAccounts],
   );
   const table = useReactTable({
     data: rows,
@@ -970,16 +1052,52 @@ function RiskResults({ rows }: { rows: RiskAccountOut[] }) {
   return (
     <Card className="overflow-hidden">
       <TooltipProvider delayDuration={150}>
-        <SearchDataTable table={table} />
+        <SearchDataTable
+          table={table}
+          getRowClassName={(row) =>
+            selectedRiskAccounts.includes(row.account_id)
+              ? "bg-accent-soft/40"
+              : undefined
+          }
+        />
       </TooltipProvider>
     </Card>
   );
 }
 
-function HubResults({ rows }: { rows: HubAccountOut[] }) {
+function HubResults({
+  rows,
+  selectedCentralAccounts,
+  onToggleCentralAccount,
+}: {
+  rows: HubAccountOut[];
+  selectedCentralAccounts: string[];
+  onToggleCentralAccount: (accountId: string) => void;
+}) {
   const [sorting, setSorting] = useState<SortingState>([]);
   const columns = useMemo<ColumnDef<HubAccountOut>[]>(
     () => [
+      {
+        id: "select",
+        enableSorting: false,
+        header: () => (
+          <HeaderTooltip
+            label="Select"
+            tooltip="Choose central accounts to carry forward into the load step."
+          />
+        ),
+        cell: ({ row }) => {
+          const account = row.original;
+          return (
+            <Checkbox
+              checked={selectedCentralAccounts.includes(account.account_id)}
+              onCheckedChange={() => onToggleCentralAccount(account.account_id)}
+              aria-label={`Select account ${account.account_id}`}
+            />
+          );
+        },
+        meta: { className: "w-10" },
+      },
       {
         accessorKey: "account_id",
         header: ({ column }) => (
@@ -1042,7 +1160,7 @@ function HubResults({ rows }: { rows: HubAccountOut[] }) {
         },
       },
     ],
-    [],
+    [onToggleCentralAccount, selectedCentralAccounts],
   );
   const table = useReactTable({
     data: rows,
@@ -1056,7 +1174,14 @@ function HubResults({ rows }: { rows: HubAccountOut[] }) {
   return (
     <Card className="overflow-hidden">
       <TooltipProvider delayDuration={150}>
-        <SearchDataTable table={table} />
+        <SearchDataTable
+          table={table}
+          getRowClassName={(row) =>
+            selectedCentralAccounts.includes(row.account_id)
+              ? "bg-accent-soft/40"
+              : undefined
+          }
+        />
       </TooltipProvider>
     </Card>
   );

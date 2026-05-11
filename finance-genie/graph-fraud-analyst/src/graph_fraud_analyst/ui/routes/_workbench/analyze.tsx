@@ -37,6 +37,9 @@ function AnalyzeRoute() {
   const navigate = useNavigate();
   const {
     selectedRings,
+    selectedRiskAccounts,
+    selectedCentralAccounts,
+    selectedSignalIds,
     conversationId,
     setConversationId,
     transcript,
@@ -48,13 +51,13 @@ function AnalyzeRoute() {
   const askMutation = useAskGenie();
   const loading = askMutation.isPending;
 
-  if (selectedRings.length === 0) {
+  if (selectedSignalIds.length === 0) {
     return (
       <Card className="bg-surface border-line p-8 text-center">
         <div className="mx-auto max-w-md space-y-3">
-          <h2 className="text-lg font-semibold text-ink">No rings loaded</h2>
+          <h2 className="text-lg font-semibold text-ink">No signals loaded</h2>
           <p className="text-sm text-ink-2">
-            Start at Search to pick fraud rings, then run the Load step before
+            Start at Search to pick graph signals, then run the Load step before
             analyzing with Genie.
           </p>
           <Button
@@ -168,10 +171,20 @@ function AnalyzeRoute() {
         {/* Top bar */}
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-xs text-muted-ink">Loaded rings:</span>
+            <span className="text-xs text-muted-ink">Loaded signals:</span>
             {selectedRings.map((ring) => (
-              <Pill key={ring} intent="mono">
+              <Pill key={`ring-${ring}`} intent="mono">
                 {ring}
+              </Pill>
+            ))}
+            {selectedRiskAccounts.map((account) => (
+              <Pill key={`risk-${account}`} intent="mono">
+                {account}
+              </Pill>
+            ))}
+            {selectedCentralAccounts.map((account) => (
+              <Pill key={`central-${account}`} intent="mono">
+                {account}
               </Pill>
             ))}
           </div>
@@ -218,7 +231,7 @@ function AnalyzeRoute() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKeyDown}
-            placeholder="Ask Genie about the loaded rings…"
+            placeholder="Ask Genie about the loaded signals..."
             className="min-h-[60px] resize-none flex-1"
             disabled={loading}
           />

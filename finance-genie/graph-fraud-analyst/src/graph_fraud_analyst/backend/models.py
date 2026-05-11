@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .. import __version__
 
@@ -67,7 +67,9 @@ class HubAccountOut(BaseModel):
 
 
 class LoadIn(BaseModel):
-    ring_ids: list[str]
+    ring_ids: list[str] = Field(default_factory=list)
+    risk_account_ids: list[str] = Field(default_factory=list)
+    central_account_ids: list[str] = Field(default_factory=list)
 
 
 class LoadStep(BaseModel):

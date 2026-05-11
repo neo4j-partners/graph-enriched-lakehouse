@@ -72,9 +72,16 @@ def load_to_lakehouse(
     config: Dependencies.Config,
     neo4j_driver: Dependencies.Neo4j,
 ):
-    if not body.ring_ids:
-        raise HTTPException(status_code=400, detail="ring_ids cannot be empty")
-    return loader.load_rings(ws, config, neo4j_driver, body.ring_ids)
+    if not (body.ring_ids or body.risk_account_ids or body.central_account_ids):
+        raise HTTPException(status_code=400, detail="at least one signal id is required")
+    return loader.load_rings(
+        ws,
+        config,
+        neo4j_driver,
+        body.ring_ids,
+        risk_account_ids=body.risk_account_ids,
+        central_account_ids=body.central_account_ids,
+    )
 
 
 @router.post(

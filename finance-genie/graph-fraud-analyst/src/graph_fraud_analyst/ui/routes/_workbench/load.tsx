@@ -36,16 +36,21 @@ const STEP_INTERVAL_MS = 700;
 
 function LoadRoute() {
   const navigate = useNavigate();
-  const { selectedRings } = useFlow();
+  const {
+    selectedRings,
+    selectedRiskAccounts,
+    selectedCentralAccounts,
+    selectedSignalIds,
+  } = useFlow();
 
-  // Empty-state: no rings selected upstream.
-  if (selectedRings.length === 0) {
+  // Empty-state: no signals selected upstream.
+  if (selectedSignalIds.length === 0) {
     return (
       <Card className="bg-surface border-line p-8 text-center">
         <div className="mx-auto max-w-md space-y-3">
-          <h2 className="text-lg font-semibold text-ink">Pick rings first</h2>
+          <h2 className="text-lg font-semibold text-ink">Pick signals first</h2>
           <p className="text-sm text-ink-2">
-            Head back to Search and select one or more fraud rings before
+            Head back to Search and select one or more graph signals before
             loading them into the lakehouse.
           </p>
           <Button
@@ -73,14 +78,29 @@ function LoadRoute() {
             />
           )}
         >
-          <LoadBody selectedRings={selectedRings} />
+          <LoadBody
+            selectedRings={selectedRings}
+            selectedRiskAccounts={selectedRiskAccounts}
+            selectedCentralAccounts={selectedCentralAccounts}
+            selectedSignalIds={selectedSignalIds}
+          />
         </ErrorBoundary>
       )}
     </QueryErrorResetBoundary>
   );
 }
 
-function LoadBody({ selectedRings }: { selectedRings: string[] }) {
+function LoadBody({
+  selectedRings,
+  selectedRiskAccounts,
+  selectedCentralAccounts,
+  selectedSignalIds,
+}: {
+  selectedRings: string[];
+  selectedRiskAccounts: string[];
+  selectedCentralAccounts: string[];
+  selectedSignalIds: string[];
+}) {
   const navigate = useNavigate();
   const [loadOut, setLoadOut] = useState<LoadOut | null>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
@@ -96,9 +116,13 @@ function LoadBody({ selectedRings }: { selectedRings: string[] }) {
   useEffect(() => {
     if (fetchedRef.current) return;
     fetchedRef.current = true;
-    mutation.mutate({ ring_ids: selectedRings });
+    mutation.mutate({
+      ring_ids: selectedRings,
+      risk_account_ids: selectedRiskAccounts,
+      central_account_ids: selectedCentralAccounts,
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRings]);
+  }, [selectedRings, selectedRiskAccounts, selectedCentralAccounts]);
 
   // Walk the step cursor on a 700ms timer once data lands.
   useEffect(() => {
@@ -123,7 +147,7 @@ function LoadBody({ selectedRings }: { selectedRings: string[] }) {
 
   const stepsComplete =
     loadOut !== null && currentStepIndex >= loadOut.steps.length;
-  const ringWord = selectedRings.length === 1 ? "ring" : "rings";
+  const signalWord = selectedSignalIds.length === 1 ? "signal" : "signals";
 
   return (
     <div className="p-6 space-y-4">
@@ -131,12 +155,22 @@ function LoadBody({ selectedRings }: { selectedRings: string[] }) {
       <header className="flex flex-wrap items-center gap-3">
         <Database className="h-4 w-4 text-ink-2" />
         <h1 className="text-sm font-medium text-ink-2">
-          Loading {selectedRings.length} {ringWord} → Lakehouse
+          Loading {selectedSignalIds.length} {signalWord} → Lakehouse
         </h1>
         <div className="flex flex-wrap gap-1">
           {selectedRings.map((ringId) => (
-            <Pill key={ringId} intent="mono">
+            <Pill key={`ring-${ringId}`} intent="mono">
               {ringId}
+            </Pill>
+          ))}
+          {selectedRiskAccounts.map((accountId) => (
+            <Pill key={`risk-${accountId}`} intent="mono">
+              {accountId}
+            </Pill>
+          ))}
+          {selectedCentralAccounts.map((accountId) => (
+            <Pill key={`central-${accountId}`} intent="mono">
+              {accountId}
             </Pill>
           ))}
         </div>

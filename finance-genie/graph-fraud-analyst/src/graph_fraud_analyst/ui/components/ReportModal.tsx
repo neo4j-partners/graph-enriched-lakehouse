@@ -34,7 +34,13 @@ export interface ReportModalProps {
 }
 
 export function ReportModal({ open, onOpenChange }: ReportModalProps) {
-  const { selectedRings, transcript } = useFlow();
+  const {
+    selectedRings,
+    selectedRiskAccounts,
+    selectedCentralAccounts,
+    selectedSignalIds,
+    transcript,
+  } = useFlow();
   const generatedAt = new Date().toISOString();
 
   function onPrint() {
@@ -52,14 +58,24 @@ export function ReportModal({ open, onOpenChange }: ReportModalProps) {
         <ReportSection>
           <SectionTitle>Summary</SectionTitle>
           <p className="text-sm text-ink leading-relaxed">
-            Investigation summary for {selectedRings.length} ring
-            {selectedRings.length === 1 ? "" : "s"} loaded into the lakehouse.
+            Investigation summary for {selectedSignalIds.length} graph signal
+            {selectedSignalIds.length === 1 ? "" : "s"} loaded into the lakehouse.
           </p>
-          {selectedRings.length > 0 ? (
+          {selectedSignalIds.length > 0 ? (
             <div className="mt-2 flex flex-row flex-wrap gap-1.5">
               {selectedRings.map((ring) => (
-                <Pill key={ring} intent="mono">
+                <Pill key={`ring-${ring}`} intent="mono">
                   {ring}
+                </Pill>
+              ))}
+              {selectedRiskAccounts.map((account) => (
+                <Pill key={`risk-${account}`} intent="mono">
+                  {account}
+                </Pill>
+              ))}
+              {selectedCentralAccounts.map((account) => (
+                <Pill key={`central-${account}`} intent="mono">
+                  {account}
                 </Pill>
               ))}
             </div>
@@ -67,19 +83,41 @@ export function ReportModal({ open, onOpenChange }: ReportModalProps) {
         </ReportSection>
 
         <ReportSection>
-          <SectionTitle>Loaded rings</SectionTitle>
-          {selectedRings.length === 0 ? (
-            <p className="text-sm text-muted-ink italic">No rings loaded.</p>
+          <SectionTitle>Loaded signals</SectionTitle>
+          {selectedSignalIds.length === 0 ? (
+            <p className="text-sm text-muted-ink italic">No signals loaded.</p>
           ) : (
             <dl className="space-y-1.5">
               {selectedRings.map((ring) => (
                 <div
-                  key={ring}
+                  key={`ring-${ring}`}
                   className="flex items-center justify-between gap-3 text-sm"
                 >
                   <dt className="font-mono text-ink-2">{ring}</dt>
                   <dd className="text-xs text-muted-ink">
-                    rows materialized
+                    ring materialized
+                  </dd>
+                </div>
+              ))}
+              {selectedRiskAccounts.map((account) => (
+                <div
+                  key={`risk-${account}`}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <dt className="font-mono text-ink-2">{account}</dt>
+                  <dd className="text-xs text-muted-ink">
+                    risk account materialized
+                  </dd>
+                </div>
+              ))}
+              {selectedCentralAccounts.map((account) => (
+                <div
+                  key={`central-${account}`}
+                  className="flex items-center justify-between gap-3 text-sm"
+                >
+                  <dt className="font-mono text-ink-2">{account}</dt>
+                  <dd className="text-xs text-muted-ink">
+                    central account materialized
                   </dd>
                 </div>
               ))}

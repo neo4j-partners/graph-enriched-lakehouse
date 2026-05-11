@@ -155,7 +155,10 @@ def list_rings(driver: Driver, max_nodes: int) -> list[RingOut]:
     out: list[RingOut] = []
     for s in summaries:
         cid = s["community_id"]
-        risk_score = float(s.get("avg_risk_score") or 0)
+        raw_risk_score = float(s.get("avg_risk_score") or 0)
+        normalized_risk_score = (
+            raw_risk_score / max_summary_score if max_summary_score > 0 else 0.0
+        )
         anchors = s.get("anchor_merchant_categories") or []
         if not isinstance(anchors, list):
             anchors = []
@@ -169,8 +172,8 @@ def list_rings(driver: Driver, max_nodes: int) -> list[RingOut]:
                 nodes=int(s.get("member_count") or 0),
                 volume=int(float(s.get("total_volume_usd") or 0)),
                 shared_identifiers=[str(a) for a in anchors],
-                risk=_risk_band(risk_score, max_summary_score),
-                risk_score=risk_score,
+                risk=_risk_band(raw_risk_score, max_summary_score),
+                risk_score=normalized_risk_score,
                 # Topology defaults to "mesh"; the UI uses the real graph
                 # nodes/edges with Cytoscape's cose layout for the tile, so
                 # the per-ring topology label is informational only.

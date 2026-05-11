@@ -1,9 +1,4 @@
 import { RingThumb } from "@/components/RingThumb";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { RingOut } from "@/lib/api";
 import { RISK_COLOR, RISK_LABEL } from "@/lib/riskColors";
 import { cn } from "@/lib/utils";
@@ -15,7 +10,6 @@ interface FraudRingCardProps {
 }
 
 interface RingMetrics {
-  density: number;
   densityLabel: "Low" | "Med" | "High";
   edgeCount: number;
   hubCount: number;
@@ -52,15 +46,14 @@ function ringMetrics(ring: RingOut): RingMetrics {
   const degreeValues = [...degrees.values()];
   const maxDegree = degreeValues.length ? Math.max(...degreeValues) : 0;
   const fallbackHubThreshold = Math.max(3, maxDegree * 0.5);
-  const hubCount =
-    graphNodes.filter((node) => node.is_hub).length ||
-    degreeValues.filter((degree) => degree >= fallbackHubThreshold).length;
+  const hubCount = degreeValues.filter(
+    (degree) => degree >= fallbackHubThreshold,
+  ).length;
   const possibleEdges = Math.max(1, (nodeCount * (nodeCount - 1)) / 2);
   const density = graphEdges.length / possibleEdges;
   const densityLabel = density >= 0.12 ? "High" : density >= 0.04 ? "Med" : "Low";
 
   return {
-    density,
     densityLabel,
     edgeCount: graphEdges.length,
     hubCount,
@@ -115,21 +108,16 @@ function MetricChip({
   tooltip: string;
 }) {
   return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <span
-          className="min-w-0 rounded border border-line bg-surface px-1.5 py-1 text-center text-[10px] leading-tight text-muted-ink transition-colors hover:border-line-3"
-        >
-          <strong className="block truncate text-[11px] font-semibold text-ink">
-            {value}
-          </strong>
-          {label}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent side="top" className="max-w-[220px] text-center">
-        {tooltip}
-      </TooltipContent>
-    </Tooltip>
+    <span
+      className="min-w-0 rounded border border-line bg-surface px-1.5 py-1 text-center text-[10px] leading-tight text-muted-ink transition-colors hover:border-line-3"
+      title={tooltip}
+      aria-label={`${value} ${label}. ${tooltip}`}
+    >
+      <strong className="block truncate text-[11px] font-semibold text-ink">
+        {value}
+      </strong>
+      {label}
+    </span>
   );
 }
 
@@ -155,6 +143,7 @@ export function FraudRingCard({
       type="button"
       onClick={() => onToggle(ring.ring_id)}
       aria-pressed={selected}
+      aria-label={`${selected ? "Deselect" : "Select"} fraud ring ${ring.ring_id}, ${risk} percent risk, ${metrics.nodeCount.toLocaleString()} accounts`}
       data-testid={`ring-card-${ring.ring_id}`}
       className={cn(
         "group flex min-h-[276px] flex-col overflow-hidden rounded-md border-2 bg-canvas-soft text-left transition-colors hover:border-accent-ink/50 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -183,6 +172,10 @@ export function FraudRingCard({
       <div className="px-3 pb-2 pt-2">
         <div
           className="h-1 overflow-hidden rounded-full bg-line"
+          role="meter"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={risk}
           aria-label={`Risk score ${risk} percent, ${RISK_LABEL[ring.risk]}`}
         >
           <span
