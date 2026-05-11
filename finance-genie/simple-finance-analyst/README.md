@@ -76,9 +76,15 @@ databricks apps deploy simple-finance-analyst \
 ```
 
 Configure the app resources in Databricks Apps so `app.yaml` can resolve
-`DATABRICKS_WAREHOUSE_ID` from the `sql-warehouse` resource. Real-backend
-deployments also need `GENIE_SPACE_ID`, either from a `genie-space` app resource
-or environment configuration.
+the live backend resources:
+
+| Resource key | Type | Used for |
+|---|---|---|
+| `sql-warehouse` | SQL warehouse | `DATABRICKS_WAREHOUSE_ID` |
+| `genie-space` | Genie space | `GENIE_SPACE_ID` |
+| `neo4j-uri` | Secret | `NEO4J_URI` |
+| `neo4j-username` | Secret | `NEO4J_USERNAME` |
+| `neo4j-password` | Secret | `NEO4J_PASSWORD` |
 
 Databricks Apps uses `uv` when `requirements.txt` is absent and both `pyproject.toml` and `uv.lock` are present.
 
@@ -108,7 +114,5 @@ simple-finance-analyst/
 | `USE_MOCK_BACKEND` | `true` (default) | Uses seeded mock data, no external connections |
 | `USE_MOCK_BACKEND` | `false` | Connects to Neo4j and Databricks |
 
-`app.yaml` currently sets `USE_MOCK_BACKEND=true` for demo-safe deployment. For
-real backend use, set it to `false`, configure the SQL warehouse and Genie
-resources, and provide `NEO4J_URI`, `NEO4J_USERNAME`, and `NEO4J_PASSWORD` from
-Databricks secret resources or environment configuration.
+`app.yaml` sets `USE_MOCK_BACKEND=false` for deployed live-backend use. Local
+mock runs can still set `USE_MOCK_BACKEND=true` in `finance-genie/.env`.

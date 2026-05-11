@@ -15,6 +15,7 @@ overwrites the previous session's data.
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime
 from typing import Any, Iterable
 
@@ -24,6 +25,11 @@ from neo4j import Driver
 from ..core._config import AppConfig
 from ..models import LoadOut, LoadStep, QualityCheck
 from . import sql
+
+# Cap the number of :SIMILAR_TO rows materialized per Load. Each ring of ~100
+# accounts can emit thousands of similarity edges; the VALUES clause needs to
+# stay below the SQL warehouse statement-size limit.
+_SIMILARITY_ROW_CAP = 2000
 
 
 # ---------------------------------------------------------------------------
@@ -59,7 +65,12 @@ def _sql_literal(value: Any) -> str:
         return "NULL"
     if isinstance(value, bool):
         return "TRUE" if value else "FALSE"
-    if isinstance(value, (int, float)):
+    if isinstance(value, float):
+        # NaN/Inf are not valid SQL DOUBLE literals; coerce to NULL.
+        if math.isnan(value) or math.isinf(value):
+            return "NULL"
+        return repr(value)
+    if isinstance(value, int):
         return repr(value)
     if isinstance(value, datetime):
         return f"TIMESTAMP '{value.isoformat(sep=' ')}'"
@@ -179,7 +190,8 @@ RETURN a.account_id                    AS src_account_id,
        b.account_id                    AS dst_account_id,
        s.similarity_score              AS similarity_score,
        a.community_id = b.community_id AS same_community
-ORDER BY similarity_score DESC
+ORDER BY s.similarity_score DESC
+LIMIT $row_cap
 """
 
 
@@ -261,7 +273,9 @@ def load_rings(
             _COMMUNITIES_CYPHER, community_ids=community_ids
         ).data()
         similarity = session.run(
-            _SIMILARITY_CYPHER, community_ids=community_ids
+            _SIMILARITY_CYPHER,
+            community_ids=community_ids,
+            row_cap=_SIMILARITY_ROW_CAP,
         ).data()
 
     row_counts["gold_accounts"] = _write_table(
