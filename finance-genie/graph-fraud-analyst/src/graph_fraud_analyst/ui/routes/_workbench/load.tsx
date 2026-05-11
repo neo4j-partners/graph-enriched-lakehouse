@@ -4,7 +4,7 @@
 // full LoadOut immediately; the choreography (todo → now → done) is run
 // client-side on a 700ms timer.
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
 import { ErrorBoundary } from "react-error-boundary";
@@ -24,7 +24,7 @@ import { Pill } from "@/components/Pill";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
-import { useLoadRings, type LoadOut, type LoadStep } from "@/lib/api";
+import { loadRings, type LoadIn, type LoadOut, type LoadStep } from "@/lib/api";
 import { useFlow } from "@/lib/flowContext";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,48 @@ export const Route = createFileRoute("/_workbench/load")({
 });
 
 const STEP_INTERVAL_MS = 700;
+const loadResultCache = new Map<string, LoadOut>();
+const loadPromiseCache = new Map<string, Promise<LoadOut>>();
+
+function createLoadPayload(
+  selectedRings: string[],
+  selectedRiskAccounts: string[],
+  selectedCentralAccounts: string[],
+): LoadIn {
+  return {
+    ring_ids: [...selectedRings].sort(),
+    risk_account_ids: [...selectedRiskAccounts].sort(),
+    central_account_ids: [...selectedCentralAccounts].sort(),
+  };
+}
+
+function loadPayloadKey(payload: LoadIn): string {
+  return JSON.stringify(payload);
+}
+
+function loadOnce(payloadKey: string, payload: LoadIn): Promise<LoadOut> {
+  const cached = loadResultCache.get(payloadKey);
+  if (cached) return Promise.resolve(cached);
+
+  const inFlight = loadPromiseCache.get(payloadKey);
+  if (inFlight) return inFlight;
+
+  const request = loadRings(payload)
+    .then((res) => {
+      loadResultCache.set(payloadKey, res.data);
+      return res.data;
+    })
+    .catch((error) => {
+      loadResultCache.delete(payloadKey);
+      throw error;
+    })
+    .finally(() => {
+      loadPromiseCache.delete(payloadKey);
+    });
+
+  loadPromiseCache.set(payloadKey, request);
+  return request;
+}
 
 function LoadRoute() {
   const navigate = useNavigate();
@@ -103,26 +145,46 @@ function LoadBody({
 }) {
   const navigate = useNavigate();
   const [loadOut, setLoadOut] = useState<LoadOut | null>(null);
+  const [loadError, setLoadError] = useState<unknown>(null);
   const [currentStepIndex, setCurrentStepIndex] = useState<number>(0);
-  const fetchedRef = useRef(false);
+  const loadPayload = useMemo(
+    () =>
+      createLoadPayload(
+        selectedRings,
+        selectedRiskAccounts,
+        selectedCentralAccounts,
+      ),
+    [selectedRings, selectedRiskAccounts, selectedCentralAccounts],
+  );
+  const payloadKey = useMemo(() => loadPayloadKey(loadPayload), [loadPayload]);
 
-  const mutation = useLoadRings({
-    mutation: {
-      onSuccess: (res) => setLoadOut(res.data),
-    },
-  });
-
-  // Fire the load mutation exactly once.
+  // React StrictMode remounts this route in local dev. Keep the in-flight
+  // request outside the component so the duplicate mount reuses it instead of
+  // issuing concurrent CREATE OR REPLACE TABLE statements.
   useEffect(() => {
-    if (fetchedRef.current) return;
-    fetchedRef.current = true;
-    mutation.mutate({
-      ring_ids: selectedRings,
-      risk_account_ids: selectedRiskAccounts,
-      central_account_ids: selectedCentralAccounts,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRings, selectedRiskAccounts, selectedCentralAccounts]);
+    let cancelled = false;
+    setLoadError(null);
+    setCurrentStepIndex(0);
+
+    const cached = loadResultCache.get(payloadKey);
+    if (cached) {
+      setLoadOut(cached);
+      return;
+    }
+
+    setLoadOut(null);
+    loadOnce(payloadKey, loadPayload)
+      .then((result) => {
+        if (!cancelled) setLoadOut(result);
+      })
+      .catch((error) => {
+        if (!cancelled) setLoadError(error);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loadPayload, payloadKey]);
 
   // Walk the step cursor on a 700ms timer once data lands.
   useEffect(() => {
@@ -141,8 +203,8 @@ function LoadBody({
 
   // Surface backend errors through the ErrorBoundary so the user sees the
   // retry-able card instead of a stuck "loading" view.
-  if (mutation.isError) {
-    throw mutation.error;
+  if (loadError) {
+    throw loadError;
   }
 
   const stepsComplete =
