@@ -80,9 +80,6 @@ function evidenceMeaning(ring: RingOut, metrics: RingMetrics) {
     ? ring.shared_identifiers.join(", ")
     : "shared identifiers";
 
-  if (metrics.hubCount >= 3) {
-    return `${metrics.hubCount} hub accounts concentrate the connections`;
-  }
   if (metrics.maxDegree >= 5) {
     return `Highest-degree account connects to ${metrics.maxDegree} peers`;
   }

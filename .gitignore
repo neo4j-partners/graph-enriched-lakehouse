@@ -17,6 +17,8 @@ eggs/
 .eggs/
 lib/
 lib64/
+!finance-genie/graph-fraud-analyst/src/graph_fraud_analyst/ui/lib/
+!finance-genie/graph-fraud-analyst/src/graph_fraud_analyst/ui/lib/**
 parts/
 sdist/
 var/
@@ -125,6 +127,13 @@ finance-genie/enrichment-pipeline/logs/
 # Local Codex / Databricks AI Dev Kit config
 .codex/
 .ai-dev-kit/
+
+# Databricks app / bundle local state
+.apx/
+.build/
+.databricks/
+.uv-cache/
+finance-genie/graph-fraud-analyst/src/graph_fraud_analyst/__dist__/
 
 # Keep repo-scoped Codex skills versionable, ignore other local agent state.
 .agents/*

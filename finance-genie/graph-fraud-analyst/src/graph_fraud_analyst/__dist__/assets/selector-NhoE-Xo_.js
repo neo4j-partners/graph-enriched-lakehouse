@@ -1,1 +1,0 @@
-var e=()=>({query:{select:e=>e.data}});export{e as t};
