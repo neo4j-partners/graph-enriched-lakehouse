@@ -1,10 +1,11 @@
+import json
 import os
-import time
+from datetime import timedelta
 
 
 # ── topology element generators ─────────────────────────────────────────────
 
-def _hub_spoke(ring_id: str, n: int, risk: float) -> dict:
+def _star(ring_id: str, n: int, risk: float) -> dict:
     hub = f"{ring_id}-00"
     nodes = [{"data": {"id": hub, "risk_score": risk, "degree": min(n - 1, 20)}}]
     for i in range(1, n):
@@ -41,13 +42,13 @@ def _chain(ring_id: str, n: int, risk: float) -> dict:
     return {"nodes": nodes, "edges": edges}
 
 
-_TOPOLOGY_FN = {"hub_spoke": _hub_spoke, "ring": _ring_cycle, "chain": _chain}
+_TOPOLOGY_FN = {"star": _star, "ring": _ring_cycle, "chain": _chain}
 
 _RING_SPECS = [
-    ("RING-0041", 38, 214880, ["IP", "Device"], 0.88, "High", "hub_spoke"),
+    ("RING-0041", 38, 214880, ["IP", "Device"], 0.88, "High", "star"),
     ("RING-0087", 22, 98320, ["Email"], 0.82, "High", "ring"),
     ("RING-0103", 11, 41500, ["Phone"], 0.55, "Medium", "chain"),
-    ("RING-0119", 9, 28900, ["Device"], 0.52, "Medium", "hub_spoke"),
+    ("RING-0119", 9, 28900, ["Device"], 0.52, "Medium", "star"),
     ("RING-0204", 6, 12100, ["IP"], 0.28, "Low", "ring"),
     ("RING-0231", 5, 8400, ["Email"], 0.22, "Low", "chain"),
 ]
@@ -181,10 +182,88 @@ class MockBackend:
 
 # ── Real backend ─────────────────────────────────────────────────────────────
 
+_DEFAULT_CATALOG = "graph-enriched-lakehouse"
+_DEFAULT_SCHEMA = "graph-enriched-schema"
+
+
+def _catalog_name() -> str:
+    return (
+        os.getenv("SIMPLE_FINANCE_ANALYST_CATALOG")
+        or os.getenv("DATABRICKS_CATALOG")
+        or _DEFAULT_CATALOG
+    )
+
+
+def _schema_name() -> str:
+    return (
+        os.getenv("SIMPLE_FINANCE_ANALYST_SCHEMA")
+        or os.getenv("DATABRICKS_SCHEMA")
+        or _DEFAULT_SCHEMA
+    )
+
+
+def _quoted_table(table: str) -> str:
+    def quote(part: str) -> str:
+        return f"`{part.replace('`', '``')}`"
+
+    return ".".join([quote(_catalog_name()), quote(_schema_name()), quote(table)])
+
+
+def _risk_label(score: float) -> str:
+    if score >= 0.7:
+        return "High"
+    if score >= 0.4:
+        return "Medium"
+    return "Low"
+
+
+def _community_ids(values: list[str]) -> list[int]:
+    return [int(str(v).strip()) for v in values]
+
+
+def _string_array(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        text = value.strip()
+        if text.startswith("["):
+            parsed = json.loads(text)
+            if not isinstance(parsed, list):
+                raise TypeError("Expected JSON array for string array column")
+            value = parsed
+        else:
+            value = [value]
+    return [str(item) for item in value if item]
+
+
+def _sql_lit(val: object) -> str:
+    if val is None:
+        return "NULL"
+    if isinstance(val, float):
+        return repr(val)
+    if isinstance(val, int):
+        return repr(val)
+    return "'" + str(val).replace("\\", "\\\\").replace("'", "''") + "'"
+
+
+def _write_ctas(cursor, table: str, col_decls: str, col_names: list[str], rows: list[tuple]) -> None:
+    """CREATE OR REPLACE a Delta table from an in-memory row list."""
+    if not rows:
+        cursor.execute(f"CREATE OR REPLACE TABLE {table} ({col_decls}) USING DELTA")
+        return
+    values = ", ".join(
+        "(" + ", ".join(_sql_lit(v) for v in row) + ")" for row in rows
+    )
+    cols = ", ".join(f"`{c}`" for c in col_names)
+    cursor.execute(
+        f"CREATE OR REPLACE TABLE {table} USING DELTA AS "
+        f"SELECT * FROM (VALUES {values}) AS t({cols})"
+    )
+
+
 class RealBackend:
     _neo4j_driver = None
     _workspace_client = None
-    _schema_created = False
 
     def _driver(self):
         if RealBackend._neo4j_driver is None:
@@ -202,141 +281,276 @@ class RealBackend:
         return RealBackend._workspace_client
 
     def search(self, signal_type: str, filters: dict) -> list[dict]:
-        min_ring_size = 5
-        ring_limit = 20
-        node_limit = _bounded_int_filter(filters, "max_nodes", default=80, minimum=5, maximum=500)
-        edge_limit = max(200, node_limit * 3)
-        queries = {
-            "fraud_rings": """
-                // Rank communities before collecting UI payloads. The old query
-                // collected every Account per community and expanded edges before
-                // LIMIT, which could exhaust Neo4j transaction memory on Aura.
-                // Keep node/edge payloads bounded and let the automated GDS load
-                // indexes on Account.community_id and Account.risk_score support
-                // these lookups.
-                MATCH (a:Account)
-                WHERE a.community_id IS NOT NULL
-                WITH
-                    a.community_id AS ring_id,
-                    count(a) AS node_count,
-                    avg(coalesce(a.risk_score, 0.0)) AS avg_risk
-                WHERE node_count >= $min_ring_size
-                ORDER BY avg_risk DESC, node_count DESC
-                LIMIT $ring_limit
-                CALL (ring_id) {
-                    MATCH (m:Account)
-                    WHERE m.community_id = ring_id
-                    WITH m
-                    ORDER BY coalesce(m.risk_score, 0.0) DESC, m.account_id
-                    LIMIT $node_limit
-                    RETURN collect({
-                        id: m.account_id,
-                        risk_score: coalesce(m.risk_score, 0.0),
-                        degree: count{(m)-[:TRANSFERRED_TO]-()}
-                    }) AS nodes
-                }
-                CALL (ring_id) {
-                    MATCH (src:Account)
-                    WHERE src.community_id = ring_id
-                    MATCH (src)-[:TRANSFERRED_TO]->(tgt:Account)
-                    WHERE tgt.community_id = ring_id
-                    WITH DISTINCT src.account_id AS source, tgt.account_id AS target
-                    LIMIT $edge_limit
-                    RETURN collect({source: source, target: target}) AS edges
-                }
-                RETURN ring_id,
-                       node_count,
-                       avg_risk AS risk_score,
-                       nodes,
-                       edges
-                ORDER BY risk_score DESC, node_count DESC
-            """,
-            "risk_scores": """
-                MATCH (a:Account)
-                WHERE a.risk_score IS NOT NULL AND a.risk_score >= 0.7
-                RETURN 'HIGH-' + coalesce(toString(a.account_id), elementId(a)) AS ring_id,
-                       1 AS node_count,
-                       a.risk_score AS risk_score,
-                       [{id: a.account_id, risk_score: a.risk_score, degree: 0}] AS nodes,
-                       [] AS edges
-                ORDER BY a.risk_score DESC
-                LIMIT $ring_limit
-            """,
-            "central_accounts": """
-                MATCH (a:Account)
-                WHERE a.risk_score IS NOT NULL
-                WITH a
-                ORDER BY a.risk_score DESC, a.account_id
-                LIMIT $ring_limit
-                CALL (a) {
-                    MATCH (a)-[:TRANSFERRED_TO]-(neighbor:Account)
-                    WITH DISTINCT neighbor
-                    ORDER BY coalesce(neighbor.risk_score, 0.0) DESC, neighbor.account_id
-                    LIMIT $node_limit
-                    RETURN collect(neighbor) AS neighbors
-                }
-                RETURN 'HUB-' + toString(a.account_id) AS ring_id,
-                       size(neighbors) + 1 AS node_count,
-                       a.risk_score AS risk_score,
-                       [{id: a.account_id, risk_score: a.risk_score, degree: count{(a)-[:TRANSFERRED_TO]-()}}]
-                         + [n IN neighbors | {id: n.account_id, risk_score: coalesce(n.risk_score, 0.3), degree: 1}] AS nodes,
-                       [n IN neighbors | {source: a.account_id, target: n.account_id}] AS edges
-                ORDER BY a.risk_score DESC
-            """,
-        }
-        cypher = queries.get(signal_type, queries["fraud_rings"])
+        if signal_type == "fraud_rings":
+            return self._search_fraud_rings(filters)
+        if signal_type == "risk_scores":
+            return self._search_gold_accounts(order_by="risk_score")
+        if signal_type == "central_accounts":
+            return self._search_gold_accounts(order_by="betweenness_centrality")
+        return self._search_fraud_rings(filters)
 
-        rings = []
-        with self._driver().session() as s:
-            params = {
-                "min_ring_size": min_ring_size,
-                "ring_limit": ring_limit,
-                "node_limit": node_limit,
-                "edge_limit": edge_limit,
-            }
-            for rec in s.run(cypher, **params):
-                r = dict(rec)
-                risk = r["risk_score"] or 0.0
-                nodes = [{"data": n} for n in r["nodes"]]
-                edges = [{"data": {"id": f"e{i}", **e}} for i, e in enumerate(r["edges"])]
-                rings.append({
-                    "ring_id": r["ring_id"],
-                    "node_count": r["node_count"],
-                    "volume": 0,
-                    "shared_ids": [],
-                    "risk_score": round(risk, 3),
-                    "risk_label": "High" if risk >= 0.7 else "Medium" if risk >= 0.4 else "Low",
-                    "topology": _detect_topology(nodes, edges),
-                    "nodes": nodes,
-                    "edges": edges,
-                })
-        return rings
-
-    def load(self, ring_ids: list[str]) -> dict:
+    def _sql_conn(self):
         from databricks.sdk.core import Config
         from databricks import sql as dbsql
 
         cfg = Config()
-        conn = dbsql.connect(
+        return dbsql.connect(
             server_hostname=cfg.host,
             http_path=f"/sql/1.0/warehouses/{os.environ['DATABRICKS_WAREHOUSE_ID']}",
             credentials_provider=lambda: cfg.authenticate,
         )
-        accounts, txns, merchants, edges = [], [], [], []
+
+    def _search_fraud_rings(self, filters: dict) -> list[dict]:
+        summaries = self._gold_ring_summaries()
+        if not summaries:
+            return []
+
+        max_raw_risk = max((float(r.get("risk_score") or 0.0) for r in summaries), default=0.0)
+        graph_by_ring = self._gold_graph_details_by_ring(
+            [r["ring_id"] for r in summaries],
+            _bounded_int_filter(filters, "max_nodes", default=120, minimum=5, maximum=500),
+        )
+
+        rings = []
+        for summary in summaries:
+            ring_id = str(summary["ring_id"])
+            raw_risk = float(summary.get("risk_score") or 0.0)
+            display_risk = raw_risk / max_raw_risk if max_raw_risk > 1.0 else raw_risk
+            graph = graph_by_ring.get(ring_id, {"nodes": [], "edges": []})
+            rings.append({
+                "ring_id": ring_id,
+                "node_count": int(summary.get("node_count") or 0),
+                "volume": int(float(summary.get("volume") or 0)),
+                "shared_ids": summary.get("shared_ids") or [],
+                "risk_score": round(display_risk, 3),
+                "raw_risk_score": round(raw_risk, 3),
+                "risk_label": _risk_label(display_risk),
+                "topology": summary["topology"],
+                **graph,
+            })
+        return rings
+
+    def _gold_ring_summaries(self) -> list[dict]:
+        table = _quoted_table("gold_fraud_ring_communities")
+        sql = f"""
+            SELECT
+                community_id,
+                member_count,
+                avg_risk_score,
+                total_volume_usd,
+                topology,
+                anchor_merchant_categories
+            FROM {table}
+            WHERE is_ring_candidate = true
+            ORDER BY avg_risk_score DESC, member_count DESC
+            LIMIT 20
+        """
+        conn = self._sql_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                columns = [col[0] for col in cur.description]
+                rows = [dict(zip(columns, row)) for row in cur.fetchall()]
+        finally:
+            conn.close()
+
+        summaries = []
+        for row in rows:
+            summaries.append({
+                "ring_id": row["community_id"],
+                "node_count": row["member_count"],
+                "volume": row["total_volume_usd"] or 0,
+                "shared_ids": _string_array(row["anchor_merchant_categories"]),
+                "risk_score": row["avg_risk_score"] or 0.0,
+                "topology": str(row["topology"]),
+            })
+        return summaries
+
+    def _gold_graph_details_by_ring(self, ring_ids: list[str], node_limit: int) -> dict[str, dict]:
+        community_ids = _community_ids(ring_ids)
+        if not community_ids:
+            return {}
+
+        edge_limit = max(200, node_limit * 3)
+        accounts = _quoted_table("gold_accounts")
+        pairs = _quoted_table("gold_account_similarity_pairs")
+        requested = ", ".join(str(cid) for cid in community_ids)
+        nodes_sql = f"""
+            WITH ranked AS (
+                SELECT
+                    community_id,
+                    account_id,
+                    risk_score,
+                    coalesce(distinct_counterparty_count, inbound_transfer_events, 1) AS degree,
+                    row_number() OVER (
+                        PARTITION BY community_id
+                        ORDER BY coalesce(risk_score, 0.0) DESC, account_id
+                    ) AS rn
+                FROM {accounts}
+                WHERE community_id IN ({requested})
+            )
+            SELECT community_id, account_id, risk_score, degree
+            FROM ranked
+            WHERE rn <= {int(node_limit)}
+            ORDER BY community_id, rn
+        """
+        edges_sql = f"""
+            WITH selected AS (
+                SELECT community_id, account_id
+                FROM (
+                    SELECT
+                        community_id,
+                        account_id,
+                        row_number() OVER (
+                            PARTITION BY community_id
+                            ORDER BY coalesce(risk_score, 0.0) DESC, account_id
+                        ) AS rn
+                    FROM {accounts}
+                    WHERE community_id IN ({requested})
+                )
+                WHERE rn <= {int(node_limit)}
+            ),
+            ranked_edges AS (
+                SELECT
+                    a.community_id,
+                    p.account_id_a AS source,
+                    p.account_id_b AS target,
+                    row_number() OVER (
+                        PARTITION BY a.community_id
+                        ORDER BY coalesce(p.similarity_score, 0.0) DESC,
+                                 p.account_id_a,
+                                 p.account_id_b
+                    ) AS rn
+                FROM {pairs} p
+                JOIN selected a ON p.account_id_a = a.account_id
+                JOIN selected b
+                  ON p.account_id_b = b.account_id
+                 AND a.community_id = b.community_id
+                WHERE p.same_community = true
+            )
+            SELECT community_id, source, target
+            FROM ranked_edges
+            WHERE rn <= {int(edge_limit)}
+            ORDER BY community_id, rn
+        """
+
+        out = {str(cid): {"nodes": [], "edges": []} for cid in community_ids}
+        conn = self._sql_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(nodes_sql)
+                node_rows = cur.fetchall()
+                max_risk_by_ring: dict[str, float] = {}
+                for community_id, _account_id, risk_score, _degree in node_rows:
+                    ring_id = str(community_id)
+                    max_risk_by_ring[ring_id] = max(
+                        max_risk_by_ring.get(ring_id, 0.0),
+                        float(risk_score or 0.0),
+                    )
+                for community_id, account_id, risk_score, degree in node_rows:
+                    ring_id = str(community_id)
+                    raw_risk = float(risk_score or 0.0)
+                    max_risk = max_risk_by_ring.get(ring_id, 0.0)
+                    display_risk = raw_risk / max_risk if max_risk > 1.0 else raw_risk
+                    out[ring_id]["nodes"].append({
+                        "data": {
+                            "id": str(account_id),
+                            "risk_score": round(display_risk, 3),
+                            "raw_risk_score": round(raw_risk, 3),
+                            "degree": int(degree or 1),
+                        }
+                    })
+                cur.execute(edges_sql)
+                edge_counts: dict[str, int] = {}
+                for community_id, source, target in cur.fetchall():
+                    ring_id = str(community_id)
+                    idx = edge_counts.get(ring_id, 0)
+                    edge_counts[ring_id] = idx + 1
+                    out[ring_id]["edges"].append({
+                        "data": {
+                            "id": f"{ring_id}-e{idx}",
+                            "source": str(source),
+                            "target": str(target),
+                        }
+                    })
+        finally:
+            conn.close()
+        return out
+
+    def _search_gold_accounts(self, order_by: str) -> list[dict]:
+        accounts = _quoted_table("gold_accounts")
+        if order_by == "betweenness_centrality":
+            order_expr = "coalesce(betweenness_centrality, 0.0)"
+            prefix = "HUB"
+        else:
+            order_expr = "coalesce(risk_score, 0.0)"
+            prefix = "HIGH"
+        sql = f"""
+            SELECT
+                account_id,
+                risk_score,
+                coalesce(distinct_counterparty_count, inbound_transfer_events, 1) AS degree,
+                community_id,
+                fraud_risk_tier
+            FROM {accounts}
+            WHERE risk_score IS NOT NULL
+            ORDER BY {order_expr} DESC, account_id
+            LIMIT 20
+        """
+        conn = self._sql_conn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute(sql)
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        max_risk = max((float(row[1] or 0.0) for row in rows), default=0.0)
+        out = []
+        for account_id, raw_risk, degree, community_id, tier in rows:
+            raw = float(raw_risk or 0.0)
+            display_risk = raw / max_risk if max_risk > 1.0 else raw
+            node = {
+                "data": {
+                    "id": str(account_id),
+                    "risk_score": raw,
+                    "degree": int(degree or 1),
+                }
+            }
+            out.append({
+                "ring_id": f"{prefix}-{account_id}",
+                "node_count": 1,
+                "volume": 0,
+                "shared_ids": [f"community {community_id}", str(tier or "")],
+                "risk_score": round(display_risk, 3),
+                "raw_risk_score": round(raw, 3),
+                "risk_label": _risk_label(display_risk),
+                "topology": "chain",
+                "nodes": [node],
+                "edges": [],
+            })
+        return out
+
+    def load(self, ring_ids: list[str]) -> dict:
+        accounts: list[tuple] = []
+        txns: list[tuple] = []
+        merchants: list[tuple] = []
+        edges: list[tuple] = []
 
         with self._driver().session() as s:
             for ring_id in ring_ids:
+                community_id = int(str(ring_id).strip())
                 for rec in s.run("""
                     MATCH (a:Account) WHERE a.community_id = $cid
                     RETURN a.account_id AS account_id, a.risk_score AS risk_score
-                """, cid=ring_id):
+                """, cid=community_id):
                     accounts.append((ring_id, rec["account_id"], rec["risk_score"] or 0.0))
 
                 for rec in s.run("""
                     MATCH (a:Account)-[r:TRANSACTED_WITH]->(m:Merchant)
                     WHERE a.community_id = $cid
                     RETURN a.account_id AS src, m.merchant_id AS tgt, r.amount AS amount, r.date AS date
-                """, cid=ring_id):
+                """, cid=community_id):
                     txns.append((ring_id, rec["src"], rec["tgt"], rec["amount"], str(rec["date"] or "")))
                     if rec["tgt"]:
                         merchants.append((ring_id, rec["tgt"]))
@@ -344,41 +558,36 @@ class RealBackend:
 
         unique_merchants = sorted(set(merchants))
         unique_merchant_count = len({merchant_id for _, merchant_id in unique_merchants})
+        schema = f"`{_catalog_name()}`.`fraud_signals`"
 
+        conn = self._sql_conn()
         try:
             with conn.cursor() as cur:
-                if not RealBackend._schema_created:
-                    cur.execute("CREATE SCHEMA IF NOT EXISTS fraud_signals")
-                    cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.accounts
-                        (ring_id STRING, account_id STRING, risk_score DOUBLE, first_seen STRING)""")
-                    cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.transactions
-                        (ring_id STRING, src_id STRING, tgt_id STRING, amount DOUBLE, txn_date STRING)""")
-                    cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.merchants
-                        (ring_id STRING, merchant_id STRING)""")
-                    cur.execute("""CREATE TABLE IF NOT EXISTS fraud_signals.graph_edges
-                        (ring_id STRING, source_id STRING, target_id STRING, edge_type STRING, weight DOUBLE)""")
-                    RealBackend._schema_created = True
-
-                for r, a, s in accounts:
-                    cur.execute(
-                        "INSERT INTO fraud_signals.accounts VALUES (%s, %s, %s, '')",
-                        [r, a, float(s)],
-                    )
-                for r, src, tgt, amt, d in txns:
-                    cur.execute(
-                        "INSERT INTO fraud_signals.transactions VALUES (%s, %s, %s, %s, %s)",
-                        [r, src, tgt, float(amt or 0), d],
-                    )
-                for r, merchant_id in unique_merchants:
-                    cur.execute(
-                        "INSERT INTO fraud_signals.merchants VALUES (%s, %s)",
-                        [r, merchant_id],
-                    )
-                for r, src, tgt, et, w in edges:
-                    cur.execute(
-                        "INSERT INTO fraud_signals.graph_edges VALUES (%s, %s, %s, %s, %s)",
-                        [r, src, tgt, et, float(w)],
-                    )
+                cur.execute(f"CREATE SCHEMA IF NOT EXISTS {schema}")
+                _write_ctas(
+                    cur, f"{schema}.`accounts`",
+                    "ring_id STRING, account_id STRING, risk_score DOUBLE, first_seen STRING",
+                    ["ring_id", "account_id", "risk_score", "first_seen"],
+                    [(r, str(a), float(s), "") for r, a, s in accounts],
+                )
+                _write_ctas(
+                    cur, f"{schema}.`transactions`",
+                    "ring_id STRING, src_id STRING, tgt_id STRING, amount DOUBLE, txn_date STRING",
+                    ["ring_id", "src_id", "tgt_id", "amount", "txn_date"],
+                    [(r, str(src), str(tgt or ""), float(amt or 0), d) for r, src, tgt, amt, d in txns],
+                )
+                _write_ctas(
+                    cur, f"{schema}.`merchants`",
+                    "ring_id STRING, merchant_id STRING",
+                    ["ring_id", "merchant_id"],
+                    list(unique_merchants),
+                )
+                _write_ctas(
+                    cur, f"{schema}.`graph_edges`",
+                    "ring_id STRING, source_id STRING, target_id STRING, edge_type STRING, weight DOUBLE",
+                    ["ring_id", "source_id", "target_id", "edge_type", "weight"],
+                    [(r, str(src), str(tgt or ""), et, float(w)) for r, src, tgt, et, w in edges],
+                )
         finally:
             conn.close()
 
@@ -398,7 +607,10 @@ class RealBackend:
                 "merchants": unique_merchant_count,
                 "graph_edges": len(edges),
             },
-            "preview": [{"account_id": a, "ring_id": r, "risk_score": s, "first_seen": ""} for r, a, s in accounts[:5]],
+            "preview": [
+                {"account_id": a, "ring_id": r, "risk_score": s, "first_seen": ""}
+                for r, a, s in accounts[:5]
+            ],
             "quality_checks": [
                 {"check": "Row count matches graph extract", "status": "pass"},
                 {"check": "No null account_id values", "status": "pass" if all(a for _, a, _ in accounts) else "fail"},
@@ -410,61 +622,32 @@ class RealBackend:
     def ask_genie(self, question: str, conversation_id: str | None) -> dict:
         w = self._ws_client()
         space_id = os.environ["GENIE_SPACE_ID"]
+        timeout = timedelta(seconds=120)
 
-        if conversation_id is None:
-            resp = w.api_client.do(
-                "POST",
-                f"/api/2.0/genie/spaces/{space_id}/start-conversation",
-                body={"content": question},
+        if conversation_id:
+            message = w.genie.create_message_and_wait(
+                space_id=space_id,
+                conversation_id=conversation_id,
+                content=question,
+                timeout=timeout,
             )
         else:
-            resp = w.api_client.do(
-                "POST",
-                f"/api/2.0/genie/spaces/{space_id}/conversations/{conversation_id}/messages",
-                body={"content": question},
+            message = w.genie.start_conversation_and_wait(
+                space_id=space_id,
+                content=question,
+                timeout=timeout,
             )
 
-        conv_id = resp["conversation_id"]
-        msg_id = resp["id"]
-
-        # Polls synchronously; Flask worker is blocked up to 60s.
-        # Acceptable for a single-analyst demo; replace with SSE for concurrent use.
-        for _ in range(30):
-            msg = w.api_client.do(
-                "GET",
-                f"/api/2.0/genie/spaces/{space_id}/conversations/{conv_id}/messages/{msg_id}",
+        conv_id = message.conversation_id or ""
+        text = ""
+        if message.attachments:
+            text = next(
+                (a.text.content for a in message.attachments if a.text and a.text.content),
+                "",
             )
-            status = msg.get("status", "")
-            if status == "COMPLETED":
-                attachments = msg.get("attachments", [])
-                text = next((a["text"]["content"] for a in attachments if a.get("text")), "Analysis complete.")
-                return {"conversation_id": conv_id, "answer": text, "table_cols": None, "table_rows": None}
-            if status in ("FAILED", "CANCELLED"):
-                return {"conversation_id": conv_id, "answer": "Genie analysis failed. Please try again.",
-                        "table_cols": None, "table_rows": None}
-            time.sleep(2)
-
-        return {"conversation_id": conv_id, "answer": "Analysis timed out. Please try again.",
-                "table_cols": None, "table_rows": None}
-
-
-def _detect_topology(nodes: list, edges: list) -> str:
-    if not nodes:
-        return "chain"
-    degrees: dict[str, int] = {}
-    for e in edges:
-        src = e.get("data", {}).get("source", "")
-        tgt = e.get("data", {}).get("target", "")
-        if src:
-            degrees[src] = degrees.get(src, 0) + 1
-        if tgt:
-            degrees[tgt] = degrees.get(tgt, 0) + 1
-    if not degrees:
-        return "chain"
-    avg = sum(degrees.values()) / len(degrees)
-    max_deg = max(degrees.values())
-    if max_deg > max(avg * 2.5, 4):
-        return "hub_spoke"
-    if len(edges) == len(nodes) and max_deg <= 2:
-        return "ring"
-    return "chain"
+        return {
+            "conversation_id": conv_id,
+            "answer": text or "Analysis complete.",
+            "table_cols": None,
+            "table_rows": None,
+        }

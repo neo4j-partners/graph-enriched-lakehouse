@@ -9,6 +9,10 @@ env:
     valueFrom: sql-warehouse
   - name: USE_MOCK_BACKEND
     value: "false"
+  - name: SIMPLE_FINANCE_ANALYST_CATALOG
+    value: "graph-enriched-lakehouse"
+  - name: SIMPLE_FINANCE_ANALYST_SCHEMA
+    value: "graph-enriched-schema"
   - name: GENIE_SPACE_ID
     valueFrom: genie-space
   - name: NEO4J_URI

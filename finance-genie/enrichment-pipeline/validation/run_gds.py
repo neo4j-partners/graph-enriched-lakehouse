@@ -61,7 +61,7 @@ def connect(uri: str, user: str, password: str) -> GraphDataScience:
 
 
 def drop_if_exists(gds: GraphDataScience, name: str) -> None:
-    gds.run_cypher(f"CALL gds.graph.drop('{name}', false) YIELD graphName")
+    gds.run_cypher("CALL gds.graph.drop($name, false) YIELD graphName", params={"name": name})
 
 
 def run_pipeline(gds: GraphDataScience) -> None:
@@ -112,31 +112,19 @@ def run_pipeline(gds: GraphDataScience) -> None:
     )
 
     header("Step 4.5: Betweenness.write → betweenness_centrality")
-    betweenness = gds.run_cypher(
-        """
-        CALL gds.betweenness.write($graph_name, {
-          writeProperty: 'betweenness_centrality',
-          samplingSize: $sampling_size,
-          samplingSeed: $sampling_seed
-        })
-        YIELD nodePropertiesWritten, computeMillis, centralityDistribution
-        RETURN nodePropertiesWritten, computeMillis,
-               centralityDistribution.min AS min_score,
-               centralityDistribution.mean AS mean_score,
-               centralityDistribution.max AS max_score
-        """,
-        params={
-            "graph_name": G.name(),
-            "sampling_size": BETWEENNESS_SAMPLING_SIZE,
-            "sampling_seed": BETWEENNESS_SAMPLING_SEED,
-        },
-    ).iloc[0]
+    betweenness = gds.betweenness.write(
+        G,
+        writeProperty="betweenness_centrality",
+        samplingSize=BETWEENNESS_SAMPLING_SIZE,
+        samplingSeed=BETWEENNESS_SAMPLING_SEED,
+    )
+    dist = betweenness.get("centralityDistribution") or {}
     print(
         f"      propertiesWritten={int(betweenness['nodePropertiesWritten']):,}  "
         f"computeMillis={int(betweenness['computeMillis']):,}  "
-        f"min={float(betweenness['min_score'] or 0.0):.4f}  "
-        f"mean={float(betweenness['mean_score'] or 0.0):.4f}  "
-        f"max={float(betweenness['max_score'] or 0.0):.4f}"
+        f"min={float(dist.get('min') or 0.0):.4f}  "
+        f"mean={float(dist.get('mean') or 0.0):.4f}  "
+        f"max={float(dist.get('max') or 0.0):.4f}"
     )
 
     gds.graph.drop(G)
@@ -223,15 +211,9 @@ def main() -> None:
     password = os.environ["NEO4J_PASSWORD"]
 
     gds = connect(uri, user, password)
-
-    try:
+    with gds:
         run_pipeline(gds)
         ok("GDS pipeline complete — run verify_gds.py to check outputs")
-    finally:
-        try:
-            gds.close()
-        except Exception:
-            pass
 
 
 if __name__ == "__main__":

@@ -1,106 +1,55 @@
 from __future__ import annotations
 
-from typing import Any
-
-from backend import RealBackend
+from backend import RealBackend, _string_array
 
 
-class FakeSession:
-    def __init__(self) -> None:
-        self.params: dict[str, Any] | None = None
-        self.cypher: str | None = None
-
-    def __enter__(self) -> "FakeSession":
-        return self
-
-    def __exit__(self, *args: object) -> None:
-        return None
-
-    def run(self, _cypher: str, **params: Any) -> list[dict[str, Any]]:
-        self.cypher = _cypher
-        self.params = params
-        return []
+def test_string_array_decodes_databricks_connector_json_array() -> None:
+    assert _string_array('["online","utilities","crypto"]') == [
+        "online",
+        "utilities",
+        "crypto",
+    ]
 
 
-class FakeDriver:
-    def __init__(self) -> None:
-        self.session_instance = FakeSession()
-
-    def session(self) -> FakeSession:
-        return self.session_instance
-
-
-def test_real_backend_search_accepts_null_frontend_filters() -> None:
-    driver = FakeDriver()
+def test_fraud_ring_search_uses_latest_gold_summary_fields() -> None:
     backend = RealBackend()
-    backend._driver = lambda: driver  # type: ignore[method-assign]
-
-    rings = backend.search(
-        "fraud_rings",
-        {"date_range": "Last 30 days", "min_amount": None, "max_nodes": None},
-    )
-
-    assert rings == []
-    assert driver.session_instance.params == {
-        "min_ring_size": 5,
-        "ring_limit": 20,
-        "node_limit": 80,
-        "edge_limit": 240,
+    backend._gold_ring_summaries = lambda: [  # type: ignore[method-assign]
+        {
+            "ring_id": 17506,
+            "node_count": 118,
+            "volume": 214880.75,
+            "shared_ids": ["crypto", "retail"],
+            "risk_score": 2.5,
+            "topology": "mesh",
+        },
+        {
+            "ring_id": 16166,
+            "node_count": 114,
+            "volume": 98320,
+            "shared_ids": ["online"],
+            "risk_score": 1.25,
+            "topology": "star",
+        },
+    ]
+    backend._gold_graph_details_by_ring = lambda ring_ids, node_limit: {  # type: ignore[method-assign]
+        "17506": {
+            "nodes": [{"data": {"id": "a1", "risk_score": 2.5, "degree": 3}}],
+            "edges": [],
+        },
+        "16166": {"nodes": [], "edges": []},
     }
 
+    rings = backend.search("fraud_rings", {"max_nodes": 120})
 
-def test_real_backend_search_defaults_invalid_numeric_filters() -> None:
-    driver = FakeDriver()
-    backend = RealBackend()
-    backend._driver = lambda: driver  # type: ignore[method-assign]
+    assert rings[0]["ring_id"] == "17506"
+    assert rings[0]["node_count"] == 118
+    assert rings[0]["volume"] == 214880
+    assert rings[0]["shared_ids"] == ["crypto", "retail"]
+    assert rings[0]["risk_score"] == 1.0
+    assert rings[0]["raw_risk_score"] == 2.5
+    assert rings[0]["risk_label"] == "High"
+    assert rings[0]["topology"] == "mesh"
+    assert rings[0]["nodes"] == [{"data": {"id": "a1", "risk_score": 2.5, "degree": 3}}]
 
-    rings = backend.search("fraud_rings", {"max_nodes": "not-a-number"})
-
-    assert rings == []
-    assert driver.session_instance.params == {
-        "min_ring_size": 5,
-        "ring_limit": 20,
-        "node_limit": 80,
-        "edge_limit": 240,
-    }
-
-
-def test_real_backend_search_uses_max_nodes_as_bounded_payload_limit() -> None:
-    driver = FakeDriver()
-    backend = RealBackend()
-    backend._driver = lambda: driver  # type: ignore[method-assign]
-
-    rings = backend.search("fraud_rings", {"max_nodes": 25})
-
-    assert rings == []
-    assert driver.session_instance.params == {
-        "min_ring_size": 5,
-        "ring_limit": 20,
-        "node_limit": 25,
-        "edge_limit": 200,
-    }
-
-
-def test_fraud_rings_query_limits_before_fetching_ring_payloads() -> None:
-    driver = FakeDriver()
-    backend = RealBackend()
-    backend._driver = lambda: driver  # type: ignore[method-assign]
-
-    backend.search("fraud_rings", {})
-
-    cypher = driver.session_instance.cypher or ""
-    assert "collect(a) AS members" not in cypher
-    assert "src IN members" not in cypher
-    assert cypher.index("LIMIT $ring_limit") < cypher.index("CALL (ring_id)")
-
-
-def test_search_queries_do_not_use_deprecated_internal_ids() -> None:
-    driver = FakeDriver()
-    backend = RealBackend()
-    backend._driver = lambda: driver  # type: ignore[method-assign]
-
-    backend.search("risk_scores", {})
-
-    cypher = driver.session_instance.cypher or ""
-    assert "id(a)" not in cypher
-    assert "elementId(a)" in cypher
+    assert rings[1]["risk_score"] == 0.5
+    assert rings[1]["risk_label"] == "Medium"

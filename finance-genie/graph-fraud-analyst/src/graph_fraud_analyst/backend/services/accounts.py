@@ -34,7 +34,7 @@ def _diversity_band(distinct_merchants: int) -> Band:
     return "Low"
 
 
-def _account_age_days(opened_date: object) -> int:
+def _account_age_days(opened_date: date | datetime | str | None) -> int:
     if opened_date is None:
         return 0
     if isinstance(opened_date, date) and not isinstance(opened_date, datetime):
@@ -96,7 +96,7 @@ def list_risky_accounts(
 _HUBS_CYPHER = """
 MATCH (a:Account) WHERE a.betweenness_centrality IS NOT NULL
 WITH a ORDER BY a.betweenness_centrality DESC LIMIT $row_limit
-OPTIONAL MATCH (a)-[r:TRANSFERRED_TO]-(b:Account)
+OPTIONAL MATCH (b:Account)-[r:TRANSFERRED_TO]->(a)
 WITH a, count(DISTINCT b) AS neighbors, count(r) AS inbound_transfer_events
 RETURN a.account_id              AS account_id,
        a.betweenness_centrality  AS betweenness,
@@ -135,6 +135,7 @@ def list_central_accounts(
             HubAccountOut(
                 account_id=str(r.get("account_id")),
                 betweenness=betweenness,
+                # approximates APSP count without running it; 999 caps UI display
                 shortest_paths=min(inbound * 5, 999),
                 neighbors=int(r.get("neighbors") or 0),
             )

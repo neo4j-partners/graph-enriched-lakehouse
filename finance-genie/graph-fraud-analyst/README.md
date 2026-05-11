@@ -142,16 +142,20 @@ The `../enrichment-pipeline/` Delta pipeline is **no longer required** for the r
 
 ## Local development
 
-For UI work, run the apx dev servers:
+Use the project-local wrapper. It sets `PATH` to this project's `.venv/bin`, rebuilds the venv if it has stale shebangs (e.g. after a directory rename), and forwards everything to `apx dev`.
 
 ```bash
-apx dev start          # backend + frontend + OpenAPI watcher
-apx dev status         # check what's running
-apx dev logs -f        # stream logs
-apx dev stop           # stop everything
+./scripts/dev.sh start          # backend + frontend + OpenAPI watcher
+./scripts/dev.sh status         # check what's running
+./scripts/dev.sh logs -f        # stream logs
+./scripts/dev.sh stop           # stop everything
+./scripts/dev.sh restart        # restart backend, keep port
+./scripts/dev.sh check          # tsc + ty type checks
 ```
 
-The backend reads the same `.env` you created above. Local SQL and Genie calls require `DATABRICKS_HOST` and `DATABRICKS_TOKEN` (or an active `~/.databrickscfg` profile that the SDK can resolve).
+The dev URL prints on `start` (typically `http://localhost:9001`). Hot reload is active: edits to `.tsx` files refresh the browser instantly; edits to `.py` files restart uvicorn automatically.
+
+The backend reads `~/.databrickscfg` (the profile named in `../.env`) plus the Neo4j credentials from `../.env` (`NEO4J_URI`, `NEO4J_USERNAME`, `NEO4J_PASSWORD`). Local dev talks to the same Aura and the same SQL warehouse as the deployed app, so a smoke walk in your browser exercises the same code path the demo does.
 
 ### Type checks
 

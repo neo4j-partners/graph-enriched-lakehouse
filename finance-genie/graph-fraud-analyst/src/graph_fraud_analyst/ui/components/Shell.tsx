@@ -1,4 +1,5 @@
 import type * as React from "react";
+import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
 import { Stepper, type Step } from "./Stepper";
 
@@ -38,12 +39,16 @@ export function Shell({ step, onJump, user, children, className }: ShellProps) {
     >
       <header className="sticky top-0 z-20 bg-canvas/85 backdrop-blur border-b border-line">
         <div className="mx-auto w-full max-w-7xl px-6 h-12 flex items-center justify-between">
-          <div className="flex items-center gap-2">
+          <Link
+            to="/search"
+            className="flex items-center gap-2 rounded-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+            aria-label="Return to Fraud Signal Workbench home"
+          >
             <BrandMark />
             <span className="text-sm font-semibold tracking-tight">
               Fraud Signal Workbench
             </span>
-          </div>
+          </Link>
           {user && (
             <span className="text-xs text-muted-ink">{user}</span>
           )}

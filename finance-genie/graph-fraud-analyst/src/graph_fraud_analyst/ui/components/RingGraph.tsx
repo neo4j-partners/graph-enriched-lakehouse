@@ -4,7 +4,7 @@
 // rendering: real graph nodes and within-community TRANSFERRED_TO edges,
 // laid out with the cose force-directed algorithm.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import cytoscape from "cytoscape";
 import type { Core, ElementDefinition, LayoutOptions } from "cytoscape";
 import { cn } from "@/lib/utils";
@@ -40,6 +40,8 @@ const RISK_HEX: Record<"H" | "M" | "L", string> = {
 
 const EDGE_HEX = "#d4d4d8";
 const EDGE_HEX_SELECTED = "#c2410c";
+const MAX_THUMBNAIL_NODES = 80;
+const MAX_THUMBNAIL_EDGES = 160;
 
 function pickLayout(
   nodeCount: number,
@@ -51,12 +53,12 @@ function pickLayout(
   return {
     name: "cose",
     idealEdgeLength: () => Math.max(20, Math.min(width, height) / 3),
-    nodeRepulsion: () => 8000,
+    nodeRepulsion: () => 5000,
     edgeElasticity: () => 16,
     gravity: 0.2,
-    numIter: 1200,
-    initialTemp: 200,
-    coolingFactor: 0.95,
+    numIter: nodeCount > 60 ? 180 : 260,
+    initialTemp: 120,
+    coolingFactor: 0.9,
     animate: false,
     fit: true,
     padding: 6,
@@ -74,28 +76,45 @@ export function RingGraph({
 }: RingGraphProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const cyRef = useRef<Core | null>(null);
+  const { visibleNodes, visibleEdges } = useMemo(() => {
+    const orderedNodes = [...nodes].sort((a, b) => {
+      if (a.is_hub !== b.is_hub) return a.is_hub ? -1 : 1;
+      const riskRank = { H: 0, M: 1, L: 2 };
+      return riskRank[a.risk] - riskRank[b.risk];
+    });
+    const nextNodes = orderedNodes.slice(0, MAX_THUMBNAIL_NODES);
+    const visibleIds = new Set(nextNodes.map((node) => node.id));
+    const nextEdges = edges
+      .filter(
+        (edge) =>
+          edge.source !== edge.target &&
+          visibleIds.has(edge.source) &&
+          visibleIds.has(edge.target),
+      )
+      .slice(0, MAX_THUMBNAIL_EDGES);
+
+    return { visibleNodes: nextNodes, visibleEdges: nextEdges };
+  }, [nodes, edges]);
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
     const elements: ElementDefinition[] = [
-      ...nodes.map((n) => ({
+      ...visibleNodes.map((n) => ({
         data: {
           id: n.id,
           risk: n.risk,
           hub: n.is_hub ? 1 : 0,
         },
       })),
-      ...edges
-        .filter((e) => e.source !== e.target)
-        .map((e, idx) => ({
-          data: {
-            id: `e-${idx}-${e.source}-${e.target}`,
-            source: e.source,
-            target: e.target,
-          },
-        })),
+      ...visibleEdges.map((e, idx) => ({
+        data: {
+          id: `e-${idx}-${e.source}-${e.target}`,
+          source: e.source,
+          target: e.target,
+        },
+      })),
     ];
 
     const cy = cytoscape({
@@ -126,7 +145,7 @@ export function RingGraph({
           },
         },
       ],
-      layout: pickLayout(nodes.length, width, height),
+      layout: pickLayout(visibleNodes.length, width, height),
       userZoomingEnabled: false,
       userPanningEnabled: false,
       autoungrabify: true,
@@ -141,7 +160,7 @@ export function RingGraph({
     // The node/edge identities are stable per ring_id; we redraw when ring data
     // changes. Selection only re-styles edges, no full rebuild needed.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [nodes, edges, width, height]);
+  }, [visibleNodes, visibleEdges, width, height]);
 
   // Restyle edges on selection without recreating the instance.
   useEffect(() => {

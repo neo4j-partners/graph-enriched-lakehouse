@@ -4,15 +4,29 @@
 // lives inside the `_workbench` pathless layout, so the URL is `/search` and
 // Shell is provided by the parent.
 
-import { Suspense, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { QueryErrorResetBoundary } from "@tanstack/react-query";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  useReactTable,
+  type Column,
+  type ColumnDef,
+  type SortingState,
+  type Table as TanStackTable,
+} from "@tanstack/react-table";
 import { ErrorBoundary } from "react-error-boundary";
 import {
   AlertTriangle,
   ArrowRight,
+  ArrowDown,
+  ArrowUp,
+  ChevronsUpDown,
   Network,
   Search as SearchIcon,
+  Table2,
 } from "lucide-react";
 
 import { Pill, type PillIntent } from "@/components/Pill";
@@ -40,6 +54,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   useSearchCentralAccountsSuspense,
   useSearchRingsSuspense,
   useSearchRiskAccountsSuspense,
@@ -58,6 +78,7 @@ export const Route = createFileRoute("/_workbench/search")({
 
 // UI-only mode discriminator. Each mode maps to a different Suspense hook.
 type Mode = "fraud_rings" | "risk_scores" | "central_accounts";
+type RingResultsView = "graph" | "table";
 
 interface ChoiceMeta {
   id: Mode;
@@ -92,6 +113,15 @@ const currency = new Intl.NumberFormat("en-US", {
   currency: "USD",
   maximumFractionDigits: 0,
 });
+const TABLE_HEAD_CLASS = "text-[11px] uppercase tracking-wide text-muted-ink";
+
+declare module "@tanstack/react-table" {
+  interface ColumnMeta<TData, TValue> {
+    align?: "left" | "right";
+    cellClassName?: string;
+    className?: string;
+  }
+}
 
 function bandPillIntent(band: "Low" | "Medium" | "High"): PillIntent {
   if (band === "High") return "risk-high";
@@ -372,6 +402,147 @@ function ErrorCard({
   );
 }
 
+function HeaderTooltip({
+  label,
+  tooltip,
+  align = "left",
+}: {
+  label: string;
+  tooltip: string;
+  align?: "left" | "right";
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          tabIndex={0}
+          className={cn(
+            "inline-flex cursor-help items-center whitespace-nowrap border-b border-dotted border-muted-ink/50 leading-none outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            align === "right" && "ml-auto",
+          )}
+        >
+          {label}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[240px] text-center">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SortableHeader<TData, TValue>({
+  column,
+  label,
+  tooltip,
+  align = "left",
+}: {
+  column: Column<TData, TValue>;
+  label: string;
+  tooltip: string;
+  align?: "left" | "right";
+}) {
+  const sorted = column.getIsSorted();
+  const SortIcon =
+    sorted === "asc" ? ArrowUp : sorted === "desc" ? ArrowDown : ChevronsUpDown;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <button
+          type="button"
+          onClick={column.getToggleSortingHandler()}
+          className={cn(
+            "inline-flex h-7 cursor-pointer items-center gap-1 rounded-sm border-b border-dotted border-muted-ink/50 leading-none outline-none transition-colors hover:text-ink focus-visible:ring-2 focus-visible:ring-ring",
+            align === "right" && "ml-auto",
+          )}
+          aria-label={`Sort by ${label}`}
+        >
+          <span>{label}</span>
+          <SortIcon className="h-3 w-3" aria-hidden="true" />
+        </button>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-[240px] text-center">
+        {tooltip}
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+function SearchDataTable<TData>({
+  table,
+  getRowClassName,
+}: {
+  table: TanStackTable<TData>;
+  getRowClassName?: (row: TData) => string | undefined;
+}) {
+  return (
+    <Table>
+      <TableHeader>
+        {table.getHeaderGroups().map((headerGroup) => (
+          <TableRow key={headerGroup.id}>
+            {headerGroup.headers.map((header) => {
+              const meta = header.column.columnDef.meta;
+              const sorted = header.column.getIsSorted();
+              return (
+                <TableHead
+                  key={header.id}
+                  colSpan={header.colSpan}
+                  className={cn(
+                    TABLE_HEAD_CLASS,
+                    meta?.align === "right" && "text-right",
+                    meta?.className,
+                  )}
+                  aria-sort={
+                    sorted === "asc"
+                      ? "ascending"
+                      : sorted === "desc"
+                        ? "descending"
+                        : undefined
+                  }
+                >
+                  {header.isPlaceholder
+                    ? null
+                    : flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                </TableHead>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableHeader>
+      <TableBody>
+        {table.getRowModel().rows.map((row) => (
+          <TableRow
+            key={row.id}
+            className={cn(
+              "border-b border-line",
+              getRowClassName?.(row.original),
+            )}
+          >
+            {row.getVisibleCells().map((cell) => {
+              const meta = cell.column.columnDef.meta;
+              return (
+                <TableCell
+                  key={cell.id}
+                  className={cn(
+                    meta?.align === "right" && "text-right",
+                    meta?.cellClassName,
+                  )}
+                >
+                  {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                </TableCell>
+              );
+            })}
+          </TableRow>
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
 function EmptyRingsCard() {
   return (
     <Card className="p-8 flex flex-col items-center text-center">
@@ -405,115 +576,188 @@ function RingResults({
   selectedRings: string[];
   onToggle: (ringId: string) => void;
 }) {
+  const [view, setView] = useState<RingResultsView>("graph");
+  const previewRings = rings.map((r) => ({
+    ring_id: r.ring_id,
+    nodes: r.nodes,
+    topology: r.topology,
+    risk: r.risk,
+    graph: r.graph,
+  }));
+
   if (rings.length === 0) return <EmptyRingsCard />;
 
   return (
     <div className="space-y-3">
-      <NetworkPreview
-        rings={rings.map((r) => ({
-          ring_id: r.ring_id,
-          nodes: r.nodes,
-          topology: r.topology,
-          risk: r.risk,
-          graph: r.graph,
-        }))}
-        selectedRingIds={selectedRings}
-        onToggle={onToggle}
-        defaultOpen
-      />
+      <div className="flex items-center justify-between gap-3">
+        <div
+          className="inline-flex rounded-md border border-line bg-surface p-1"
+          role="tablist"
+          aria-label="Fraud ring result views"
+        >
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "graph"}
+            onClick={() => setView("graph")}
+            className={cn(
+              "inline-flex h-8 items-center gap-2 rounded-sm px-3 text-xs font-medium transition-colors",
+              view === "graph"
+                ? "bg-accent-soft text-ink"
+                : "text-muted-ink hover:bg-canvas-soft hover:text-ink",
+            )}
+          >
+            <Network className="h-3.5 w-3.5" />
+            Graph
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={view === "table"}
+            onClick={() => setView("table")}
+            className={cn(
+              "inline-flex h-8 items-center gap-2 rounded-sm px-3 text-xs font-medium transition-colors",
+              view === "table"
+                ? "bg-accent-soft text-ink"
+                : "text-muted-ink hover:bg-canvas-soft hover:text-ink",
+            )}
+          >
+            <Table2 className="h-3.5 w-3.5" />
+            Table
+          </button>
+        </div>
+      </div>
 
-      <Card className="overflow-hidden">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="w-10" />
-              <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-                Ring
-              </TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-                Topology
-              </TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink text-right">
-                Nodes
-              </TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink text-right">
-                Volume
-              </TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-                Shared identifiers
-              </TableHead>
-              <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-                Risk
-              </TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {rings.map((r) => {
-              const selected = selectedRings.includes(r.ring_id);
-              return (
-                <TableRow
-                  key={r.ring_id}
-                  className={cn(
-                    "border-b border-line",
-                    selected && "bg-accent-soft/40",
-                  )}
-                >
-                  <TableCell>
-                    <Checkbox
-                      checked={selected}
-                      onCheckedChange={() => onToggle(r.ring_id)}
-                      aria-label={`Select ${r.ring_id}`}
+      {view === "graph" ? (
+        <NetworkPreview
+          rings={previewRings}
+          selectedRingIds={selectedRings}
+          onToggle={onToggle}
+          defaultOpen
+        />
+      ) : null}
+
+      {view === "table" ? (
+        <Card className="overflow-hidden">
+          <TooltipProvider delayDuration={150}>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead className={cn(TABLE_HEAD_CLASS, "w-10")}>
+                    <HeaderTooltip
+                      label="Select"
+                      tooltip="Choose fraud rings to carry forward into the load step."
                     />
-                  </TableCell>
-                  <TableCell>
-                    <Pill intent="mono">{r.ring_id}</Pill>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-col items-start">
-                      <RingThumb
-                        ring={{
-                          ring_id: r.ring_id,
-                          nodes: r.nodes,
-                          topology: r.topology,
-                          risk: r.risk,
-                          graph: r.graph,
-                        }}
-                        width={140}
-                        height={80}
-                        selected={selected}
-                      />
-                      <span className="text-[11px] text-muted-ink mt-1">
-                        {r.topology}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">
-                    {r.nodes}
-                  </TableCell>
-                  <TableCell className="text-right font-mono tabular-nums">
-                    {currency.format(r.volume)}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex flex-wrap gap-1">
-                      {r.shared_identifiers.map((id) => (
-                        <Pill key={id}>{id}</Pill>
-                      ))}
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <RiskBar score={r.risk_score} risk={r.risk} />
-                      <Pill intent={RISK_PILL_INTENT[r.risk]}>
-                        {RISK_LABEL[r.risk]}
-                      </Pill>
-                    </div>
-                  </TableCell>
+                  </TableHead>
+                  <TableHead className={TABLE_HEAD_CLASS}>
+                    <HeaderTooltip
+                      label="Ring"
+                      tooltip="Graph community identifier returned by the fraud-ring search."
+                    />
+                  </TableHead>
+                  <TableHead className={TABLE_HEAD_CLASS}>
+                    <HeaderTooltip
+                      label="Topology"
+                      tooltip="Preview of the ring shape and the structural pattern found in the graph."
+                    />
+                  </TableHead>
+                  <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
+                    <HeaderTooltip
+                      label="Nodes"
+                      tooltip="Number of accounts and entities included in the detected ring."
+                      align="right"
+                    />
+                  </TableHead>
+                  <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
+                    <HeaderTooltip
+                      label="Volume"
+                      tooltip="Total transaction volume associated with the detected ring."
+                      align="right"
+                    />
+                  </TableHead>
+                  <TableHead className={TABLE_HEAD_CLASS}>
+                    <HeaderTooltip
+                      label="Shared identifiers"
+                      tooltip="Identifiers reused across ring members, such as shared devices, emails, or addresses."
+                    />
+                  </TableHead>
+                  <TableHead className={TABLE_HEAD_CLASS}>
+                    <HeaderTooltip
+                      label="Risk"
+                      tooltip="Composite risk score and risk label assigned to the ring."
+                    />
+                  </TableHead>
                 </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
-      </Card>
+              </TableHeader>
+              <TableBody>
+                {rings.map((r) => {
+                  const selected = selectedRings.includes(r.ring_id);
+                  return (
+                    <TableRow
+                      key={r.ring_id}
+                      className={cn(
+                        "border-b border-line",
+                        selected && "bg-accent-soft/40",
+                      )}
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={selected}
+                          onCheckedChange={() => onToggle(r.ring_id)}
+                          aria-label={`Select ${r.ring_id}`}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Pill intent="mono">{r.ring_id}</Pill>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-col items-start">
+                          <RingThumb
+                            ring={{
+                              ring_id: r.ring_id,
+                              nodes: r.nodes,
+                              topology: r.topology,
+                              risk: r.risk,
+                              graph: r.graph,
+                            }}
+                            width={140}
+                            height={80}
+                            selected={selected}
+                          />
+                          <span className="text-[11px] text-muted-ink mt-1">
+                            {r.topology}
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {r.nodes}
+                      </TableCell>
+                      <TableCell className="text-right font-mono tabular-nums">
+                        {currency.format(r.volume)}
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex flex-wrap gap-1">
+                          {r.shared_identifiers.map((id) => (
+                            <Pill key={id}>{id}</Pill>
+                          ))}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center gap-2">
+                          <RiskBar score={r.risk_score} risk={r.risk} />
+                          <Pill intent={RISK_PILL_INTENT[r.risk]}>
+                            {RISK_LABEL[r.risk]}
+                          </Pill>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+          </TooltipProvider>
+        </Card>
+      ) : null}
     </div>
   );
 }
@@ -521,55 +765,73 @@ function RingResults({
 function RiskResults({ rows }: { rows: RiskAccountOut[] }) {
   return (
     <Card className="overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-              Account
-            </TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-              Risk
-            </TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-              Velocity
-            </TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-              Merchant diversity
-            </TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink text-right">
-              Account age
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.account_id} className="border-b border-line">
-              <TableCell>
-                <Pill intent="mono">{r.account_id}</Pill>
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <RiskBar score={r.risk_score} />
-                  <span className="font-mono tabular-nums text-xs text-ink-2">
-                    {r.risk_score.toFixed(2)}
-                  </span>
-                </div>
-              </TableCell>
-              <TableCell>
-                <Pill intent={bandPillIntent(r.velocity)}>{r.velocity}</Pill>
-              </TableCell>
-              <TableCell>
-                <Pill intent={bandPillIntent(r.merchant_diversity)}>
-                  {r.merchant_diversity}
-                </Pill>
-              </TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
-                {r.account_age_days}d
-              </TableCell>
+      <TooltipProvider delayDuration={150}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className={TABLE_HEAD_CLASS}>
+                <HeaderTooltip
+                  label="Account"
+                  tooltip="Account identifier returned by the risk-score search."
+                />
+              </TableHead>
+              <TableHead className={TABLE_HEAD_CLASS}>
+                <HeaderTooltip
+                  label="Risk"
+                  tooltip="Individual account risk score on a zero-to-one scale."
+                />
+              </TableHead>
+              <TableHead className={TABLE_HEAD_CLASS}>
+                <HeaderTooltip
+                  label="Velocity"
+                  tooltip="Relative transaction velocity band for the account."
+                />
+              </TableHead>
+              <TableHead className={TABLE_HEAD_CLASS}>
+                <HeaderTooltip
+                  label="Merchant diversity"
+                  tooltip="Relative breadth of merchants connected to the account."
+                />
+              </TableHead>
+              <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
+                <HeaderTooltip
+                  label="Account age"
+                  tooltip="Age of the account in days."
+                  align="right"
+                />
+              </TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => (
+              <TableRow key={r.account_id} className="border-b border-line">
+                <TableCell>
+                  <Pill intent="mono">{r.account_id}</Pill>
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <RiskBar score={r.risk_score} />
+                    <span className="font-mono tabular-nums text-xs text-ink-2">
+                      {r.risk_score.toFixed(2)}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Pill intent={bandPillIntent(r.velocity)}>{r.velocity}</Pill>
+                </TableCell>
+                <TableCell>
+                  <Pill intent={bandPillIntent(r.merchant_diversity)}>
+                    {r.merchant_diversity}
+                  </Pill>
+                </TableCell>
+                <TableCell className="text-right font-mono tabular-nums">
+                  {r.account_age_days}d
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TooltipProvider>
     </Card>
   );
 }
@@ -577,47 +839,63 @@ function RiskResults({ rows }: { rows: RiskAccountOut[] }) {
 function HubResults({ rows }: { rows: HubAccountOut[] }) {
   return (
     <Card className="overflow-hidden">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-              Account
-            </TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink text-right">
-              Neighbors
-            </TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink">
-              Betweenness
-            </TableHead>
-            <TableHead className="text-[11px] uppercase tracking-wide text-muted-ink text-right">
-              Shortest paths
-            </TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {rows.map((r) => (
-            <TableRow key={r.account_id} className="border-b border-line">
-              <TableCell>
-                <Pill intent="mono">{r.account_id}</Pill>
-              </TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
-                {r.neighbors}
-              </TableCell>
-              <TableCell>
-                <div className="flex items-center gap-2">
-                  <BetweennessBar score={r.betweenness} />
-                  <span className="font-mono tabular-nums text-xs text-ink-2">
-                    {r.betweenness.toFixed(2)}
-                  </span>
-                </div>
-              </TableCell>
-              <TableCell className="text-right font-mono tabular-nums">
-                {r.shortest_paths}
-              </TableCell>
+      <TooltipProvider delayDuration={150}>
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className={TABLE_HEAD_CLASS}>
+                <HeaderTooltip
+                  label="Account"
+                  tooltip="Account identifier returned by the central-account search."
+                />
+              </TableHead>
+              <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
+                <HeaderTooltip
+                  label="Neighbors"
+                  tooltip="Number of directly connected accounts or entities."
+                  align="right"
+                />
+              </TableHead>
+              <TableHead className={TABLE_HEAD_CLASS}>
+                <HeaderTooltip
+                  label="Betweenness"
+                  tooltip="Normalized betweenness centrality, measuring how often the account bridges graph paths."
+                />
+              </TableHead>
+              <TableHead className={cn(TABLE_HEAD_CLASS, "text-right")}>
+                <HeaderTooltip
+                  label="Shortest paths"
+                  tooltip="Count of shortest paths routed through the account."
+                  align="right"
+                />
+              </TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {rows.map((r) => (
+              <TableRow key={r.account_id} className="border-b border-line">
+                <TableCell>
+                  <Pill intent="mono">{r.account_id}</Pill>
+                </TableCell>
+                <TableCell className="text-right font-mono tabular-nums">
+                  {r.neighbors}
+                </TableCell>
+                <TableCell>
+                  <div className="flex items-center gap-2">
+                    <BetweennessBar score={r.betweenness} />
+                    <span className="font-mono tabular-nums text-xs text-ink-2">
+                      {r.betweenness.toFixed(2)}
+                    </span>
+                  </div>
+                </TableCell>
+                <TableCell className="text-right font-mono tabular-nums">
+                  {r.shortest_paths}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </TooltipProvider>
     </Card>
   );
 }

@@ -3,8 +3,14 @@
 // Structural reference: /tmp/design-fetch/fraud-analyst/project/app.jsx (NetworkPreview).
 
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
+import { ChevronDown, ChevronUp, Info } from "lucide-react";
 import { RingThumb } from "@/components/RingThumb";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { RingGraphEdge, RingGraphNode } from "@/components/RingGraph";
 import { RISK_COLOR, type Risk } from "@/lib/riskColors";
 import type { Topology } from "@/lib/ringLayout";
@@ -45,6 +51,29 @@ export function NetworkPreview({
           <span className="text-xs text-muted-ink">
             · {rings.length} clusters
           </span>
+          <TooltipProvider delayDuration={150}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className="inline-flex h-5 w-5 items-center justify-center rounded-sm text-muted-ink hover:bg-canvas-soft hover:text-ink focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+                  aria-label="What graph thumbnails mean"
+                >
+                  <Info className="h-3.5 w-3.5" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                align="start"
+                className="max-w-72 bg-ink px-3 py-2 text-left leading-snug text-white"
+              >
+                Each tile is one detected fraud ring from the same search
+                result set. Dots are accounts, lines are transfers or shared
+                identifiers, warm colors indicate higher risk, and selecting a
+                tile selects the same ring in the table view.
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         </div>
         <button
           type="button"

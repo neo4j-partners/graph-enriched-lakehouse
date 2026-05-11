@@ -1,7 +1,7 @@
 [project]
 name = "graph-fraud-analyst"
 dynamic = ["version"]
-description = "Add your description here"
+description = "Full-stack Databricks App for fraud ring detection using live Neo4j graph queries and Delta Lake materialization."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

@@ -35,7 +35,7 @@ function topologyIcon(ring) {
   const color = riskColor(ring.risk_score);
   const n = ring.node_count;
 
-  if (ring.topology === 'hub_spoke') {
+  if (ring.topology === 'star') {
     const spokes = Math.min(8, n - 1);
     const lines = Array.from({ length: spokes }, (_, i) => {
       const a = (i * 2 * Math.PI) / spokes;
@@ -59,6 +59,24 @@ function topologyIcon(ring) {
     return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
       <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.35"/>
       ${dotsSvg}</svg>`;
+  }
+
+  if (ring.topology === 'mesh') {
+    const pts = 7;
+    const coords = Array.from({ length: pts }, (_, i) => {
+      if (i === 0) return { x: cx, y: cy };
+      const a = ((i - 1) * 2 * Math.PI) / (pts - 1) - Math.PI / 2;
+      return { x: cx + r * Math.cos(a), y: cy + r * Math.sin(a) };
+    });
+    const lines = [];
+    for (let i = 1; i < coords.length; i++) {
+      lines.push(`<line x1="${cx}" y1="${cy}" x2="${coords[i].x.toFixed(1)}" y2="${coords[i].y.toFixed(1)}" stroke="${color}" stroke-width="1.2" opacity="0.55"/>`);
+      if (i < coords.length - 1) {
+        lines.push(`<line x1="${coords[i].x.toFixed(1)}" y1="${coords[i].y.toFixed(1)}" x2="${coords[i + 1].x.toFixed(1)}" y2="${coords[i + 1].y.toFixed(1)}" stroke="${color}" stroke-width="1.2" opacity="0.35"/>`);
+      }
+    }
+    const dots = coords.map(p => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="2.4" fill="${color}"/>`).join('');
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">${lines.join('')}${dots}</svg>`;
   }
 
   // chain
