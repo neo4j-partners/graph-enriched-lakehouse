@@ -5,6 +5,7 @@
 import { useState } from "react";
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { RingThumb } from "@/components/RingThumb";
+import type { RingGraphEdge, RingGraphNode } from "@/components/RingGraph";
 import { RISK_COLOR, type Risk } from "@/lib/riskColors";
 import type { Topology } from "@/lib/ringLayout";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ export interface NetworkPreviewRing {
   nodes: number;
   topology: Topology;
   risk: Risk;
+  graph?: { nodes: RingGraphNode[]; edges: RingGraphEdge[] };
 }
 
 export interface NetworkPreviewProps {
@@ -61,7 +63,7 @@ export function NetworkPreview({
 
       <div
         className={cn(
-          "grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-2 p-3",
+          "grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 p-3",
           !open && "hidden",
         )}
       >
@@ -73,7 +75,7 @@ export function NetworkPreview({
               type="button"
               onClick={() => onToggle(ring.ring_id)}
               className={cn(
-                "aspect-[16/10] rounded-sm border bg-canvas-soft p-1 flex flex-col items-stretch justify-between text-left transition-colors hover:bg-accent-soft",
+                "aspect-[4/3] rounded-sm border bg-canvas-soft p-2 flex flex-col items-stretch justify-between text-left transition-colors hover:bg-accent-soft",
                 isSelected
                   ? "border-accent-ink ring-1 ring-accent-ink/40"
                   : "border-line-2",
@@ -83,8 +85,8 @@ export function NetworkPreview({
               <div className="flex-1 flex items-center justify-center min-h-0">
                 <RingThumb
                   ring={ring}
-                  width={88}
-                  height={36}
+                  width={220}
+                  height={150}
                   selected={isSelected}
                 />
               </div>

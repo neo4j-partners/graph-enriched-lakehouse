@@ -1,8 +1,10 @@
 // RingThumb.tsx
-// Small SVG topology preview rendered per row in the rings table.
-// Faithful port of the wireframe RingThumb in /tmp/design-fetch/fraud-analyst/project/app.jsx.
+// Per-ring topology preview. When the backend ships real nodes/edges from
+// Neo4j, renders them with Cytoscape via RingGraph. Falls back to the static
+// SVG layout for legacy/empty payloads.
 
 import { useMemo } from "react";
+import { RingGraph, type RingGraphEdge, type RingGraphNode } from "@/components/RingGraph";
 import { ringLayout, type Topology } from "@/lib/ringLayout";
 import { NODE_INK, NODE_INK_DIM, RISK_COLOR, type Risk } from "@/lib/riskColors";
 import { cn } from "@/lib/utils";
@@ -13,6 +15,10 @@ export interface RingThumbProps {
     nodes: number;
     topology: Topology;
     risk: Risk;
+    graph?: {
+      nodes: RingGraphNode[];
+      edges: RingGraphEdge[];
+    };
   };
   width?: number;
   height?: number;
@@ -27,6 +33,40 @@ export function RingThumb({
   selected = false,
   className,
 }: RingThumbProps) {
+  const hasRealGraph = !!ring.graph && ring.graph.nodes.length > 0;
+
+  if (hasRealGraph && ring.graph) {
+    return (
+      <RingGraph
+        nodes={ring.graph.nodes}
+        edges={ring.graph.edges}
+        width={width}
+        height={height}
+        selected={selected}
+        className={className}
+        ariaLabel={`Ring ${ring.ring_id} topology, ${ring.graph.nodes.length} accounts`}
+      />
+    );
+  }
+
+  return <StaticRingThumb ring={ring} width={width} height={height} selected={selected} className={className} />;
+}
+
+// Legacy static SVG thumbnail — used when the backend has not populated graph
+// data (empty rings, fallback). Preserved verbatim from the wireframe.
+function StaticRingThumb({
+  ring,
+  width,
+  height,
+  selected,
+  className,
+}: {
+  ring: RingThumbProps["ring"];
+  width: number;
+  height: number;
+  selected: boolean;
+  className?: string;
+}) {
   const { nodes, edges } = useMemo(
     () =>
       ringLayout(

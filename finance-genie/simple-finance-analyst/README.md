@@ -59,6 +59,19 @@ cd finance-genie/simple-finance-analyst
 ./scripts/deploy_app.sh
 ```
 
+For live remote deployments, prefer the bundle so app resources are attached
+with the same keys referenced by `app.yaml`:
+
+```bash
+cd finance-genie/simple-finance-analyst
+databricks bundle deploy \
+  --profile "$DATABRICKS_PROFILE" \
+  --var "warehouse_id=$DATABRICKS_WAREHOUSE_ID" \
+  --var "genie_space_id=$GENIE_SPACE_ID" \
+  --var "neo4j_secret_scope=${SIMPLE_FINANCE_ANALYST_SECRET_SCOPE:-simple-finance-analyst}"
+databricks bundle run simple-finance-analyst-app --profile "$DATABRICKS_PROFILE"
+```
+
 Optional environment variables:
 
 | Env var | Default | Effect |

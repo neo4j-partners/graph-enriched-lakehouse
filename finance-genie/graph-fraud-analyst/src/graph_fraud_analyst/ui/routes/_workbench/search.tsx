@@ -415,6 +415,7 @@ function RingResults({
           nodes: r.nodes,
           topology: r.topology,
           risk: r.risk,
+          graph: r.graph,
         }))}
         selectedRingIds={selectedRings}
         onToggle={onToggle}
@@ -475,9 +476,10 @@ function RingResults({
                           nodes: r.nodes,
                           topology: r.topology,
                           risk: r.risk,
+                          graph: r.graph,
                         }}
-                        width={96}
-                        height={44}
+                        width={140}
+                        height={80}
                         selected={selected}
                       />
                       <span className="text-[11px] text-muted-ink mt-1">

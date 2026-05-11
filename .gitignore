@@ -118,8 +118,8 @@ finance-genie/demo-guide/slides/*.pdf
 finance-genie/demo-guide/slides/*.html
 
 # Generated data files
-finance-genie/automated/data/
-finance-genie/automated/logs/
+finance-genie/enrichment-pipeline/data/
+finance-genie/enrichment-pipeline/logs/
 .mcp-credentials.json
 
 # Local Codex / Databricks AI Dev Kit config
