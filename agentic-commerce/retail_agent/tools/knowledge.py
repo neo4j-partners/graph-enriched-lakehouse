@@ -242,13 +242,82 @@ async def diagnose_product_issue(
         result = await client.graph.execute_read(cypher, params)
     except Exception as e:
         logger.warning("Diagnose query failed: %s", e)
+        fallback = await _diagnose_from_source_documents(client, product_id, limit)
+        if fallback is not None:
+            return json.dumps(fallback)
         return json.dumps({"error": "Diagnosis query failed", "detail": str(e)})
 
     if not result:
+        fallback = await _diagnose_from_source_documents(client, product_id, limit)
+        if fallback is not None:
+            return json.dumps(fallback)
         return json.dumps({"error": "Product not found", "product_id": product_id})
 
     items = [dict(r) for r in result]
     return json.dumps({"product_id": product_id, "diagnosis": items})
+
+
+async def _diagnose_from_source_documents(
+    client: Any,
+    product_id: str,
+    limit: int,
+) -> dict[str, Any] | None:
+    """Fallback when the GraphRAG chunk layer is unavailable for a product."""
+    cypher = """
+    MATCH (p:Product)
+    WHERE p.id = $product_id OR elementId(p) = $product_id
+    OPTIONAL MATCH (p)<-[:COVERS|ABOUT|REVIEWS]-(doc)
+    WITH p, [item IN collect(doc) WHERE item IS NOT NULL][..$limit] AS docs
+    RETURN p.name AS product_name,
+           p.id AS product_id,
+           [] AS symptoms,
+           [] AS solutions,
+           [] AS features,
+           [
+               doc IN docs | {
+                   source_type: head(labels(doc)),
+                   source_id: coalesce(
+                       doc.article_id,
+                       doc.ticket_id,
+                       doc.review_id
+                   ),
+                   title: coalesce(
+                       doc.title,
+                       doc.issue_description,
+                       'Product review'
+                   ),
+                   text: coalesce(
+                       doc.content,
+                       doc.resolution_text,
+                       doc.raw_text,
+                       doc.issue_description
+                   )
+               }
+           ] AS source_documents
+    """
+    try:
+        result = await client.graph.execute_read(
+            cypher,
+            {"product_id": product_id, "limit": limit},
+        )
+    except Exception as exc:
+        logger.warning("Source document fallback failed: %s", exc)
+        return None
+
+    if not result:
+        return None
+
+    rows = [dict(r) for r in result]
+    source_documents = []
+    for row in rows:
+        source_documents.extend(row.pop("source_documents", []) or [])
+
+    return {
+        "product_id": product_id,
+        "diagnosis": rows,
+        "source_documents": source_documents,
+        "note": "GraphRAG chunk diagnosis unavailable; used source documents.",
+    }
 
 
 # Flat tool list for import by retail_agent.agent.graph

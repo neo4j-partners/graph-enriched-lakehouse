@@ -1,5 +1,6 @@
 import re
 import time
+from dataclasses import dataclass
 from typing import Any, NoReturn
 from uuid import uuid4
 
@@ -25,6 +26,36 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     502: {"model": DemoError},
     503: {"model": DemoError},
     504: {"model": DemoError},
+}
+
+
+@dataclass(frozen=True)
+class DiagnosisPromptContext:
+    product_id: str
+    product_name: str
+
+
+DIAGNOSIS_PRESET_CONTEXTS: dict[str, DiagnosisPromptContext] = {
+    "running-shoes-feel-flat": DiagnosisPromptContext(
+        product_id="nike-pegasus-40",
+        product_name="Nike Pegasus 40",
+    ),
+    "outsole-peeling": DiagnosisPromptContext(
+        product_id="adidas-ultraboost-24",
+        product_name="Adidas Ultraboost 24",
+    ),
+    "tent-condensation": DiagnosisPromptContext(
+        product_id="rei-half-dome-tent",
+        product_name="REI Half Dome Tent",
+    ),
+    "sleeping-pad-deflated": DiagnosisPromptContext(
+        product_id="therm-a-rest-sleeping-pad",
+        product_name="Therm-a-Rest NeoAir XTherm Sleeping Pad",
+    ),
+    "gel-nimbus-lump": DiagnosisPromptContext(
+        product_id="asics-gel-nimbus-26",
+        product_name="ASICS Gel-Nimbus 26",
+    ),
 }
 
 
@@ -143,7 +174,7 @@ def issue_diagnosis(
         result = invoke_retail_agent(
             ws=ws,
             config=config,
-            prompt=request.prompt,
+            prompt=_issue_diagnosis_prompt(request),
             session_id=session_id,
             user_id=user_id,
             demo_mode=demo_mode,
@@ -191,6 +222,32 @@ def _use_sample(data_mode: str) -> bool:
 def _effective_user_id(user_id: str | None, session_id: str) -> str:
     value = user_id.strip() if user_id else ""
     return value or f"session:{session_id}"
+
+
+def _issue_diagnosis_prompt(request: IssueDiagnosisIn) -> str:
+    prompt = request.prompt.strip()
+    context = DIAGNOSIS_PRESET_CONTEXTS.get(request.demo_preset_id or "")
+    instructions = [
+        "Issue diagnosis request.",
+        "Use knowledge_search or hybrid_knowledge_search for support context.",
+        (
+            "Do not call diagnose_product_issue with a guessed product_id. "
+            "Only call it when an exact product_id is provided below or clearly "
+            "present in the customer issue."
+        ),
+    ]
+
+    if context is not None:
+        instructions.append(
+            "Known product context: "
+            f"product_id={context.product_id}; product_name={context.product_name}."
+        )
+        instructions.append(
+            "When using diagnose_product_issue, pass exactly that product_id."
+        )
+
+    instructions.append(f"Customer issue: {prompt}")
+    return "\n".join(instructions)
 
 
 def _handle_search_failure(

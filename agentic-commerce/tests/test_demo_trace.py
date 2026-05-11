@@ -123,6 +123,50 @@ class DemoTraceTests(unittest.TestCase):
 
         self.assertEqual(trace["tool_timeline"][1]["duration_ms"], 237)
 
+    def test_diagnosis_source_documents_become_knowledge_chunks(self) -> None:
+        trace = extract_demo_trace(
+            [
+                _AIMessage(
+                    tool_calls=[
+                        {
+                            "name": "diagnose_product_issue",
+                            "id": "call-1",
+                            "args": {"product_id": "shoe-1"},
+                        }
+                    ]
+                ),
+                _ToolMessage(
+                    name="diagnose_product_issue",
+                    tool_call_id="call-1",
+                    content=json.dumps(
+                        {
+                            "product_id": "shoe-1",
+                            "diagnosis": [
+                                {
+                                    "product_id": "shoe-1",
+                                    "product_name": "Summit Runner",
+                                }
+                            ],
+                            "source_documents": [
+                                {
+                                    "source_id": "KA-1",
+                                    "source_type": "KnowledgeArticle",
+                                    "title": "Midsole life",
+                                    "text": "Replace running shoes after foam compression.",
+                                }
+                            ],
+                        }
+                    ),
+                ),
+            ]
+        )
+
+        self.assertEqual(trace["diagnosis"]["product_id"], "shoe-1")
+        self.assertEqual(
+            trace["knowledge_chunks"][0]["text"],
+            "Replace running shoes after foam compression.",
+        )
+
     def test_no_tool_events_adds_unavailable_warning(self) -> None:
         trace = extract_demo_trace([])
 

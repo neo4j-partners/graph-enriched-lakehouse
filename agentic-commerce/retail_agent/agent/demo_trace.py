@@ -244,6 +244,9 @@ def _normalize_tool_payload(
         )
     elif tool_name == "diagnose_product_issue":
         trace["diagnosis"] = _normalize_diagnosis(payload)
+        trace["knowledge_chunks"].extend(
+            _normalize_knowledge_chunks(payload.get("source_documents"))
+        )
     elif tool_name == "get_user_profile":
         trace["profile"].extend(_normalize_rows(payload.get("preferences")))
     elif tool_name == "track_preference":

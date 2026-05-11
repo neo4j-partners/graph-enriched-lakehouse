@@ -144,7 +144,8 @@ def _link_chunks_to_documents(driver: neo4j.Driver) -> None:
         driver.execute_query(
             f"""
             MATCH (ch:Chunk)-[:FROM_DOCUMENT]->(d:Document {{source_type: $source_type}})
-            MATCH (doc:{label} {{{id_property}: d.source_id}})
+            MATCH (doc:{label})
+            WHERE doc.{id_property} = d.source_id
             MERGE (doc)-[:HAS_CHUNK]->(ch)
             SET ch.source_type = $source_type,
                 ch.source_id = d.source_id,

@@ -18,10 +18,11 @@ from agentic_commerce.backend.router import (
     DemoRouteError,
     _effective_user_id,
     _handle_search_failure,
+    _issue_diagnosis_prompt,
     _log_demo_result,
     _safe_error_status,
 )
-from agentic_commerce.backend.models import AgenticSearchIn
+from agentic_commerce.backend.models import AgenticSearchIn, IssueDiagnosisIn
 from agentic_commerce.backend.sample_data import diagnosis_sample, search_sample
 from agentic_commerce.backend.serving_client import (
     ServingInvocationError,
@@ -268,6 +269,26 @@ class ErrorMappingTests(unittest.TestCase):
         self.assertEqual(_effective_user_id(None, "session-1"), "session:session-1")
         self.assertEqual(_effective_user_id("  ", "session-1"), "session:session-1")
         self.assertEqual(_effective_user_id("user-1", "session-1"), "user-1")
+
+    def test_issue_diagnosis_prompt_adds_preset_product_context(self) -> None:
+        prompt = _issue_diagnosis_prompt(
+            IssueDiagnosisIn(
+                prompt="The pad deflated overnight.",
+                demo_preset_id="sleeping-pad-deflated",
+            )
+        )
+
+        self.assertIn("product_id=therm-a-rest-sleeping-pad", prompt)
+        self.assertIn("Do not call diagnose_product_issue with a guessed", prompt)
+        self.assertIn("Customer issue: The pad deflated overnight.", prompt)
+
+    def test_issue_diagnosis_prompt_guards_free_text_without_preset(self) -> None:
+        prompt = _issue_diagnosis_prompt(
+            IssueDiagnosisIn(prompt="My shoes feel flat.")
+        )
+
+        self.assertIn("Do not call diagnose_product_issue with a guessed", prompt)
+        self.assertNotIn("Known product context", prompt)
 
     def test_demo_result_log_contains_operational_fields(self) -> None:
         config = AppConfig(retail_agent_endpoint_name="endpoint-1")
