@@ -19,6 +19,8 @@ lib/
 lib64/
 !finance-genie/graph-fraud-analyst/src/graph_fraud_analyst/ui/lib/
 !finance-genie/graph-fraud-analyst/src/graph_fraud_analyst/ui/lib/**
+!agentic-commerce/demo-client/src/agentic_commerce/ui/lib/
+!agentic-commerce/demo-client/src/agentic_commerce/ui/lib/**
 parts/
 sdist/
 var/

@@ -42,9 +42,9 @@ This package is designed to run on Databricks Model Serving. Implementation code
 
 ### Key constraints
 
-- **No `test_` prefixed files** — Databricks auto-discovers and runs them as pytest. Use names like `check_endpoint.py` instead. See `RETAIL_BEST_PRACTICES.md`.
+- **No `test_` prefixed files** — Databricks auto-discovers and runs them as pytest. Use names like `check_endpoint.py` instead.
 - **Package imports** — Runtime modules use package-qualified imports under `retail_agent.*`; MLflow packages the `retail_agent` package via `code_paths`.
-- **Async bridging** — Uses a persistent background event loop, never `asyncio.run()`. See `RETAIL_BEST_PRACTICES.md`.
+- **Async bridging** — Uses a persistent background event loop, never `asyncio.run()`.
 - **Deploy**: Submit `retail-agent-deploy` with the CLI
 - **Check**: Submit `retail-agent-demo` with the CLI
 

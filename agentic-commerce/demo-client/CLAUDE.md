@@ -20,15 +20,15 @@ Full-stack Databricks App built with apx (React + Vite frontend, FastAPI backend
 - **Check configured registries first:** Before building custom components, check `[tool.apx.ui.registries]` in `pyproject.toml` for domain-specific registries (e.g. `@ai-elements` for chat/AI, `@animate-ui` for animations). Use `list_registry_components` with the registry name to browse available components.
 - **Finding components:** Use MCP `search_registry_components` to search across all configured registries. Results from project-configured registries are boosted.
 - **Adding components:** Use MCP `add_component` or CLI `apx components add <component> --yes` to add components
-- **Component location:** If component was added to a wrong location (e.g. stored into `src/components` instead of `src/agentic-commerce/ui/components`), move it to the proper folder
-- **Component organization:** Prefer grouping components by functionality rather than by file type (e.g. `src/agentic-commerce/ui/components/chat/`)
+- **Component location:** If component was added to a wrong location (e.g. stored into `src/components` instead of `src/agentic_commerce/ui/components`), move it to the proper folder
+- **Component organization:** Prefer grouping components by functionality rather than by file type (e.g. `src/agentic_commerce/ui/components/chat/`)
 
 ## Project Structure
-Full-stack app: `src/agentic-commerce/ui/` (React + Vite) and `src/agentic-commerce/backend/` (FastAPI). Backend serves frontend at `/` and API at `/api`. API client auto-generated from OpenAPI schema.
+Full-stack app: `src/agentic_commerce/ui/` (React + Vite) and `src/agentic_commerce/backend/` (FastAPI). Backend serves frontend at `/` and API at `/api`. API client auto-generated from OpenAPI schema.
 
 ## Dependencies & Dependency Injection
 
-The `Dependency` class in `src/agentic-commerce/backend/core.py` provides typed FastAPI dependencies. **Always use these instead of manually creating clients or accessing `request.app.state`.**
+The `Dependency` class in `src/agentic_commerce/backend/core.py` provides typed FastAPI dependencies. **Always use these instead of manually creating clients or accessing `request.app.state`.**
 
 | Dependency | Type | Description |
 |---|---|---|
@@ -42,10 +42,10 @@ The `Dependency` class in `src/agentic-commerce/backend/core.py` provides typed 
 - **API routes must have:** `response_model` and `operation_id` for client generation
 
 ## Frontend Rules
-- **Routing:** `@tanstack/react-router` (routes in `src/agentic-commerce/ui/routes/`)
+- **Routing:** `@tanstack/react-router` (routes in `src/agentic_commerce/ui/routes/`)
 - **Data fetching:** Always use `useXSuspense` hooks with `Suspense` and `Skeleton` components
 - **Pattern:** Render static elements immediately, fetch API data with suspense
-- **Components:** Use shadcn/ui, add to `src/agentic-commerce/ui/components/`
+- **Components:** Use shadcn/ui, add to `src/agentic_commerce/ui/components/`
 - **Data access:** Use `selector()` function for clean destructuring (e.g., `const {data: profile} = useProfileSuspense(selector())`)
 
 ## MCP Tools Reference
