@@ -37,5 +37,8 @@
         "smol-toml": "1.6.1",
         "typescript": "5.9.3",
         "vite": "^8.0.12"
+    },
+    "overrides": {
+        "protobufjs": "8.0.2"
     }
 }

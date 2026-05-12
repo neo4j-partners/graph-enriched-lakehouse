@@ -119,8 +119,8 @@ worklog/
 node_modules/
 package-lock.json
 !finance-genie/docs/demo-guide/slides/package-lock.json
-finance-genie/demo-guide/slides/*.pdf
-finance-genie/demo-guide/slides/*.html
+finance-genie/docs/demo-guide/slides/*.pdf
+finance-genie/docs/demo-guide/slides/*.html
 
 # Generated data files
 finance-genie/enrichment-pipeline/data/
