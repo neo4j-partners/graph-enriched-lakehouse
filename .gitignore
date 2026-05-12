@@ -118,6 +118,7 @@ worklog/
 # Node
 node_modules/
 package-lock.json
+!finance-genie/docs/demo-guide/slides/package-lock.json
 finance-genie/demo-guide/slides/*.pdf
 finance-genie/demo-guide/slides/*.html
 
