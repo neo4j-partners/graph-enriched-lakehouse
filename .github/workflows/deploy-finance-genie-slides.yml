@@ -11,8 +11,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -24,23 +22,27 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: 22
 
       - name: Install Marp dependencies
         working-directory: finance-genie/docs/demo-guide/slides
-        run: npm install
+        run: npm ci
+
+      - name: Audit Marp dependencies
+        working-directory: finance-genie/docs/demo-guide/slides
+        run: npm audit --audit-level=high
 
       - name: Build slides
         working-directory: finance-genie/docs/demo-guide/slides
         run: npm run build:all
 
       - name: Upload Pages artifact
-        uses: actions/upload-pages-artifact@v3
+        uses: actions/upload-pages-artifact@v5
         with:
           path: finance-genie/docs/demo-guide/slides/build
 
@@ -51,8 +53,11 @@ jobs:
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      pages: write
+      id-token: write
 
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

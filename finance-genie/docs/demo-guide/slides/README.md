@@ -4,11 +4,11 @@ Presentation-ready slides formatted for [Marp](https://marp.app/).
 
 ## Quick Start
 
-Requires Node.js 22 LTS (`brew install node@22`) and a one-time `npm install` in this directory.
+Requires Node.js 22 LTS (`brew install node@22`) and a one-time `npm ci` in this directory.
 
 ```bash
-cd finance-genie/demo-guide/slides
-npm install
+cd finance-genie/docs/demo-guide/slides
+npm ci
 npm run serve
 ```
 
@@ -45,7 +45,7 @@ The GitHub Pages workflow publishes the full gallery.
 ## Export to PDF
 
 ```bash
-cd finance-genie/demo-guide/slides
+cd finance-genie/docs/demo-guide/slides
 npx marp slides.md --pdf --theme-set themes/finance.css --theme finance
 ```
 

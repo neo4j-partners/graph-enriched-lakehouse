@@ -265,29 +265,29 @@ wheels = [
 
 [[package]]
 name = "databricks-job-runner"
-version = "0.4.3"
+version = "0.4.8"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "databricks-sdk" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/32/d7/e64f003f9bee463c6105b85fa0f88da0f1f6adb5ffa4a34ea12b250b0190/databricks_job_runner-0.4.3.tar.gz", hash = "sha256:ed054d1f7bbe27d051a5071e3a12d6a4142f2ddee7c6379e18f61edeaba777cc", size = 26881, upload-time = "2026-04-18T19:17:47.09Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b8/a4/2eca16546967e0dd1a12d2b5ac04b49318b56ae4c7fb7c5fe6279e885790/databricks_job_runner-0.4.8.tar.gz", hash = "sha256:9daf3a66c48a42aaf89c79d08eefd7efe63d2cfae45a47ce32661bdd88a8ed1f", size = 27802, upload-time = "2026-04-25T01:39:41.905Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a3/59/8b1d3a0c403a281b90ec5579e8dd142b77611fbc4260ba108deec7d70cf2/databricks_job_runner-0.4.3-py3-none-any.whl", hash = "sha256:7b29ff9a42efb19233465bb4aa0e5eeb91a3cd855fd9b364c3953d5a21270872", size = 33663, upload-time = "2026-04-18T19:17:45.847Z" },
+    { url = "https://files.pythonhosted.org/packages/5e/8d/a81fb93bbbfa589eb869be0b04dfbcb57d09feb6707de010d9974908c293/databricks_job_runner-0.4.8-py3-none-any.whl", hash = "sha256:0a1681039afe38e7a3a7c565fc827ce6ecbefb74819272f55d7a6162dafa0536", size = 34538, upload-time = "2026-04-25T01:39:40.623Z" },
 ]
 
 [[package]]
 name = "databricks-sdk"
-version = "0.102.0"
+version = "0.108.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "google-auth" },
     { name = "protobuf" },
     { name = "requests" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ab/b3/41ff1c3afe092df9085e084e0dc81c45bca5ed65f7b60dc59df0ade43c76/databricks_sdk-0.102.0.tar.gz", hash = "sha256:8fa5f82317ee27cc46323c6e2543d2cfefb4468653f92ba558271043c6f72fb9", size = 887450, upload-time = "2026-03-19T08:15:54.428Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/d3/13/05a1dbf9c2c43639b032128c18227953777a2a2da66e4b97d1914ceacb68/databricks_sdk-0.108.0.tar.gz", hash = "sha256:c43f1099b8228e5e9ecb4569381ec8f49b739129d35a826be72a61bc5eaaf1a6", size = 940266, upload-time = "2026-05-12T09:04:03.75Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/02/8c/d082bd5f72d7613524d5b35dfe1f71732b2246be2704fad68cd0e3fdd020/databricks_sdk-0.102.0-py3-none-any.whl", hash = "sha256:75d1253276ee8f3dd5e7b00d62594b7051838435e618f74a8570a6dbd723ec12", size = 838533, upload-time = "2026-03-19T08:15:52.248Z" },
+    { url = "https://files.pythonhosted.org/packages/56/38/9b59ebb34ccaef79095f168eff1fab5f8d645b961680c7bcbc320434acd0/databricks_sdk-0.108.0-py3-none-any.whl", hash = "sha256:010528183abb475acf7f4058e331049dc7932e73a314d9808b123f5cbb722579", size = 887647, upload-time = "2026-05-12T09:04:01.771Z" },
 ]
 
 [[package]]
@@ -349,8 +349,8 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "databricks-job-runner", specifier = ">=0.4.3" },
-    { name = "databricks-sdk", specifier = ">=0.40" },
+    { name = "databricks-job-runner", specifier = ">=0.4.8" },
+    { name = "databricks-sdk", specifier = ">=0.108.0" },
     { name = "databricks-tools-core", git = "https://github.com/databricks-solutions/ai-dev-kit?subdirectory=databricks-tools-core" },
     { name = "faker", specifier = ">=24.0.0" },
     { name = "graphdatascience", specifier = ">=1.12" },
@@ -520,14 +520,14 @@ wheels = [
 
 [[package]]
 name = "neo4j"
-version = "6.1.0"
+version = "6.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "pytz" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/1b/01/d6ce65e4647f6cb2b9cca3b813978f7329b54b4e36660aaec1ddf0ccce7a/neo4j-6.1.0.tar.gz", hash = "sha256:b5dde8c0d8481e7b6ae3733569d990dd3e5befdc5d452f531ad1884ed3500b84", size = 239629, upload-time = "2026-01-12T11:27:34.777Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ce/f4/aaa4ac19adae4b01bc742b63afd2672a77e7351566f02721e713e4b863ee/neo4j-6.2.0.tar.gz", hash = "sha256:e1e246b65b572bd8ea97f9e0e721b7d40a5ce53e53d0007c29aef63e4f9124d9", size = 241459, upload-time = "2026-05-04T07:35:41.428Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/70/5c/ee71e2dd955045425ef44283f40ba1da67673cf06404916ca2950ac0cd39/neo4j-6.1.0-py3-none-any.whl", hash = "sha256:3bd93941f3a3559af197031157220af9fd71f4f93a311db687bd69ffa417b67d", size = 325326, upload-time = "2026-01-12T11:27:33.196Z" },
+    { url = "https://files.pythonhosted.org/packages/e6/cf/1c3795866cefaac6e648d4e98c373cafd97810f6e317c307371007ab4abb/neo4j-6.2.0-py3-none-any.whl", hash = "sha256:b87abdd13a5cc2e3bd51026926c2f20ac38fa3febe98c340520dce19e97388d0", size = 327824, upload-time = "2026-05-04T07:35:39.604Z" },
 ]
 
 [[package]]
@@ -1200,9 +1200,9 @@ wheels = [
 
 [[package]]
 name = "urllib3"
-version = "2.6.3"
+version = "2.7.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/c7/24/5f1b3bdffd70275f6661c76461e25f024d5a38a46f04aaca912426a2b1d3/urllib3-2.6.3.tar.gz", hash = "sha256:1b62b6884944a57dbe321509ab94fd4d3b307075e0c2eae991ac71ee15ad38ed", size = 435556, upload-time = "2026-01-07T16:24:43.925Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/53/0c/06f8b233b8fd13b9e5ee11424ef85419ba0d8ba0b3138bf360be2ff56953/urllib3-2.7.0.tar.gz", hash = "sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c", size = 433602, upload-time = "2026-05-07T16:13:18.596Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/39/08/aaaad47bc4e9dc8c725e68f9d04865dbcb2052843ff09c97b08904852d84/urllib3-2.6.3-py3-none-any.whl", hash = "sha256:bf272323e553dfb2e87d9bfd225ca7b0f467b919d7bbd355436d3fd37cb0acd4", size = 131584, upload-time = "2026-01-07T16:24:42.685Z" },
+    { url = "https://files.pythonhosted.org/packages/7f/3e/5db95bcf282c52709639744ca2a8b149baccf648e39c8cc87553df9eae0c/urllib3-2.7.0-py3-none-any.whl", hash = "sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897", size = 131087, upload-time = "2026-05-07T16:13:17.151Z" },
 ]
