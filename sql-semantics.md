@@ -2,293 +2,367 @@
 
 ## Goal
 
-Create a new standalone sample project named `sql-semantics` that demonstrates a dbxcarta-powered semantic layer for the Finance Genie Lakehouse data.
+Create a new standalone top-level sample project named `sql-semantics/` that
+tests using dbxcarta from outside the dbxcarta repository.
 
-The sample should live in a new root-level directory, `sql-semantics/`, and should not depend on the `finance-genie/` source tree. Finance Genie remains the upstream data producer. The `sql-semantics` sample only assumes the user has already run the Finance Genie setup path that creates the required Unity Catalog tables.
+The first implementation should copy and adapt the existing preset package from:
 
-The sample should use `/Users/ryanknight/projects/databricks/dbxcarta` as the local dbxcarta source during development and should show how to:
+`/Users/ryanknight/projects/databricks/dbxcarta/examples/finance-genie`
 
-- Package a dbxcarta preset for the existing Finance Genie tables.
-- Build a Neo4j semantic layer over those Unity Catalog tables with dbxcarta.
-- Run a simple read-only text-to-SQL flow using dbxcarta graph retrieval.
-- Remember each user's prior questions in Neo4j agent memory and use relevant prior questions as prompt context for future SQL generation.
+The copied sample should live at:
 
-## Proposed Project Shape
+`/Users/ryanknight/projects/databricks/graph-on-databricks/sql-semantics`
 
-`sql-semantics/` should be a separate Python package and operator workflow:
+This project should prove that an external repository can package a dbxcarta
+preset, install dbxcarta as a dependency, point at existing Finance Genie Unity
+Catalog tables, and run the dbxcarta preset workflow without importing from the
+`finance-genie/` source tree in this repository.
 
-- `pyproject.toml`: standalone package metadata, with a local editable dependency on `/Users/ryanknight/projects/databricks/dbxcarta` for development.
-- `.env.sample`: Databricks, dbxcarta, Neo4j, model endpoint, catalog, schema, and volume settings.
-- `README.md`: setup guide, prerequisite data setup note, semantic-layer build flow, text-to-SQL demo flow, and troubleshooting.
-- `src/sql_semantics/preset.py`: dbxcarta `Preset` implementation for the Finance Genie table contract.
-- `src/sql_semantics/questions.json`: sample analyst questions and optional reference SQL.
-- `src/sql_semantics/cli.py`: local CLI for readiness checks, semantic-layer commands, text-to-SQL asks, and memory inspection.
-- `src/sql_semantics/memory.py`: Neo4j-backed question memory.
-- `src/sql_semantics/text_to_sql.py`: graph retrieval, prompt assembly, SQL generation, read-only validation, and execution.
-- `tests/`: focused tests for preset readiness, read-only SQL validation, memory Cypher construction, and prompt assembly.
+## Revised Direction
+
+The previous plan described a larger sample with a new text-to-SQL CLI and
+Neo4j-backed question memory. That is still useful, but it is too broad for the
+first validation step.
+
+The immediate plan is:
+
+- Copy the dbxcarta Finance Genie preset example into a new root-level
+  `sql-semantics/` directory.
+- Rename the package so it belongs to this repository, for example
+  `sql_semantics`.
+- Keep the dbxcarta preset contract, readiness check, question upload helper,
+  local read-only demo, `.env.sample`, README, and tests from the source
+  example.
+- Configure the package as an external dbxcarta consumer using a local editable
+  dependency on `/Users/ryanknight/projects/databricks/dbxcarta` during
+  development.
+- Keep the project independent from the existing root-level `finance-genie/`
+  source tree. Finance Genie remains only the data producer.
+
+After this works, the project can grow into the larger text-to-SQL and memory
+sample.
+
+## Source Preset To Copy
+
+Source directory:
+
+`/Users/ryanknight/projects/databricks/dbxcarta/examples/finance-genie`
+
+Important source files:
+
+- `pyproject.toml`
+- `.env.sample`
+- `README.md`
+- `src/dbxcarta_finance_genie_example/__init__.py`
+- `src/dbxcarta_finance_genie_example/finance_genie.py`
+- `src/dbxcarta_finance_genie_example/local_demo.py`
+- `src/dbxcarta_finance_genie_example/upload_questions.py`
+- `src/dbxcarta_finance_genie_example/questions.json`
+- `tests/test_preset.py`
+- `tests/test_local_demo.py`
+
+Files and directories that should not be copied:
+
+- `.env`
+- `.venv/`
+- `.pytest_cache/`
+- `dist/`
+- `__pycache__/`
+- generated wheels or local build artifacts
+
+## Target Project Shape
+
+`sql-semantics/` should be a standalone Python package:
+
+- `pyproject.toml`: standalone package metadata.
+- `.env.sample`: local operator configuration for Databricks, dbxcarta, and
+  Neo4j.
+- `README.md`: setup guide for running this sample from the
+  `graph-on-databricks` repository.
+- `src/sql_semantics/__init__.py`: re-export the preset.
+- `src/sql_semantics/finance_genie.py`: adapted dbxcarta `Preset`
+  implementation.
+- `src/sql_semantics/local_demo.py`: optional read-only local CLI copied from
+  the dbxcarta example and renamed.
+- `src/sql_semantics/upload_questions.py`: optional question upload helper, if
+  still present in the source example.
+- `src/sql_semantics/questions.json`: sample analyst questions.
+- `tests/test_preset.py`: preset contract tests.
+- `tests/test_local_demo.py`: local demo tests.
+- `uv.lock`: generated only if needed for this standalone sample.
+
+The package import path should be:
+
+`sql_semantics:preset`
+
+The package name in `pyproject.toml` should be:
+
+`sql-semantics`
+
+## Dependency Model
+
+During local development, `sql-semantics/pyproject.toml` should depend on
+dbxcarta through the sibling checkout:
+
+```toml
+[tool.uv.sources]
+dbxcarta = { path = "/Users/ryanknight/projects/databricks/dbxcarta", editable = true }
+```
+
+The normal dependency should still be declared as a package dependency, for
+example:
+
+```toml
+dependencies = [
+    "dbxcarta>=0.2.32",
+    "databricks-sdk>=0.40",
+    "python-dotenv",
+]
+```
+
+This keeps the sample honest as an outside consumer while still testing the
+local dbxcarta checkout.
 
 ## Scope Boundary
 
 Finance Genie owns:
 
 - Data generation.
-- Base Unity Catalog tables: `accounts`, `merchants`, `transactions`, `account_links`, `account_labels`.
-- Optional Gold Unity Catalog tables: `gold_accounts`, `gold_account_similarity_pairs`, `gold_fraud_ring_communities`.
-- The graph-enriched data pipeline and Genie demo assets.
+- Base Unity Catalog tables: `accounts`, `merchants`, `transactions`,
+  `account_links`, `account_labels`.
+- Optional Gold Unity Catalog tables: `gold_accounts`,
+  `gold_account_similarity_pairs`, `gold_fraud_ring_communities`.
+- Graph-enriched data pipeline and Genie demo assets.
 
 `sql-semantics` owns:
 
-- A dbxcarta preset that points at the existing Finance Genie Unity Catalog scope.
-- Readiness checks that tell the user whether the Finance Genie data exists.
-- dbxcarta semantic-layer setup instructions and wrapper commands.
-- A simple graph-retrieval text-to-SQL experience.
-- Neo4j agent memory for user questions, generated SQL, retrieved schema context, and execution outcomes.
+- The copied and adapted dbxcarta preset.
+- Readiness checks for the expected Finance Genie tables.
+- Uploading the bundled question fixture to the configured UC Volume.
+- Documentation for running dbxcarta from this external sample.
+- A small local read-only CLI demo, if retained from the source preset.
 
-The sample should not import `finance-genie` modules, call Finance Genie setup code, or mutate Finance Genie project files.
+`sql-semantics` should not:
 
-## Assumptions
+- Import modules from root-level `finance-genie/`.
+- Call Finance Genie setup code.
+- Mutate Finance Genie project files.
+- Depend on being inside the dbxcarta repository.
 
-- The default Unity Catalog scope is `graph-enriched-lakehouse.graph-enriched-schema`, matching the validated dbxcarta Finance Genie example.
-- The default UC Volume is `graph-enriched-volume`, used for dbxcarta run summaries and uploaded question fixtures.
-- The user can override catalog, schema, and volume through environment variables.
-- The user has Databricks auth configured locally.
-- The user has access to a Databricks SQL warehouse and model serving endpoints for embeddings and chat.
-- Neo4j can hold both dbxcarta semantic-layer nodes and `sql-semantics` memory nodes in the same database, provided memory labels and relationship types are namespaced.
-- All generated SQL is read-only. The demo should reject mutating SQL before execution.
+## Preset Defaults
 
-## Semantic Layer Design
+Keep the source example defaults unless testing shows they must change:
 
-The preset should mirror the dbxcarta Finance Genie example but use a new package identity, such as `sql_semantics:preset`.
+- Catalog: `graph-enriched-lakehouse`
+- Schema: `graph-enriched-schema`
+- Volume: `graph-enriched-volume`
+- Required tables:
+  - `accounts`
+  - `merchants`
+  - `transactions`
+  - `account_links`
+  - `account_labels`
+- Optional tables:
+  - `gold_accounts`
+  - `gold_account_similarity_pairs`
+  - `gold_fraud_ring_communities`
+- Embedding endpoint: `databricks-gte-large-en`
+- Embedding dimension: `1024`
+- Client arms: `no_context,schema_dump,graph_rag`
+- Semantic inference: enabled
+- Criteria injection: disabled
 
-Required tables:
+Gold tables should stay optional by default. Strict readiness can require them
+when the operator passes the dbxcarta strict optional flag.
 
-- `accounts`
-- `merchants`
-- `transactions`
-- `account_links`
-- `account_labels`
+## Expected Workflow
 
-Optional tables:
+Run commands from `sql-semantics/` unless otherwise noted.
 
-- `gold_accounts`
-- `gold_account_similarity_pairs`
-- `gold_fraud_ring_communities`
+1. Install the external sample:
 
-The preset should:
+```bash
+uv sync
+```
 
-- Return a dbxcarta environment overlay for catalog, schema, volume, summary path, summary table, embedding settings, sample-value settings, semantic FK inference, and client question path.
-- Check table readiness through Unity Catalog `information_schema`.
-- Upload the sample question fixture to the configured UC Volume.
-- Keep Gold tables optional by default so users can demonstrate semantic retrieval over the base dataset first.
-- Support a strict mode where missing Gold tables fail readiness.
+2. Print the dbxcarta overlay:
 
-## Text-To-SQL Design
+```bash
+uv run dbxcarta preset sql_semantics:preset --print-env
+```
 
-The first implementation should be a local CLI rather than a UI. This keeps the example easy to run, test, and understand.
+3. Check table readiness:
 
-The `ask` flow should:
+```bash
+uv run dbxcarta preset sql_semantics:preset --check-ready
+```
 
-- Accept either an ad hoc question or a question id from `questions.json`.
-- Embed the user question with the configured Databricks embedding endpoint.
-- Retrieve schema context from dbxcarta's Neo4j semantic layer.
-- Retrieve similar prior questions from Neo4j agent memory for the same user or workspace.
-- Assemble a prompt containing the current question, dbxcarta schema context, relevant prior question examples, and read-only SQL rules.
-- Generate SQL through the configured Databricks chat endpoint.
-- Parse and validate that the SQL is a single read-only statement.
-- Execute the SQL on the configured Databricks SQL warehouse.
-- Store the question, generated SQL, retrieved schema ids, result metadata, and success or failure state in Neo4j memory.
+4. Upload bundled questions:
 
-The CLI should also include:
+```bash
+uv run dbxcarta preset sql_semantics:preset --upload-questions
+```
 
-- `preflight`: checks environment, warehouse connectivity, dbxcarta graph presence, and memory graph constraints.
-- `questions`: lists bundled sample questions.
-- `ask`: runs graph-retrieval text-to-SQL and records memory.
-- `memory list`: shows recent questions for a user.
-- `memory similar`: shows remembered questions similar to a new question.
-- `sql`: executes a manually supplied read-only SQL statement for debugging.
+5. Build and verify the semantic layer with dbxcarta:
 
-## Neo4j Agent Memory Design
+```bash
+uv run dbxcarta upload --wheel
+uv run dbxcarta upload --all
+uv run dbxcarta submit-entrypoint ingest
+uv run dbxcarta verify
+```
 
-Memory should be stored as first-class Neo4j graph data with labels that do not collide with dbxcarta labels.
+6. Optionally run the local demo:
 
-Proposed labels:
-
-- `SqlSemanticsUser`
-- `SqlSemanticsSession`
-- `SqlSemanticsQuestion`
-- `SqlSemanticsGeneratedSql`
-- `SqlSemanticsRun`
-
-Proposed relationships:
-
-- `(:SqlSemanticsUser)-[:ASKED]->(:SqlSemanticsQuestion)`
-- `(:SqlSemanticsSession)-[:CONTAINS]->(:SqlSemanticsQuestion)`
-- `(:SqlSemanticsQuestion)-[:GENERATED]->(:SqlSemanticsGeneratedSql)`
-- `(:SqlSemanticsQuestion)-[:USED_SCHEMA]->(:Column|Table)`
-- `(:SqlSemanticsQuestion)-[:SIMILAR_TO]->(:SqlSemanticsQuestion)`
-- `(:SqlSemanticsRun)-[:FOR_QUESTION]->(:SqlSemanticsQuestion)`
-
-The memory write path should store:
-
-- User id or a stable local alias.
-- Session id.
-- Raw question text.
-- Question embedding, if the configured Neo4j version and memory policy allow vector search over memory.
-- Generated SQL.
-- Read-only validation result.
-- Execution status.
-- Row count and column names, but not full result sets by default.
-- dbxcarta seed ids and retrieved table or column ids.
-- Timestamp and model endpoint metadata.
-
-The memory read path should prefer successful prior questions from the same user, then successful prior questions from the same project. Retrieved examples should be short and bounded so they improve SQL generation without overwhelming the prompt.
+```bash
+uv run python -m sql_semantics.local_demo preflight
+uv run python -m sql_semantics.local_demo questions
+uv run python -m sql_semantics.local_demo ask --question-id fg_q01 --show-context
+```
 
 ## Phase Checklist
 
-### Phase 1: Proposal and Sample Contract
+### Phase 1: Copy External Preset Sample
 
-Status: In progress
-
-Checklist:
-
-- Complete: Create this proposal.
-- Pending: Confirm scope with the user.
-- Pending: Confirm the target default Unity Catalog catalog, schema, and volume.
-- Pending: Confirm whether Gold tables are optional or required for the first demo.
-- Pending: Confirm whether memory can share the existing dbxcarta Neo4j database.
-- Pending: Confirm the desired user identity model for memory.
-
-Validation:
-
-- Proposal reviewed and questions resolved or accepted as defaults.
-
-### Phase 2: Project Scaffold
-
-Status: Pending
+Status: Complete
 
 Checklist:
 
-- Add `sql-semantics/` as a standalone Python package.
-- Add `.env.sample`, README, package metadata, and test skeleton.
-- Configure dbxcarta as a local editable dependency for development.
-- Keep the package independent from the `finance-genie/` source tree.
+- Complete: Create root-level `sql-semantics/`.
+- Complete: Copy the dbxcarta `examples/finance-genie` sample into
+  `sql-semantics/`.
+- Complete: Exclude local artifacts: `.env`, `.venv/`, `.pytest_cache/`, `dist/`,
+  `__pycache__/`, and generated wheels.
+- Complete: Rename package imports from `dbxcarta_finance_genie_example` to
+  `sql_semantics`.
+- Complete: Rename the exported preset import path to `sql_semantics:preset`.
+- Complete: Update `pyproject.toml` package metadata to `sql-semantics`.
+- Complete: Configure the local editable dbxcarta dependency to the absolute
+  dbxcarta checkout path.
 
 Validation:
 
-- Local dependency resolution succeeds.
-- Package imports without requiring live Databricks or Neo4j connections.
+- Complete: `uv sync` succeeds from `sql-semantics/`.
+- Complete: `uv run python -c "from sql_semantics import preset; print(preset.env())"`
+  succeeds.
+- Complete: `uv run pytest` passes non-live tests.
 
-### Phase 3: dbxcarta Preset
+### Phase 2: Adapt README And Environment
 
-Status: Pending
+Status: Complete
 
 Checklist:
 
-- Implement the `sql_semantics:preset` object.
-- Add readiness checks for required and optional Finance Genie tables.
-- Add question fixture upload support.
-- Add tests for env overlay, identifier validation, table readiness formatting, and question fixture validation.
+- Complete: Rewrite `sql-semantics/README.md` for this repository.
+- Complete: Explain that Finance Genie data must already exist in Unity Catalog.
+- Complete: Document that dbxcarta is consumed from the sibling checkout during local
+  development.
+- Complete: Update commands to use `sql_semantics:preset`.
+- Complete: Update `.env.sample` comments so they refer to `sql-semantics/`, not
+  `examples/finance-genie/`.
 
 Validation:
 
-- Preset prints a complete dbxcarta env overlay.
-- Readiness reports missing Finance Genie data clearly.
-- Readiness passes after the user has created the Finance Genie tables.
+- Complete: README commands match the actual package path.
+- Complete: `.env.sample` has no stale source-example paths.
 
-### Phase 4: Semantic Layer Build Flow
+### Phase 3: Preset Verification
 
-Status: Pending
+Status: Complete for local verification; live readiness blocked
 
 Checklist:
 
-- Document the prerequisite Finance Genie data setup step.
-- Document dbxcarta secret setup, artifact upload, ingest submission, and verification.
-- Add wrapper CLI commands only where they reduce operator friction without hiding dbxcarta behavior.
-- Keep destructive Neo4j cleanup out of the normal flow.
+- Complete: Run preset unit tests.
+- Complete: Confirm the preset satisfies dbxcarta `Preset`, `ReadinessCheckable`, and
+  `QuestionsUploadable` protocols.
+- Complete: Confirm readiness reports required and optional Finance Genie tables
+  correctly.
+- Complete: Confirm question fixture validation and upload path validation still work.
 
 Validation:
 
-- dbxcarta ingest completes against the configured UC scope.
-- dbxcarta verification reports zero structural violations.
-- The semantic graph contains expected `Database`, `Schema`, `Table`, `Column`, `Value`, and `REFERENCES` data for the Finance Genie tables.
+- Complete: Non-live tests pass: `21 passed`.
+- Complete: `--print-env` emits the expected Finance Genie dbxcarta overlay.
+- Complete: `--check-ready --strict-optional` passes against
+  `graph-enriched-lakehouse.graph-enriched-schema`.
 
-### Phase 5: Text-To-SQL CLI
+### Phase 4: External-Consumer Smoke Test
 
-Status: Pending
+Status: Blocked on external wheel upload behavior
 
 Checklist:
 
-- Implement `questions`, `preflight`, `sql`, and `ask` commands.
-- Use dbxcarta graph retrieval for schema context.
-- Generate SQL through the configured Databricks chat endpoint.
-- Enforce single-statement read-only SQL before execution.
-- Print generated SQL, retrieved context ids, and result rows.
-- Add tests for prompt construction and SQL safety checks.
+- Complete: Run the dbxcarta preset CLI from inside `sql-semantics/` for
+  `--print-env`.
+- Complete: Confirm dbxcarta resolves from
+  `/Users/ryanknight/projects/databricks/dbxcarta`.
+- Complete: Upload questions to the configured UC Volume.
+- Blocked: `uv run dbxcarta upload --wheel` builds the external
+  `sql-semantics` wheel, then the dbxcarta runner looks for
+  `dist/dbxcarta-*.whl`; the resulting artifact is
+  `dist/sql_semantics-*.whl`.
+- Blocked: Ingest and verify depend on resolving the wheel-upload behavior.
 
 Validation:
 
-- At least three bundled questions generate read-only SQL.
-- Generated SQL executes successfully against the warehouse.
-- CLI reports useful errors for missing config, missing semantic graph, invalid SQL, or warehouse failures.
+- Complete: The sample runs without importing from dbxcarta
+  `examples/finance-genie`.
+- Complete: The sample runs without importing from this repository's
+  `finance-genie/`.
+- Complete: dbxcarta sees `sql_semantics:preset` as a normal external preset
+  package.
+- Complete: Live readiness and question upload pass with the configured
+  `sql-semantics/.env`.
+- Blocked: Ingest and verify need a dbxcarta wheel upload path that works from
+  the external `sql-semantics` package.
 
-### Phase 6: Neo4j Agent Memory
+### Phase 5: Deferred Text-To-SQL And Memory
 
-Status: Pending
+Status: Deferred
 
 Checklist:
 
-- Create memory constraints and indexes.
-- Store each question, generated SQL, retrieved schema context, and execution outcome.
-- Retrieve relevant successful prior questions and include them in prompt context.
-- Add memory inspection commands.
-- Add tests for memory payload shape and query construction.
+- Revisit the original text-to-SQL CLI requirements after the external preset
+  smoke test is working.
+- Decide whether to extend the copied `local_demo.py` or create separate
+  modules for prompt assembly, SQL validation, and memory.
+- Decide whether Neo4j memory should share the dbxcarta database or use a
+  separate database.
+- Decide the default user identity model for remembered questions.
 
 Validation:
 
-- A repeated or related question retrieves prior memory.
-- Prompt context includes bounded prior examples.
-- Memory writes do not modify or delete dbxcarta semantic-layer nodes.
-
-### Phase 7: Documentation and Demo Path
-
-Status: Pending
-
-Checklist:
-
-- Write an end-to-end README path from prerequisite data setup through asking a question.
-- Include troubleshooting for Databricks auth, missing UC tables, missing Neo4j credentials, missing vector indexes, and model endpoint failures.
-- Add a short demo script that shows first question, remembered follow-up, and memory inspection.
-
-Validation:
-
-- A fresh user can follow the README after setting up Finance Genie data.
-- The demo shows semantic retrieval and remembered question context in a single short flow.
+- Deferred until the copied preset sample is working end to end.
 
 ## Risks
 
-- dbxcarta currently treats preset packages as external examples. The `sql-semantics` package should follow that pattern cleanly, but local editable dependency wiring must be documented carefully.
-- Memory stored in the same Neo4j database as dbxcarta semantic metadata can become noisy if labels are not namespaced and constraints are not explicit.
-- Storing full result sets in memory could leak sensitive analytical output. The safer default is to store metadata and generated SQL only.
-- Text-to-SQL prompts can regress if too many prior examples are injected. Memory retrieval should cap examples and prefer successful, recent, schema-overlapping questions.
-- Finance Genie table names and default UC scope may drift. The preset must make defaults visible and overridable.
-- The first implementation should avoid a UI until the CLI flow is stable and testable.
+- The copied source example may rely on private dbxcarta client helpers in
+  `local_demo.py`. That is acceptable for the first external-consumer test, but
+  should be revisited before making this a durable public sample.
+- Absolute local dependency paths are correct for this workspace but should be
+  documented as local development wiring.
+- The sample can pass unit tests without proving live Databricks, Neo4j, or
+  UC Volume access. Live smoke tests remain a separate validation step.
+- Finance Genie table names and default UC scope may drift. The readiness check
+  should make missing tables obvious.
 
 ## Completion Criteria
 
-The project is complete when:
+The first delivery is complete when:
 
-- `sql-semantics/` is a standalone sample with no source dependency on `finance-genie/`.
-- The README clearly tells users to set up Finance Genie data before running the sample.
-- The dbxcarta preset can validate the Finance Genie Unity Catalog tables.
-- dbxcarta can build and verify the semantic layer for those tables.
-- The CLI can answer read-only natural-language questions through dbxcarta graph retrieval.
-- Neo4j memory records user questions and improves follow-up prompts with relevant prior successful questions.
-- Tests cover the preset contract, SQL safety checks, prompt assembly, and memory query behavior.
+- `sql-semantics/` exists as a standalone sample package.
+- The package exposes `sql_semantics:preset`.
+- The package uses dbxcarta as an external dependency from the sibling checkout.
+- Non-live tests pass from `sql-semantics/`.
+- The README documents the external-consumer workflow.
+- The sample has no import dependency on root-level `finance-genie/` or
+  dbxcarta's `examples/finance-genie`.
 
 ## Open Questions
 
-- Should `gold_*` tables be optional for the first version, or should the sample require the full Finance Genie Gold pipeline?
-- Should memory use the same Neo4j database as dbxcarta semantic metadata, or a separate database?
-- What should be the default user identity for local demos: explicit `--user`, Databricks username, or local OS username?
-- Should the first delivery be CLI-only, or should it include a minimal Databricks App after the CLI is working?
-- Should remembered questions be shared across users by default, or isolated per user unless explicitly enabled?
+- Resolved: Keep `local_demo.py` for parity with the source preset example.
+- Resolved: `sql-semantics/.env` now has the required live runner fields.
+  Remaining live smoke-test work is blocked by the dbxcarta wheel-upload
+  behavior from an external package.
+- Resolved: The dbxcarta dependency floor is `>=0.2.35`, matching the sibling
+  checkout version used by `uv sync`.

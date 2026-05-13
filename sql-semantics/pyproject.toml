@@ -1,0 +1,34 @@
+[project]
+name = "sql-semantics"
+version = "0.1.0"
+description = "External dbxcarta preset sample for the Finance Genie Lakehouse data"
+authors = [{ name = "Ryan Knight" }]
+requires-python = ">=3.12"
+dependencies = [
+    "dbxcarta>=0.2.35",
+    "databricks-sdk>=0.40",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[dependency-groups]
+dev = ["pytest"]
+
+[build-system]
+requires = ["uv_build>=0.9.3,<0.10.0"]
+build-backend = "uv_build"
+
+# Local-dev override only: lets `uv sync` inside this external sample resolve
+# dbxcarta to the sibling checkout. Outside consumers should remove this section
+# and rely on the published dbxcarta wheel resolved from PyPI or their wheel
+# index.
+[tool.uv.sources]
+dbxcarta = { path = "/Users/ryanknight/projects/databricks/dbxcarta", editable = true }
+
+[tool.pytest.ini_options]
+addopts = "-m 'not live'"
+markers = [
+    "live: tests that require a live Databricks profile, Neo4j, and a previously-loaded catalog (default pytest skips these)",
+]
