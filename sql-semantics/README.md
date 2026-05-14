@@ -52,22 +52,14 @@ tree and does not depend on being inside the dbxcarta repository.
 
 ```toml
 dependencies = [
-    "dbxcarta>=0.2.38",
+    "dbxcarta>=0.2.41",
     "databricks-sdk>=0.40",
     "python-dotenv",
 ]
 ```
 
-For local development in this workspace, `uv` resolves dbxcarta to the sibling
-checkout:
-
-```toml
-[tool.uv.sources]
-dbxcarta = { path = "/Users/ryanknight/projects/databricks/dbxcarta", editable = true }
-```
-
-That path is intentionally absolute so this package behaves like an external
-consumer rather than a nested dbxcarta example.
+The package resolves `dbxcarta` from PyPI. It does not rely on an absolute
+local source override, so it behaves like a normal external consumer.
 
 ## Prerequisites
 
@@ -127,6 +119,16 @@ Fill in the following values in `.env` before any live commands:
 All other values in `.env.sample` reflect the Finance Genie preset defaults and
 do not need to change unless you are targeting a different catalog or schema.
 
+For Databricks bundle deployment, authenticate the Databricks CLI and make sure
+the target workspace has:
+
+- A SQL warehouse ID for catalog checks and client query execution
+- A UC volume at `/Volumes/<catalog>/<schema>/<volume>`
+- Permission to write under `<volume>/dbxcarta/`
+- A cluster policy that allows classic jobs compute with `SINGLE_USER` access
+  mode and task-level Maven libraries, if cluster policies are enforced
+- A Neo4j secret scope with the uppercase keys documented below
+
 ## Preset Commands
 
 Print the dbxcarta environment overlay:
@@ -154,10 +156,15 @@ Upload bundled questions to the UC Volume path named by
 uv run dbxcarta preset sql_semantics:preset --upload-questions
 ```
 
-## Semantic Layer Build
+## Local CLI Build
 
-After readiness passes and dbxcarta secrets are configured, build and verify the
-semantic layer:
+The local CLI path is useful for development and debugging from this checkout.
+It uploads local artifacts and submits ad hoc dbxcarta jobs from your machine.
+For repeatable consumer deployment, prefer the Databricks bundle in the next
+section.
+
+After readiness passes and dbxcarta secrets are configured, build and verify
+the semantic layer locally:
 
 ```bash
 uv run dbxcarta upload --wheel
@@ -174,30 +181,51 @@ uv run dbxcarta submit-entrypoint client
 
 ## Databricks Jobs
 
-`databricks.yml` defines two jobs as a Databricks Asset Bundle. These are the
-recommended deployment path for consumers who do not want to run
-`submit-entrypoint` from a local CLI.
+`databricks.yml` defines two jobs as a Databricks bundle. This is the
+recommended deployment path for consumers.
+
+The ingest job uses classic single-user jobs compute because dbxcarta writes to
+Neo4j through the Neo4j Spark Connector. The connector is installed as a Maven
+task library and is not supported on Databricks serverless jobs compute.
+
+The client job has two tasks on a shared job cluster:
+
+1. `upload_questions` uploads `src/sql_semantics/questions.json` to the UC
+   Volume path configured by `DBXCARTA_CLIENT_QUESTIONS`.
+2. `client` runs `dbxcarta-client` after the upload task succeeds.
+
+The jobs install `dbxcarta` from PyPI. They do not require `sql-semantics` to
+be published because the only sql-semantics runtime artifact needed by the job
+is the bundled questions file, which Databricks Bundles uploads with the source
+tree.
 
 ### Variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `warehouse_id` | Yes | none | SQL warehouse ID for client evaluation runs |
+| `dbxcarta_version` | No | `0.2.41` | Published dbxcarta version installed by the jobs |
+| `databricks_sdk_version` | No | `0.108.0` | databricks-sdk version used by the question upload task |
+| `python_dotenv_version` | No | `1.2.2` | python-dotenv version used by the question upload task |
+| `spark_version` | No | `14.3.x-scala2.12` | Classic Databricks Runtime for the jobs |
+| `node_type_id` | No | `i3.xlarge` | Classic jobs compute node type |
+| `neo4j_connector_maven` | No | `org.neo4j:neo4j-connector-apache-spark_2.12:5.3.6_for_spark_3` | Neo4j Spark Connector Maven coordinate |
 | `catalog` | No | `graph-enriched-lakehouse` | UC catalog |
 | `schema` | No | `graph-enriched-schema` | UC schema |
 | `volume` | No | `graph-enriched-volume` | UC volume for run artifacts |
 | `secret_scope` | No | `dbxcarta-neo4j` | Databricks secret scope holding Neo4j credentials |
 | `chat_endpoint` | No | `databricks-claude-sonnet-4-6` | Model serving endpoint for SQL generation |
+| `embedding_endpoint` | No | `databricks-gte-large-en` | Embedding endpoint used by ingest and client retrieval |
 
 The `warehouse_id` variable has no default and must be supplied at deploy time.
 
-The Neo4j secret scope must contain three keys: `neo4j_uri`, `neo4j_username`,
-and `neo4j_password`. Create them with the Databricks CLI:
+The Neo4j secret scope must contain three keys: `NEO4J_URI`, `NEO4J_USERNAME`,
+and `NEO4J_PASSWORD`. Create them with the Databricks CLI:
 
 ```bash
-databricks secrets put-secret dbxcarta-neo4j neo4j_uri --string-value bolt://...
-databricks secrets put-secret dbxcarta-neo4j neo4j_username --string-value neo4j
-databricks secrets put-secret dbxcarta-neo4j neo4j_password --string-value ...
+databricks secrets put-secret dbxcarta-neo4j NEO4J_URI --string-value bolt://...
+databricks secrets put-secret dbxcarta-neo4j NEO4J_USERNAME --string-value neo4j
+databricks secrets put-secret dbxcarta-neo4j NEO4J_PASSWORD --string-value ...
 ```
 
 ### Deploy and run
@@ -205,7 +233,7 @@ databricks secrets put-secret dbxcarta-neo4j neo4j_password --string-value ...
 Validate the bundle configuration:
 
 ```bash
-databricks bundle validate
+databricks bundle validate --var="warehouse_id=<your-warehouse-id>"
 ```
 
 Deploy to the `dev` target:
@@ -214,26 +242,29 @@ Deploy to the `dev` target:
 databricks bundle deploy -t dev --var="warehouse_id=<your-warehouse-id>"
 ```
 
-Deploy to `prod`:
-
-```bash
-databricks bundle deploy -t prod --var="warehouse_id=<your-warehouse-id>"
-```
-
-Before deploying to `prod`, update the `run_as.service_principal_name` field in
-`databricks.yml` to match the service principal that should own the jobs.
-
 Run the ingest job:
 
 ```bash
-databricks bundle run sql_semantics_ingest
+databricks bundle run -t dev sql_semantics_ingest --var="warehouse_id=<your-warehouse-id>"
 ```
 
 Run the client evaluation job:
 
 ```bash
-databricks bundle run sql_semantics_client
+databricks bundle run -t dev sql_semantics_client --var="warehouse_id=<your-warehouse-id>"
 ```
+
+Deploy to `prod` after dev validation passes:
+
+```bash
+databricks bundle validate -t prod --var="warehouse_id=<your-warehouse-id>"
+databricks bundle deploy -t prod --var="warehouse_id=<your-warehouse-id>"
+databricks bundle run -t prod sql_semantics_ingest --var="warehouse_id=<your-warehouse-id>"
+databricks bundle run -t prod sql_semantics_client --var="warehouse_id=<your-warehouse-id>"
+```
+
+If production jobs should run as a service principal, add a real `run_as`
+principal to the `prod` target before deploying.
 
 ### Override variables
 

@@ -241,8 +241,8 @@ wheels = [
 
 [[package]]
 name = "dbxcarta"
-version = "0.2.35"
-source = { editable = "/Users/ryanknight/projects/databricks/dbxcarta" }
+version = "0.2.41"
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "databricks-job-runner" },
     { name = "databricks-sdk" },
@@ -251,19 +251,10 @@ dependencies = [
     { name = "pydantic-settings" },
     { name = "python-dotenv" },
 ]
-
-[package.metadata]
-requires-dist = [
-    { name = "databricks-job-runner", specifier = ">=0.4.8" },
-    { name = "databricks-sdk", specifier = ">=0.40" },
-    { name = "neo4j", specifier = ">=5.0" },
-    { name = "pydantic", specifier = ">=2" },
-    { name = "pydantic-settings", specifier = ">=2" },
-    { name = "pyspark", marker = "extra == 'test'", specifier = ">=3.5" },
-    { name = "pytest", marker = "extra == 'test'" },
-    { name = "python-dotenv" },
+sdist = { url = "https://files.pythonhosted.org/packages/f4/44/728dd7b5650e2ae879960293e1832f6895d9dd2273cf94f102cba8cf9f5e/dbxcarta-0.2.41.tar.gz", hash = "sha256:8274e292ccdf2cf41fdebea212a15f8177ea0a82892bab4567a38d46f09fdf2f", size = 72018, upload-time = "2026-05-14T03:08:57.757Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/27/13/ecbbe059c06257b38e74465568ff0d5cebca8f8e45223de368482f9bd99b/dbxcarta-0.2.41-py3-none-any.whl", hash = "sha256:57db8df0ecfb4dd8bdb71525859fa8edf90c083b0bcb9fed7ddbcfc4a945c40c", size = 98108, upload-time = "2026-05-14T03:08:58.888Z" },
 ]
-provides-extras = ["test"]
 
 [[package]]
 name = "google-auth"
@@ -535,7 +526,7 @@ wheels = [
 
 [[package]]
 name = "sql-semantics"
-version = "0.1.1"
+version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "databricks-sdk" },
@@ -556,7 +547,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "databricks-sdk", specifier = ">=0.40" },
-    { name = "dbxcarta", editable = "/Users/ryanknight/projects/databricks/dbxcarta" },
+    { name = "dbxcarta", specifier = ">=0.2.41" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "python-dotenv" },
 ]

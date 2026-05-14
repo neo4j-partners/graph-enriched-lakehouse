@@ -37,7 +37,8 @@ def test_ensure_read_only_sql_rejects_explain_mutation() -> None:
 def test_resolve_question_uses_ad_hoc_text() -> None:
     row = _resolve_question("How many accounts?", None, "unused.json")
 
-    assert row == {"question_id": "adhoc", "question": "How many accounts?"}
+    assert row.question_id == "adhoc"
+    assert row.question == "How many accounts?"
 
 
 def test_resolve_question_finds_question_id(tmp_path) -> None:
@@ -56,8 +57,8 @@ def test_resolve_question_finds_question_id(tmp_path) -> None:
 
     row = _resolve_question(None, "q1", str(questions_path))
 
-    assert row["question"] == "How many accounts?"
-    assert row["reference_sql"] == "SELECT COUNT(*) FROM accounts"
+    assert row.question == "How many accounts?"
+    assert row.reference_sql == "SELECT COUNT(*) FROM accounts"
 
 
 def test_questions_command_lists_questions(tmp_path, capsys) -> None:

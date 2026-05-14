@@ -190,8 +190,8 @@ def _handle_ask(args: argparse.Namespace) -> int:
     result = run_graph_rag_question(
         ws=ws,
         settings=settings,
-        question=question_row["question"],
-        reference_sql=question_row.get("reference_sql"),
+        question=question_row.question,
+        reference_sql=question_row.reference_sql,
         compare_reference=not args.no_compare_reference,
         show_prompt=args.show_prompt,
     )
