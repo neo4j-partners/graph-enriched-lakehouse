@@ -15,17 +15,12 @@ from typing import Any
 
 from dotenv import load_dotenv
 
-# Brittle dep: dbxcarta.client.client exposes these helpers under underscore
-# names. They are stable in practice (question loading, embedding, SQL parsing,
-# result-set comparison) and re-implementing them locally would duplicate the
-# core client harness. If they are renamed or removed, either promote them to a
-# documented dbxcarta.client public surface or re-implement the four functions
-# inline in this module.
-from dbxcarta.client.client import (
-    _compare_result_sets,
-    _embed_questions,
-    _load_questions,
-    _parse_sql,
+from dbxcarta.client import (
+    compare_result_sets,
+    embed_questions,
+    load_questions,
+    parse_sql,
+    Question,
 )
 from dbxcarta.client.executor import fetch_rows, preflight_warehouse
 from dbxcarta.client.local_generation import generate_sql_local
@@ -148,9 +143,7 @@ def _build_parser() -> argparse.ArgumentParser:
 def _handle_questions(args: argparse.Namespace) -> int:
     questions = _load_local_questions(args.questions)
     for question in questions:
-        qid = question.get("question_id", "")
-        text = question.get("question", "")
-        print(f"{qid}\t{text}")
+        print(f"{question.question_id}\t{question.question}")
     return 0
 
 
@@ -230,7 +223,7 @@ def run_graph_rag_question(
     """Run one graph_rag local demo question end to end."""
     preflight_warehouse(ws, settings.databricks_warehouse_id)
 
-    embeddings, embed_error = _embed_questions(
+    embeddings, embed_error = embed_questions(
         ws,
         settings.dbxcarta_embed_endpoint,
         [question],
@@ -259,7 +252,7 @@ def run_graph_rag_question(
         print()
 
     raw_sql = generate_sql_local(ws, settings.dbxcarta_chat_endpoint, prompt)
-    generated_sql, parse_ok = _parse_sql(raw_sql)
+    generated_sql, parse_ok = parse_sql(raw_sql)
     if not parse_ok or not generated_sql:
         raise RuntimeError(f"generated response was not valid SQL: {raw_sql!r}")
     _ensure_read_only_sql(generated_sql)
@@ -286,7 +279,7 @@ def run_graph_rag_question(
             correct = False
             comparison_error = f"reference SQL failed: {ref_error}"
         else:
-            correct, comparison_error = _compare_result_sets(
+            correct, comparison_error = compare_result_sets(
                 cols or [],
                 rows,
                 ref_cols or [],
@@ -310,23 +303,23 @@ def _resolve_question(
     question_text: str | None,
     question_id: str | None,
     questions_path: str,
-) -> dict[str, str]:
+) -> Question:
     if question_text and question_id:
         raise ValueError("Use either question text or --question-id, not both.")
     if question_text:
-        return {"question_id": "adhoc", "question": question_text}
+        return Question(question_id="adhoc", question=question_text)
     if not question_id:
         raise ValueError("Provide question text or --question-id.")
 
     questions = _load_local_questions(questions_path)
     for row in questions:
-        if row.get("question_id") == question_id:
+        if row.question_id == question_id:
             return row
     raise ValueError(f"Question id not found: {question_id}")
 
 
-def _load_local_questions(source: str) -> list[dict[str, str]]:
-    questions = _load_questions(source)
+def _load_local_questions(source: str) -> list[Question]:
+    questions = load_questions(source)
     if not questions:
         raise ValueError(f"questions file is empty: {source}")
     return questions
