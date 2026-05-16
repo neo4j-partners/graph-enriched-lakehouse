@@ -41,7 +41,11 @@ if [[ -z "${DATABRICKS_PROFILE:-}" ]]; then
   exit 1
 fi
 PROFILE="${DATABRICKS_PROFILE}"
-CATALOG="${DATABRICKS_CATALOG:-graph-on-databricks}"
+# Silver catalog precedence: SILVER_CATALOG → CATALOG → DATABRICKS_CATALOG →
+# literal fallback. With all three unset this is byte-for-byte the legacy
+# single-CATALOG behavior. This script only creates the five raw (silver)
+# business tables, so the resolved value is the silver catalog.
+CATALOG="${SILVER_CATALOG:-${CATALOG:-${DATABRICKS_CATALOG:-graph-on-databricks}}}"
 SCHEMA="${DATABRICKS_SCHEMA:-graph-enriched-schema}"
 VOLUME="${DATABRICKS_VOLUME:-graph-enriched-volume}"
 VOLUME_PATH="/Volumes/${CATALOG}/${SCHEMA}/${VOLUME}"

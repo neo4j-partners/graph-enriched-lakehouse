@@ -1,13 +1,15 @@
--- Base table schema for graph-on-databricks.graph-enriched-schema
+-- Base (silver) table schema for the graph-enriched finance pipeline.
 --
 -- Defines all five base tables with Unity Catalog column-level comments.
 -- Column descriptions are the primary signal Genie uses to understand data.
 --
 -- Executed by upload_and_create_tables.sh before CSV data is loaded.
 -- Placeholders ${catalog} and ${schema} are substituted by the shell script.
+-- ${catalog} resolves to the silver catalog (SILVER_CATALOG, falling back to
+-- the legacy single CATALOG when SILVER_CATALOG is unset).
 --
 -- To run manually in the Databricks SQL editor, replace placeholders:
---   ${catalog} → graph-on-databricks
+--   ${catalog} → graph-enriched-finance-silver
 --   ${schema}  → graph-enriched-schema
 
 CREATE OR REPLACE TABLE `${catalog}`.`${schema}`.accounts (
