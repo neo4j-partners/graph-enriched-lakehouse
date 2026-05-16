@@ -16,11 +16,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from dbxcarta import (
-    ReadinessReport,
-    validate_identifier,
-)
-from dbxcarta.databricks import quote_identifier
+from dbxcarta.client.databricks import quote_identifier, validate_identifier
+from dbxcarta.client.presets import ReadinessReport
 
 if TYPE_CHECKING:
     from databricks.sdk import WorkspaceClient

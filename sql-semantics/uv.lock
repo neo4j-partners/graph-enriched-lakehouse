@@ -240,21 +240,56 @@ wheels = [
 ]
 
 [[package]]
-name = "dbxcarta"
-version = "0.2.41"
-source = { registry = "https://pypi.org/simple" }
+name = "dbxcarta-client"
+version = "1.0.0"
+source = { editable = "../../dbxcarta/packages/dbxcarta-client" }
 dependencies = [
-    { name = "databricks-job-runner" },
     { name = "databricks-sdk" },
     { name = "neo4j" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "requests" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "databricks-sdk", specifier = ">=0.40" },
+    { name = "neo4j", specifier = ">=5.0" },
+    { name = "pydantic", specifier = ">=2" },
+    { name = "pydantic-settings", specifier = ">=2" },
+    { name = "pytest", marker = "extra == 'test'" },
+    { name = "requests" },
+]
+provides-extras = ["test"]
+
+[[package]]
+name = "dbxcarta-spark"
+version = "1.0.0"
+source = { editable = "../../dbxcarta/packages/dbxcarta-spark" }
+dependencies = [
+    { name = "databricks-job-runner" },
+    { name = "databricks-sdk" },
+    { name = "dbxcarta-client" },
+    { name = "neo4j" },
+    { name = "pydantic" },
+    { name = "pydantic-settings" },
+    { name = "pyspark" },
     { name = "python-dotenv" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/f4/44/728dd7b5650e2ae879960293e1832f6895d9dd2273cf94f102cba8cf9f5e/dbxcarta-0.2.41.tar.gz", hash = "sha256:8274e292ccdf2cf41fdebea212a15f8177ea0a82892bab4567a38d46f09fdf2f", size = 72018, upload-time = "2026-05-14T03:08:57.757Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/27/13/ecbbe059c06257b38e74465568ff0d5cebca8f8e45223de368482f9bd99b/dbxcarta-0.2.41-py3-none-any.whl", hash = "sha256:57db8df0ecfb4dd8bdb71525859fa8edf90c083b0bcb9fed7ddbcfc4a945c40c", size = 98108, upload-time = "2026-05-14T03:08:58.888Z" },
+
+[package.metadata]
+requires-dist = [
+    { name = "databricks-job-runner", specifier = ">=0.4.8" },
+    { name = "databricks-sdk", specifier = ">=0.40" },
+    { name = "dbxcarta-client", editable = "../../dbxcarta/packages/dbxcarta-client" },
+    { name = "neo4j", specifier = ">=5.0" },
+    { name = "pydantic", specifier = ">=2" },
+    { name = "pydantic-settings", specifier = ">=2" },
+    { name = "pyspark", specifier = ">=3.5" },
+    { name = "pytest", marker = "extra == 'test'" },
+    { name = "python-dotenv" },
 ]
+provides-extras = ["test"]
 
 [[package]]
 name = "google-auth"
@@ -330,6 +365,15 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/9b/ca/25afc144934014700c52e05103c2421997482d561f3101ff352e1292fb81/protobuf-6.33.6-cp39-abi3-manylinux2014_s390x.whl", hash = "sha256:c96c37eec15086b79762ed265d59ab204dabc53056e3443e702d2681f4b39ce3", size = 339381, upload-time = "2026-03-18T19:04:54.616Z" },
     { url = "https://files.pythonhosted.org/packages/16/92/d1e32e3e0d894fe00b15ce28ad4944ab692713f2e7f0a99787405e43533a/protobuf-6.33.6-cp39-abi3-manylinux2014_x86_64.whl", hash = "sha256:e9db7e292e0ab79dd108d7f1a94fe31601ce1ee3f7b79e0692043423020b0593", size = 323436, upload-time = "2026-03-18T19:04:55.768Z" },
     { url = "https://files.pythonhosted.org/packages/c4/72/02445137af02769918a93807b2b7890047c32bfb9f90371cbc12688819eb/protobuf-6.33.6-py3-none-any.whl", hash = "sha256:77179e006c476e69bf8e8ce866640091ec42e1beb80b213c3900006ecfba6901", size = 170656, upload-time = "2026-03-18T19:04:59.826Z" },
+]
+
+[[package]]
+name = "py4j"
+version = "0.10.9.9"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/38/31/0b210511177070c8d5d3059556194352e5753602fa64b85b7ab81ec1a009/py4j-0.10.9.9.tar.gz", hash = "sha256:f694cad19efa5bd1dee4f3e5270eb406613c974394035e5bfc4ec1aba870b879", size = 761089, upload-time = "2025-01-15T03:53:18.624Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bd/db/ea0203e495be491c85af87b66e37acfd3bf756fd985f87e46fc5e3bf022c/py4j-0.10.9.9-py2.py3-none-any.whl", hash = "sha256:c7c26e4158defb37b0bb124933163641a2ff6e3a3913f7811b0ddbe07ed61533", size = 203008, upload-time = "2025-01-15T03:53:15.648Z" },
 ]
 
 [[package]]
@@ -476,6 +520,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pyspark"
+version = "4.1.1"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "py4j" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/19/bf/58ee13add151469c25825b7125bbf62c3bdcec05eec4d458fcb5c5516066/pyspark-4.1.1.tar.gz", hash = "sha256:77f78984aa84fbe865c717dd37b49913b4e5c97d76ef6824f932f1aefa6621ec", size = 455359625, upload-time = "2026-01-09T09:38:38.28Z" }
+
+[[package]]
 name = "pytest"
 version = "9.0.3"
 source = { registry = "https://pypi.org/simple" }
@@ -530,7 +583,8 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "databricks-sdk" },
-    { name = "dbxcarta" },
+    { name = "dbxcarta-client" },
+    { name = "dbxcarta-spark" },
     { name = "python-dotenv" },
 ]
 
@@ -547,7 +601,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "databricks-sdk", specifier = ">=0.40" },
-    { name = "dbxcarta", specifier = ">=0.2.41" },
+    { name = "dbxcarta-client", editable = "../../dbxcarta/packages/dbxcarta-client" },
+    { name = "dbxcarta-spark", editable = "../../dbxcarta/packages/dbxcarta-spark" },
     { name = "pytest", marker = "extra == 'test'" },
     { name = "python-dotenv" },
 ]

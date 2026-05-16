@@ -48,18 +48,22 @@ tree and does not depend on being inside the dbxcarta repository.
 
 ## Dependency Model
 
-`pyproject.toml` declares dbxcarta as a normal dependency:
+`pyproject.toml` declares the dbxcarta layer distributions as normal dependencies:
 
 ```toml
 dependencies = [
-    "dbxcarta>=0.2.41",
+    "dbxcarta-core",
+    "dbxcarta-spark",
+    "dbxcarta-client",
+    "dbxcarta-presets",
     "databricks-sdk>=0.40",
     "python-dotenv",
 ]
 ```
 
-The package resolves `dbxcarta` from PyPI. It does not rely on an absolute
-local source override, so it behaves like a normal external consumer.
+The package resolves the dbxcarta distributions from PyPI in normal use. In
+local development, `[tool.uv.sources]` points at the sibling dbxcarta checkout
+so this external consumer can validate a cutover branch before publication.
 
 ## Prerequisites
 
@@ -194,7 +198,7 @@ The client job has two tasks on a shared job cluster:
    Volume path configured by `DBXCARTA_CLIENT_QUESTIONS`.
 2. `client` runs `dbxcarta-client` after the upload task succeeds.
 
-The jobs install `dbxcarta` from PyPI. They do not require `sql-semantics` to
+The jobs install the dbxcarta layer distributions from PyPI. They do not require `sql-semantics` to
 be published because the only sql-semantics runtime artifact needed by the job
 is the bundled questions file, which Databricks Bundles uploads with the source
 tree.
@@ -204,7 +208,7 @@ tree.
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `warehouse_id` | Yes | none | SQL warehouse ID for client evaluation runs |
-| `dbxcarta_version` | No | `0.2.41` | Published dbxcarta version installed by the jobs |
+| `dbxcarta_version` | No | `1.0.0` | Published dbxcarta layer version installed by the jobs |
 | `databricks_sdk_version` | No | `0.108.0` | databricks-sdk version used by the question upload task |
 | `python_dotenv_version` | No | `1.2.2` | python-dotenv version used by the question upload task |
 | `spark_version` | No | `14.3.x-scala2.12` | Classic Databricks Runtime for the jobs |
@@ -321,7 +325,7 @@ uv run pytest
 **`test_preset.py`**
 - `FinanceGeniePreset` satisfies the `Preset` protocol and optional `ReadinessCheckable` and `QuestionsUploadable` capabilities
 - `sql_semantics:preset` resolves correctly via `load_preset`
-- `preset.env()` validates against `Settings` without errors
+- `preset.env()` validates against `SparkIngestSettings` without errors
 - Preset rejects invalid catalog identifiers
 - `ReadinessReport` correctly classifies present, missing required, and missing optional tables
 - `report.ok()` is lenient on optional tables; `report.ok(strict_optional=True)` requires them

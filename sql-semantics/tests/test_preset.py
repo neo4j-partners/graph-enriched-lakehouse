@@ -3,13 +3,14 @@ from __future__ import annotations
 import pytest
 
 import sql_semantics.finance_genie as preset_module
-from dbxcarta import (
-    Preset,
+from dbxcarta.client.presets import (
+    QuestionsUploadable,
+    ReadinessCheckable,
     ReadinessReport,
-    Settings,
-    load_preset,
 )
-from dbxcarta.presets import QuestionsUploadable, ReadinessCheckable
+from dbxcarta.spark import SparkIngestSettings
+from dbxcarta.spark.loader import load_preset
+from dbxcarta.spark.presets import Preset
 from sql_semantics.finance_genie import (
     FinanceGeniePreset,
     _EXPECTED_TABLES,
@@ -46,7 +47,7 @@ def test_preset_resolvable_via_import_path() -> None:
 
 def test_env_overlay_validates_against_settings() -> None:
     env = preset.env()
-    settings = Settings(
+    settings = SparkIngestSettings(
         dbxcarta_catalog=env["DBXCARTA_CATALOG"],
         dbxcarta_schemas=env["DBXCARTA_SCHEMAS"],
         dbxcarta_summary_volume=env["DBXCARTA_SUMMARY_VOLUME"],

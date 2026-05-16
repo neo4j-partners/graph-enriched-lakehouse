@@ -1,7 +1,7 @@
 """Read-only local CLI demo for the Finance Genie semantic layer.
 
-Lives in the example package, not in dbxcarta core. The dependency on private
-helpers in `dbxcarta.client.client` is annotated inline at the import site.
+Lives in the example package, not in dbxcarta core. It uses the public
+`dbxcarta.client` runtime helpers and local generation utilities.
 """
 
 from __future__ import annotations
@@ -16,18 +16,18 @@ from typing import Any
 from dotenv import load_dotenv
 
 from dbxcarta.client import (
+    Question,
     compare_result_sets,
-    embed_questions,
     load_questions,
     parse_sql,
-    Question,
 )
+from dbxcarta.client.databricks import build_workspace_client
+from dbxcarta.client.embed import embed_questions
 from dbxcarta.client.executor import fetch_rows, preflight_warehouse
 from dbxcarta.client.local_generation import generate_sql_local
 from dbxcarta.client.prompt import graph_rag_prompt
 from dbxcarta.client.schema_dump import fetch_schema_dump
 from dbxcarta.client.settings import ClientSettings
-from dbxcarta.databricks import build_workspace_client
 
 DEFAULT_QUESTIONS = Path(__file__).resolve().with_name("questions.json")
 # Anchor .env lookup to the sample package root so the demo never inherits
